@@ -27,7 +27,7 @@ RollingUpgrades provides a Kubernetes native mechanism for doing rolling-updates
 
 ## Design
 
-For each RollingUprade custom resource that is submitted, the following flowchart shows the sequence of actions taken to [perform the rolling-update]((docs/RollingUpgradeDesign.png)
+For each RollingUprade custom resource that is submitted, the following flowchart shows the sequence of actions taken to [perform the rolling-update](docs/RollingUpgradeDesign.png)
 
 ## Dependencies
 - Kubernetes cluster on AWS with nodes in AutoscalingGroups. rolling-upgrades have been tested with Kubernetes clusters v1.12+.
