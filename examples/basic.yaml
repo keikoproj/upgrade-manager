@@ -1,0 +1,10 @@
+apiVersion: upgrademgr.orkaproj.io/v1alpha1
+kind: RollingUpgrade
+metadata:
+  generateName: rollingupgrade-sample-
+spec:
+    asgName: my-asg
+    region: us-west-2
+    nodeIntervalSeconds: 300
+    postDrain:
+        waitSeconds: 90

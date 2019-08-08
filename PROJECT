@@ -1,0 +1,7 @@
+version: "2"
+domain: orkaproj.io
+repo: github.com/orkaproj/upgrade-manager
+resources:
+- group: upgrademgr
+  version: v1alpha1
+  kind: RollingUpgrade
