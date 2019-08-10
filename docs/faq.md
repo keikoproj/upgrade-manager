@@ -1,6 +1,7 @@
 # Frequently Asked Questions
 
 ## What happens when:
+
 _1. Draining of a node fails?_
 
 RollingUpgrade logs will show the reason why the drain failed (output of `kubectl drain`). It then marks the custom resource status as "error". After marking the object status as "error", the rolling-upgrade controller will ignore the object.
@@ -20,6 +21,7 @@ _3. RollingUpgrade controller gets terminated while it was performing the rollin
 - Then, the rolling-upgrade controller resumes performing the rolling-updates from where it left. Care is taken to ensure that if any nodes had already been updated, they won't go through the update again.
 
 ## Other details
+
 _1. Instead of rolling-upgrade controller, why not simply run `kops rolling-update` in a container on the master node?_
 
 - kops does not provide additional hooks for `preDrain`, `postDrain` or `postTerminate`, etc.
@@ -49,5 +51,3 @@ _5. What are the specific cases where the preDrain, postDrain, postDrainWait and
 - postDrain: This could be used to ensure that all the pods on that node (or maybe all pods in the cluster) have been successfully scheduled on a different node/s. Additional sleeps could be added to ensure that this condition is being met. In case there are no other nodes in the cluster to run the pods, this script could also add more nodes in the cluster (or wait for cluster-autoscaler to spin-up the nodes). Also, any additional "draining" actions required on the node could be performed here. E.g. The node could be taken out of the target group of ALB by adding an additional label to the node.
 - postDrainWait: This could be used to ensure that all pods that have migrated to different nodes are actually running and service client requests.
 - postTerminate: This is executed after an ec2 instance is terminated and the `nodeIntervalSeconds` have passed. In the postTerminate script, additional checks such as ensuring that all the nodes (including the newly created one) has successfully joined the cluster can be performed.
-
-
