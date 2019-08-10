@@ -9,7 +9,7 @@
 **Anything else we need to know?**:
 
 **Environment**:
-- upgrade-manager version
+- rolling-upgrade-controller version
 - Kubernetes version :
 ```
 $ kubectl version -o yaml
@@ -22,5 +22,5 @@ $ kubectl describe rollingupgrade <rollingupgrade-name>
 ```
 - controller logs:
 ```
-$ kubectl logs <upgrade-manager pod>
+$ kubectl logs <rolling-upgrade-controller pod>
 ```
