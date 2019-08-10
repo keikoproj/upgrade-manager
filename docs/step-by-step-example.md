@@ -85,7 +85,10 @@ kops update cluster ${CLUSTER_NAME} --yes
 ```
 
 * Create an IAM policy using the document above.
-`$ aws iam create-policy --policy-name rolling-upgrade-policy --policy-document file:///tmp/rolling-upgrade-policy`
+
+```
+$ aws iam create-policy --policy-name rolling-upgrade-policy --policy-document file:///tmp/rolling-upgrade-policy
+```
 
 * This will output a bunch of details such as
 
@@ -109,7 +112,9 @@ kops update cluster ${CLUSTER_NAME} --yes
 * The "Arn" field from the above output is required in the next command.
 * Attach this policy to the role of the Kubernetes master nodes using the Arn from above. The role-name is `masters.<name of the cluster used in the kops script above>`
 
-`$ aws iam attach-role-policy --role-name masters.test-cluster-kops.cluster.k8s.local --policy-arn arn:aws:iam::0123456789:policy/rolling-upgrade-policy`
+```
+$ aws iam attach-role-policy --role-name masters.test-cluster-kops.cluster.k8s.local --policy-arn arn:aws:iam::0123456789:policy/rolling-upgrade-policy
+```
 
 ### Install the rolling-upgrade-controller
 
