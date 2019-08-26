@@ -1680,37 +1680,6 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyMaxUnavailable(t *test
 	g.Expect(error).To((gomega.BeNil()))
 }
 
-func TestRaceCondition(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-
-	instanceList := []*autoscaling.Instance{}
-	for i := 0; i < 10000; i++ {
-		instanceId := string(i)
-		instanceList = append(instanceList, &autoscaling.Instance{InstanceId: &instanceId})
-	}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-	rcRollingUpgrade.ClusterState.initializeAsg("mock", instanceList)
-
-	updatedList := make(map[string]string)
-
-	ch := make(chan string, 10000)
-
-	for i := 0; i < 10000; i++ {
-		go get(rcRollingUpgrade, "mock", instanceList, ch)
-	}
-
-	count := 0
-	for msg := range ch {
-		updatedList[msg] = "new"
-		count++
-		if count == 10000 {
-			break
-		}
-	}
-
-	g.Expect(len(updatedList) == 10000).To(gomega.BeTrue())
-}
-
 func get(r *RollingUpgradeReconciler, asgName string, instanceList []*autoscaling.Instance, ch chan string) {
 	instance, _ := r.getNextAvailableInstance(asgName, instanceList)
 	ch <- *instance.InstanceId
