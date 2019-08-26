@@ -18,9 +18,12 @@ package controllers
 import (
 	"context"
 	"errors"
+	"fmt"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +84,7 @@ type RollingUpgradeReconciler struct {
 	NodeList        *corev1.NodeList
 	admissionMap    sync.Map
 	ruObjNameToASG  sync.Map
+	ClusterState    ClusterState
 }
 
 func runScript(script string, background bool, objName string) (string, error) {
@@ -147,12 +151,50 @@ func (r *RollingUpgradeReconciler) postDrainHelper(ruObj *upgrademgrv1alpha1.Rol
 
 // DrainNode runs "kubectl drain" on the given node
 // kubeCtlCall is provided as an argument to decouple the method from the actual kubectl call
-func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, kubeCtlCall string) error {
+func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, kubeCtlCall string, drainTimeout int) error {
 	// Running kubectl drain node.
 	err := r.preDrainHelper(ruObj)
 	if err != nil {
 		return errors.New(ruObj.Name + ": Predrain script failed: " + err.Error())
 	}
+
+	errChan := make(chan error)
+	ctx := context.TODO()
+	var cancel context.CancelFunc
+
+	// Add a context with timeout only if a valid drain timeout value is specified
+	// default value used for drain timeout is -1
+	if drainTimeout >= 0 {
+		log.Printf("Creating a context with timeout - %d", drainTimeout)
+		// Define a cancellation after drainTimeout
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(drainTimeout)*time.Second)
+		defer cancel()
+	} else {
+		log.Printf("Skipped creating context with timeout. Drain timeout - %d", drainTimeout)
+	}
+
+	log.Printf("Invoking kubectl drain for the node - %s", nodeName)
+	go r.CallKubectlDrain(ctx, nodeName, kubeCtlCall, ruObj, errChan)
+
+	// Listening to signals from the CallKubectlDrain go routine
+	select {
+	case <-ctx.Done():
+		log.Printf("Kubectl drain timed out for node - %s", nodeName)
+		log.Print(ctx.Err())
+	case err := <-errChan:
+		if err != nil {
+			log.Printf("Kubectl drain errored for node - %s, error: %s", nodeName, err.Error())
+			return err
+		}
+		log.Printf("Kubectl drain completed for node - %s", nodeName)
+	}
+
+	return r.postDrainHelper(ruObj, nodeName, kubeCtlCall)
+}
+
+// CallKubectlDrain runs the "kubectl drain" for a given node
+// Node will be terminated even if pod eviction is not completed when the drain timeout is exceeded
+func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeName, kubeCtlCall string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
 
 	// kops behavior implements the same behavior by using these flags when draining nodes
 	// https://github.com/kubernetes/kops/blob/7a629c77431dda02d02aadf00beb0bed87518cbf/pkg/instancegroups/instancegroups.go lines 337-340
@@ -160,13 +202,13 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	if err != nil {
 		if strings.HasPrefix(out, "Error from server (NotFound)") {
 			log.Printf("%s: Not executing postDrainHelper. Node not found: %s", ruObj.Name, out)
-			return nil
+			errChan <- nil
+			return
 		}
-
-		return errors.New(ruObj.Name + ": Failed to drain: " + err.Error())
+		errChan <- errors.New(ruObj.Name + " :Failed to drain: " + err.Error())
+		return
 	}
-
-	return r.postDrainHelper(ruObj, nodeName, kubeCtlCall)
+	errChan <- nil
 }
 
 // TerminateNode actually terminates the given node.
@@ -304,66 +346,24 @@ func loadEnvironmentVariables(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInst
 }
 
 func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, svc ec2iface.EC2API, KubeCtlCall string) (int, error) {
-	value, ok := r.ruObjNameToASG.Load(ruObj.Name)
-	if !ok {
-		msg := "Failed to find rollingUpgrade name in map."
-		log.Printf(msg)
-		return 0, errors.New(msg)
+	// Setting default values for the Strategy in rollup object
+	r.setDefaultsForRollingUpdateStrategy(ruObj)
+
+	switch ruObj.Spec.Strategy.Type {
+	case upgrademgrv1alpha1.RandomUpdateStrategy:
+		log.Printf("Random update triggered for %s with strategy spec %+v", ruObj.Name, ruObj.Spec.Strategy)
+		return r.RandomUpdate(ctx, ruObj, svc, KubeCtlCall)
+	default:
+		error := errors.New(fmt.Sprintf("%s is not one of the predefined update strategies!", ruObj.Spec.Strategy.Type))
+		return 0, error
 	}
-
-	asg := value.(*autoscaling.Group)
-	log.Printf("Nodes in ASG %s that *might* need to be updated: %d\n", *asg.AutoScalingGroupName, len(asg.Instances))
-	currentLaunchConfigName := aws.StringValue(asg.LaunchConfigurationName)
-	nodesProcessed := 0
-	for _, i := range asg.Instances {
-		targetLaunchConfigName := aws.StringValue(i.LaunchConfigurationName)
-		targetInstanceID := aws.StringValue(i.InstanceId)
-		nodesProcessed++
-
-		// If the running node has the same launchconfig as the asg,
-		// there is no need to refresh it.
-		if targetLaunchConfigName != "" {
-			// if LaunchConfig is blank, the instance is not inline with the active LaunchConfig
-			if targetLaunchConfigName == currentLaunchConfigName {
-				log.Printf("Ignoring %s since it has the correct launch-config", targetInstanceID)
-				ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
-				r.Update(*ctx, ruObj)
-				continue
-			}
-		}
-
-		nodeName := r.getNodeName(i, r.NodeList, ruObj)
-		if nodeName == "" {
-			continue
-		}
-
-		// Load the environment variables for scripts to run
-		err := loadEnvironmentVariables(ruObj, r.getNodeFromAsg(i, r.NodeList, ruObj))
-		if err != nil {
-			return 0, err
-		}
-
-		// Drain and wait for draining node.
-		err = r.DrainNode(ruObj, nodeName, KubeCtlCall)
-		if err != nil {
-			return 0, err
-		}
-
-		// Terminate instance.
-		err = r.TerminateNode(ruObj, targetInstanceID, svc)
-		if err != nil {
-			runScript(KubeCtlCall+" uncordon "+nodeName, false, ruObj.Name)
-			return 0, err
-		}
-
-		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
-		r.Update(*ctx, ruObj)
-	}
-
-	return nodesProcessed, nil
 }
 
 func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProcessed int, ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) (reconcile.Result, error) {
+	// delete the entry instances of the ASG
+	r.ClusterState.deleteEntryOfAsg(ruObj.Spec.AsgName)
+	log.Printf("Deleted the entries of ASG %s in the cluster store for %s", ruObj.Spec.AsgName, ruObj.Name)
+
 	log.Printf("Marked object %s as %s", ruObj.Name, finalStatus)
 	endTime := time.Now()
 	ruObj.Status.EndTime = endTime.Format(time.RFC3339)
@@ -495,6 +495,16 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		return ctrl.Result{}, err
 	}
 
+	// Setting default values for the Strategy in rollup object
+	r.setDefaultsForRollingUpdateStrategy(ruObj)
+	log.Printf("Default strategy settings applied for %s, update strategy - %+v", ruObj.Name, ruObj.Spec.Strategy)
+
+	error := r.validateRollingUpgradeObj(ruObj)
+	if error != nil {
+		log.Printf("Validation failed for %s with error - %s", ruObj.Name, error.Error())
+		return reconcile.Result{}, error
+	}
+
 	result, ok := r.admissionMap.Load(ruObj.Name)
 	if ok {
 		if result == "processing" {
@@ -518,4 +528,233 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&upgrademgrv1alpha1.RollingUpgrade{}).
 		Complete(r)
+}
+
+// getMaxUnavailable calculates and returns the maximum unavailable nodes
+// takes an update strategy and total number of nodes as input
+func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes int) int {
+	// Below are the constants set in intstr package
+	// const (
+	//	Int    Type = iota // The IntOrString holds an int.
+	//	String             // The IntOrString holds a string.
+	//)
+	maxUnavailable := 1
+	if strategy.MaxUnavailable.Type == 0 {
+		maxUnavailable = int(strategy.MaxUnavailable.IntVal)
+	} else if strategy.MaxUnavailable.Type == 1 {
+		strVallue := strategy.MaxUnavailable.StrVal
+		intValue, _ := strconv.Atoi(strings.Trim(strVallue, "%"))
+		maxUnavailable = int(float32(intValue) / float32(100) * float32(totalNodes))
+	}
+	// setting maxUnavailable to total number of nodes when maxUnavailable is greater than total node count
+	if totalNodes < maxUnavailable {
+		log.Printf("Reducing maxUnavailable count from %d to %d as total nodes count is %d", maxUnavailable, totalNodes, totalNodes)
+		maxUnavailable = totalNodes
+	}
+	// maxUnavailable has to be atleast 1 when there are nodes in the ASG
+	if totalNodes > 0 && maxUnavailable < 1 {
+		maxUnavailable = 1
+	}
+	return maxUnavailable
+}
+
+// validateRollingUpgradeObj validates rollup object for the type, maxUnavailable and drainTimeout
+func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	strategy := ruObj.Spec.Strategy
+
+	var nilStrategy = upgrademgrv1alpha1.UpdateStrategy{}
+	if strategy == nilStrategy {
+		return nil
+	}
+
+	// validating the maxUnavailable value
+	if strategy.MaxUnavailable.Type == 0 {
+		if strategy.MaxUnavailable.IntVal <= 0 {
+			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %d", ruObj.Name, strategy.MaxUnavailable.IntVal))
+			log.Print(err)
+			return err
+		}
+	} else if strategy.MaxUnavailable.Type == 1 {
+		strVallue := strategy.MaxUnavailable.StrVal
+		intValue, _ := strconv.Atoi(strings.Trim(strVallue, "%"))
+		if intValue <= 0 || intValue > 100 {
+			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %s", ruObj.Name, strategy.MaxUnavailable.StrVal))
+			log.Print(err)
+			return err
+		}
+	}
+
+	// validating the strategy type
+	if strategy.Type != upgrademgrv1alpha1.RandomUpdateStrategy {
+		err := errors.New(fmt.Sprintf("%s: Invalid value for strategy type - %s", ruObj.Name, strategy.Type))
+		log.Print(err)
+		return err
+	}
+	return nil
+}
+
+// setDefaultsForRollingUpdateStrategy sets the default values for type, maxUnavailable and drainTimeout
+func (r *RollingUpgradeReconciler) setDefaultsForRollingUpdateStrategy(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
+
+	// Setting the default values for the update strategy when strategy is not set
+	// Default behaviour should be to update one node at a time and should wait for kubectl drain completion
+	var nilStrategy = upgrademgrv1alpha1.UpdateStrategy{}
+	if ruObj.Spec.Strategy == nilStrategy {
+		log.Printf("Update strategy not set on the rollup object - %s, setting the default strategy.", ruObj.Name)
+		strategy := upgrademgrv1alpha1.UpdateStrategy{
+			Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+			MaxUnavailable: intstr.IntOrString{IntVal: 1},
+			DrainTimeout:   -1,
+		}
+		ruObj.Spec.Strategy = strategy
+	} else {
+		if ruObj.Spec.Strategy.Type == "" {
+			ruObj.Spec.Strategy.Type = upgrademgrv1alpha1.RandomUpdateStrategy
+		}
+		// intstr.IntOrString has the default value 0 with int types
+		if ruObj.Spec.Strategy.MaxUnavailable.Type == 0 && ruObj.Spec.Strategy.MaxUnavailable.IntVal == 0 {
+			ruObj.Spec.Strategy.MaxUnavailable = intstr.IntOrString{Type: 0, IntVal: 1}
+		}
+		if ruObj.Spec.Strategy.DrainTimeout == 0 {
+			ruObj.Spec.Strategy.DrainTimeout = -1
+		}
+	}
+}
+
+// RandomUpdate treats all the azs as a single unit and picks random nodes for update
+// and rolls out the update based on the input parameters
+func (r *RollingUpgradeReconciler) RandomUpdate(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, svc ec2iface.EC2API, KubeCtlCall string) (int, error) {
+
+	value, ok := r.ruObjNameToASG.Load(ruObj.Name)
+	if !ok {
+		msg := "Failed to find rollup name in map."
+		log.Printf(msg)
+		return 0, errors.New(msg)
+	}
+
+	asg := value.(*autoscaling.Group)
+	log.Printf("Nodes in ASG %s that *might* need to be updated: %d\n", *asg.AutoScalingGroupName, len(asg.Instances))
+
+	// set the state of instances in the ASG to new in the cluster store
+	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
+
+	currentLaunchConfigName := aws.StringValue(asg.LaunchConfigurationName)
+	nodesProcessed := 0
+	nodesTriggered := 0
+
+	totalNodes := len(asg.Instances)
+	// No further processing is required if ASG doesn't have an instance running
+	if totalNodes == 0 {
+		log.Printf("Total nodes found for %s is 0", ruObj.Name)
+		return 0, nil
+	}
+
+	ch := make(chan error)
+	maxUnavailable := getMaxUnavailable(ruObj.Spec.Strategy, totalNodes)
+	log.Printf("Max unavailable calculated for %s is %d", ruObj.Name, maxUnavailable)
+
+	for nodesTriggered < maxUnavailable {
+		instance, available := r.getNextAvailableInstance(ruObj.Spec.AsgName, asg.Instances)
+		if !available {
+			err := errors.New("Instances are not available for update")
+			log.Printf("error: %s occurred for %s", err.Error(), ruObj.Name)
+			return nodesProcessed, err
+		}
+		go r.UpdateInstance(ctx, ruObj, instance, currentLaunchConfigName, KubeCtlCall, svc, ruObj.Spec.Strategy.DrainTimeout, ch)
+		nodesTriggered++
+	}
+
+	for err := range ch {
+		switch err {
+		case nil:
+			nodesProcessed++
+			if nodesProcessed == totalNodes {
+				r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
+				return nodesProcessed, nil
+			}
+			if nodesTriggered >= totalNodes {
+				continue
+			}
+
+		default:
+			return nodesProcessed, err
+		}
+
+		instance, available := r.getNextAvailableInstance(ruObj.Spec.AsgName, asg.Instances)
+		if !available {
+			err := errors.New("Instances are not available for update")
+			log.Printf("error: %s occurred for %s", err.Error(), ruObj.Name)
+			return nodesProcessed, err
+		}
+		go r.UpdateInstance(ctx, ruObj, instance, currentLaunchConfigName, KubeCtlCall, svc, ruObj.Spec.Strategy.DrainTimeout, ch)
+		nodesTriggered++
+	}
+	log.Printf("Deleting the entry of ASG - %s for %s", *asg.AutoScalingGroupName, ruObj.Name)
+	r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
+	return nodesProcessed, nil
+}
+
+func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, i *autoscaling.Instance, currentLaunchConfigName string, KubeCtlCall string, svc ec2iface.EC2API, drainTimeout int, ch chan error) {
+
+	targetLaunchConfigName := aws.StringValue(i.LaunchConfigurationName)
+	targetInstanceID := aws.StringValue(i.InstanceId)
+
+	// If the running node has the same launchconfig as the asg,
+	// there is no need to refresh it.
+	if targetLaunchConfigName != "" {
+		// if LaunchConfig is blank, the instance is not inline with the active LaunchConfig
+		if targetLaunchConfigName == currentLaunchConfigName {
+			log.Printf("Ignoring %s since it has the correct launch-config", targetInstanceID)
+			ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
+			r.Update(*ctx, ruObj)
+			ch <- nil
+			return
+		}
+	}
+
+	nodeName := r.getNodeName(i, r.NodeList, ruObj)
+	if nodeName == "" {
+		ch <- nil
+		return
+	}
+
+	// Load the environment variables for scripts to run
+	err := loadEnvironmentVariables(ruObj, r.getNodeFromAsg(i, r.NodeList, ruObj))
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	// Drain and wait for draining node.
+	err = r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	// Terminate instance.
+	err = r.TerminateNode(ruObj, targetInstanceID, svc)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
+	r.Update(*ctx, ruObj)
+
+	// TODO(shri): Run validate. How?
+	r.ClusterState.markUpdateCompleted(ruObj.Spec.AsgName, *i.InstanceId)
+	ch <- nil
+	return
+}
+
+// getNextAvailableInstance checks the cluster state store for the instance state and returns the next instance available for update
+func (r *RollingUpgradeReconciler) getNextAvailableInstance(asgName string, instances []*autoscaling.Instance) (*autoscaling.Instance, bool) {
+	instanceId := r.ClusterState.getNextAvailableInstanceId(asgName)
+	for _, instance := range instances {
+		if *instance.InstanceId == instanceId {
+			return instance, true
+		}
+	}
+	return nil, false
 }
