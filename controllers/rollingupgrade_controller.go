@@ -47,7 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	upgrademgrv1alpha1 "github.com/orkaproj/upgrade-manager/api/v1alpha1"
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 )
 
 const (
@@ -471,8 +471,8 @@ func MarkObjForCleanup(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 	}
 }
 
-// +kubebuilder:rbac:groups=upgrademgr.orkaproj.io,resources=rollingupgrades,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=upgrademgr.orkaproj.io,resources=rollingupgrades/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades/status,verbs=get;update;patch
 
 // Reconcile reads that state of the cluster for a RollingUpgrade object and makes changes based on the state read
 // and the details in the RollingUpgrade.Spec

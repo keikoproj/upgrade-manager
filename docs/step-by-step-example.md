@@ -118,9 +118,9 @@ $ aws iam attach-role-policy --role-name masters.test-cluster-kops.cluster.k8s.l
 
 ### Install the rolling-upgrade-controller
 
-* Install the CRD using: `$ kubectl apply -f https://raw.githubusercontent.com/orkaproj/upgrade-manager/master/config/crd/bases/upgrademgr.orkaproj.io_rollingupgrades.yaml`
+* Install the CRD using: `$ kubectl apply -f https://raw.githubusercontent.com/keikoproj/upgrade-manager/master/config/crd/bases/upgrademgr.keikoproj.io_rollingupgrades.yaml`
 * Install the controller using:
-`$ kubectl create -f https://raw.githubusercontent.com/orkaproj/upgrade-manager/master/deploy/rolling-upgrade-controller-deploy.yaml`
+`$ kubectl create -f https://raw.githubusercontent.com/keikoproj/upgrade-manager/master/deploy/rolling-upgrade-controller-deploy.yaml`
 * Ensure that the rolling-upgrade-controller deployment is running.
 
 ## Actually perform rolling-upgrade of one InstanceGroup
@@ -143,7 +143,7 @@ $ aws iam attach-role-policy --role-name masters.test-cluster-kops.cluster.k8s.l
 set -ex
 
 cat << EOF > /tmp/crd.yaml
-apiVersion: upgrademgr.orkaproj.io/v1alpha1
+apiVersion: upgrademgr.keikoproj.io/v1alpha1
 kind: RollingUpgrade
 metadata:
   generateName: rollingupgrade-sample-

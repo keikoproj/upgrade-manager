@@ -46,9 +46,9 @@ For a complete, step by step guide for creating a cluster with kops, editing it 
 If you already have an existing cluster created using kops, follow the instructions below.
 
 - Ensure that you have a Kubernetes cluster on AWS.
-- Install the CRD using: `kubectl apply -f https://raw.githubusercontent.com/orkaproj/upgrade-manager/master/config/crd/bases/upgrademgr.orkaproj.io_rollingupgrades.yaml`
+- Install the CRD using: `kubectl apply -f https://raw.githubusercontent.com/keikoproj/upgrade-manager/master/config/crd/bases/upgrademgr.keikoproj.io_rollingupgrades.yaml`
 - Install the controller using:
-`kubectl create -f https://raw.githubusercontent.com/orkaproj/upgrade-manager/master/deploy/rolling-upgrade-controller-deploy.yaml`
+`kubectl create -f https://raw.githubusercontent.com/keikoproj/upgrade-manager/master/deploy/rolling-upgrade-controller-deploy.yaml`
 
 - Note that the rolling-upgrade controller requires an IAM role with the following policy
 

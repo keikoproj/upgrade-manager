@@ -1,4 +1,4 @@
-module github.com/orkaproj/upgrade-manager
+module github.com/keikoproj/upgrade-manager
 
 go 1.12
 
