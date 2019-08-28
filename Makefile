@@ -1,6 +1,6 @@
-
+VERSION=0.1-dev
 # Image URL to use all building/pushing image targets
-IMG ?= keikoproj/rolling-upgrade-controller:latest
+IMG ?= keikoproj/rolling-upgrade-controller:${VERSION}
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
@@ -48,6 +48,7 @@ generate: controller-gen
 # Build the docker image
 docker-build: test
 	docker build . -t ${IMG}
+	docker tag ${IMG} keikoproj/rolling-upgrade-controller:latest
 	@echo "updating kustomize image patch file for manager resource"
 	sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/manager_image_patch.yaml
 
