@@ -1,6 +1,5 @@
 # RollingUpgrades
 
-[![Build Status](https://semaphoreci.com/api/v1/kianjones4/upgrade-manager/branches/master/badge.svg)](https://semaphoreci.com/kianjones4/upgrade-manager)
 > Reliable, extensible rolling-upgrades of Autoscaling groups in Kubernetes
 
 RollingUpgrades provides a Kubernetes native mechanism for doing rolling-updates of instances in an AutoScaling group using a CRD and a controller.
