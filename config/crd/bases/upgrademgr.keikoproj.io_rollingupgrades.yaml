@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
   creationTimestamp: null
-  name: rollingupgrades.upgrademgr.orkaproj.io
+  name: rollingupgrades.upgrademgr.keikoproj.io
 spec:
   additionalPrinterColumns:
   - JSONPath: .status.currentStatus
@@ -19,7 +19,7 @@ spec:
     description: current number of nodes processed in the rollingupgarde
     name: NodesProcessed
     type: string
-  group: upgrademgr.orkaproj.io
+  group: upgrademgr.keikoproj.io
   names:
     kind: RollingUpgrade
     plural: rollingupgrades
@@ -429,6 +429,24 @@ spec:
               type: object
             region:
               type: string
+            strategy:
+              properties:
+                drainTimeout:
+                  description: Node will be terminated after drain timeout even if
+                    `kubectl drain` has not been completed and value has to be specified
+                    in seconds
+                  type: integer
+                maxUnavailable:
+                  anyOf:
+                  - type: string
+                  - type: integer
+                  description: MaxUnavailable can be specified as number of nodes
+                    or the percent of total number of nodes
+                type:
+                  type: string
+              required:
+              - drainTimeout
+              type: object
           type: object
         status:
           properties:

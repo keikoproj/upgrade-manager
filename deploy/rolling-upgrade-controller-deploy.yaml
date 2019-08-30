@@ -46,7 +46,7 @@ spec:
         app: rolling-upgrade-controller
     spec:
       containers:
-      - image: orkaproj/rolling-upgrade-controller:latest
+      - image: keikoproj/rolling-upgrade-controller:latest
         imagePullPolicy: Always
         name: rolling-upgrade-controller
         resources:
