@@ -70,3 +70,5 @@ If you already have an existing cluster created using kops, follow the instructi
 - If the rolling-upgrade controller is using it's own role created using KIAM, that role should have the above policy in it.
 
 ## For more details and FAQs, refer to [this](docs/faq.md)
+
+
