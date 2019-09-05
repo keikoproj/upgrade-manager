@@ -1,4 +1,4 @@
-# RollingUpgrades
+# RollingUpgrade
 
 > Reliable, extensible rolling-upgrades of Autoscaling groups in Kubernetes
 
