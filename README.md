@@ -2,7 +2,7 @@
 
 > Reliable, extensible rolling-upgrades of Autoscaling groups in Kubernetes
 
-RollingUpgrades provides a Kubernetes native mechanism for doing rolling-updates of instances in an AutoScaling group using a CRD and a controller.
+RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates of instances in an AutoScaling group using a CRD and a controller.
 
 ## What does it do?
 
