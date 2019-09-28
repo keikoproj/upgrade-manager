@@ -1,5 +1,5 @@
 cache restore $SEMAPHORE_PROJECT_NAME-dep
-// checks if the packages are already installed
+# checks if the packages are already installed
 if [ ! -d '/packages' ]; then
   sudo mkdir -p /packages
   wget https://dl.google.com/go/go1.12.7.linux-amd64.tar.gz
