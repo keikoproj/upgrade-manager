@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"log"
 	"os"
 	"os/exec"
@@ -28,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/intstr"
+
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -35,8 +36,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	"github.com/go-logr/logr"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -89,7 +88,6 @@ type RollingUpgradeReconciler struct {
 
 func runScript(script string, background bool, objName string) (string, error) {
 	log.Printf("%s: Running script %s", objName, script)
-
 	if background {
 		log.Printf("%s: Running script in background. Logs not available.", objName)
 		exec.Command(ShellBinary, "-c", script).Run()
@@ -212,20 +210,23 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 }
 
 // TerminateNode actually terminates the given node.
-func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, svc ec2iface.EC2API) error {
+func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, svc autoscalingiface.AutoScalingAPI) error {
 
-	input := &ec2.TerminateInstancesInput{
-		InstanceIds: []*string{
-			aws.String(instanceID),
-		},
+	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
+		InstanceId:                     aws.String(instanceID),
+		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
-	result, err := svc.TerminateInstances(input)
+	result, err := svc.TerminateInstanceInAutoScalingGroup(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
 			case "InvalidInstanceID.NotFound":
 				log.Printf("Instance %s not found. Moving on\n", instanceID)
+			case autoscaling.ErrCodeScalingActivityInProgressFault:
+				log.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
+			case autoscaling.ErrCodeResourceContentionFault:
+				log.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
 				return nil
 			default:
 				log.Println(aerr.Error())
@@ -345,7 +346,7 @@ func loadEnvironmentVariables(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInst
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, svc ec2iface.EC2API, KubeCtlCall string) (int, error) {
+func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, svc autoscalingiface.AutoScalingAPI, KubeCtlCall string) (int, error) {
 	// Setting default values for the Strategy in rollup object
 	r.setDefaultsForRollingUpdateStrategy(ruObj)
 
@@ -443,13 +444,8 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context, ruObj *upgradem
 	ruObj.Status.TotalNodes = len(asg.Instances)
 	r.Update(*ctx, ruObj)
 
-	ec2Sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String(ruObj.Spec.Region)},
-	)
-	ec2Svc := ec2.New(ec2Sess)
-
 	// Run the restack that acutally performs the rolling update.
-	nodesProcessed, err := r.runRestack(ctx, ruObj, ec2Svc, KubeCtlBinary)
+	nodesProcessed, err := r.runRestack(ctx, ruObj, svc, KubeCtlBinary)
 	if err != nil {
 		return r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
 	}
@@ -623,7 +619,7 @@ func (r *RollingUpgradeReconciler) setDefaultsForRollingUpdateStrategy(ruObj *up
 
 // RandomUpdate treats all the azs as a single unit and picks random nodes for update
 // and rolls out the update based on the input parameters
-func (r *RollingUpgradeReconciler) RandomUpdate(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, svc ec2iface.EC2API, KubeCtlCall string) (int, error) {
+func (r *RollingUpgradeReconciler) RandomUpdate(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, svc autoscalingiface.AutoScalingAPI, KubeCtlCall string) (int, error) {
 
 	value, ok := r.ruObjNameToASG.Load(ruObj.Name)
 	if !ok {
@@ -694,7 +690,7 @@ func (r *RollingUpgradeReconciler) RandomUpdate(ctx *context.Context, ruObj *upg
 	return nodesProcessed, nil
 }
 
-func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, i *autoscaling.Instance, currentLaunchConfigName string, KubeCtlCall string, svc ec2iface.EC2API, drainTimeout int, ch chan error) {
+func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, i *autoscaling.Instance, currentLaunchConfigName string, KubeCtlCall string, svc autoscalingiface.AutoScalingAPI, drainTimeout int, ch chan error) {
 
 	targetLaunchConfigName := aws.StringValue(i.LaunchConfigurationName)
 	targetInstanceID := aws.StringValue(i.InstanceId)
