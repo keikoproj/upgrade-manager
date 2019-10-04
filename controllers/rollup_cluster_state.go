@@ -121,7 +121,7 @@ func (c *ClusterStateImpl) getNextAvailableInstanceId(asgName string) string {
 	ClusterStateStore.Range(func(key interface{}, value interface{}) bool {
 		keyName, _ := key.(string)
 		state, _ := value.(string)
-		if strings.Contains(keyName, asgName) && strings.EqualFold(state, updateInitialized) {
+		if strings.HasPrefix(keyName, asgName) && strings.EqualFold(state, updateInitialized) {
 			instanceId = strings.TrimPrefix(keyName, fmt.Sprintf("%s-", asgName))
 			c.markUpdateInProgress(asgName, instanceId)
 			return false
