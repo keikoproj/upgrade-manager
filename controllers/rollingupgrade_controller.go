@@ -739,7 +739,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context, ruObj *u
 	r.Update(*ctx, ruObj)
 
 	// TODO(shri): Run validate. How?
-	r.ClusterState.markUpdateCompleted(ruObj.Spec.AsgName, *i.InstanceId)
+	r.ClusterState.markUpdateCompleted(*i.InstanceId)
 	ch <- nil
 	return
 }

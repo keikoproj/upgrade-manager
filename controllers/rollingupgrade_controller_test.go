@@ -278,7 +278,12 @@ func TestDrainNodePostDrainFailureToDrain(t *testing.T) {
 	// Force quit from the rest of the command
 	mockKubeCtlCall := "exit 1;"
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{DrainTimeout: -1},
+		},
+	}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
@@ -694,7 +699,8 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -741,8 +747,9 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 	mockID2 := "some-id-2"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
-	mockInstance2 := autoscaling.Instance{InstanceId: &mockID2, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockInstance2 := autoscaling.Instance{InstanceId: &mockID2, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
@@ -786,7 +793,8 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 	someAsg := "some-asg"
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -828,7 +836,7 @@ func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(int).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollingUpgrade/ name in map."))
+	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollup name in map."))
 }
 
 func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
@@ -838,7 +846,8 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -877,7 +886,8 @@ func TestRunRestackNoNodeName(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -921,7 +931,8 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -975,7 +986,8 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -1278,8 +1290,9 @@ func TestGetNextAvailableInstance(t *testing.T) {
 	mockAsgName := "some-asg"
 	mockInstanceName1 := "foo1"
 	mockInstanceName2 := "bar1"
-	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1}
-	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2}
+	az := "az-1"
+	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
+	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az}
 
 	instancesList := []*autoscaling.Instance{}
 	instancesList = append(instancesList, &instance1, &instance2)
@@ -1729,7 +1742,8 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 	someAsg := "some-asg"
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
