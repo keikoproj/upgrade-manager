@@ -3,8 +3,6 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/yaml.v2"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,10 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"gopkg.in/yaml.v2"
+
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/pkg/errors"
 
 	"github.com/aws/aws-sdk-go/service/autoscaling"
@@ -284,22 +285,21 @@ func TestDrainNodePostDrainFailureToDrain(t *testing.T) {
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 }
 
-type MockEC2Instance struct {
-	ec2iface.EC2API
+type MockAutoscalingGroup struct {
+	autoscalingiface.AutoScalingAPI
 	errorFlag bool
 	awsErr    awserr.Error
 }
 
-func (mockEC2Instance MockEC2Instance) TerminateInstances(input *ec2.TerminateInstancesInput) (*ec2.TerminateInstancesOutput, error) {
-	output := &ec2.TerminateInstancesOutput{}
-	if mockEC2Instance.errorFlag {
-		if mockEC2Instance.awsErr != nil {
-			return output, mockEC2Instance.awsErr
+func (mockAutoscalingGroup MockAutoscalingGroup) TerminateInstanceInAutoScalingGroup(input *autoscaling.TerminateInstanceInAutoScalingGroupInput) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
+	output := &autoscaling.TerminateInstanceInAutoScalingGroupOutput{}
+	if mockAutoscalingGroup.errorFlag {
+		if mockAutoscalingGroup.awsErr != nil {
+			return output, mockAutoscalingGroup.awsErr
 		}
 	}
-	name := input.InstanceIds[0]
-	instanceChange := ec2.InstanceStateChange{InstanceId: name}
-	output.TerminatingInstances = []*ec2.InstanceStateChange{&instanceChange}
+	asgChange := autoscaling.Activity{ActivityId: aws.String("xxx"), AutoScalingGroupName: aws.String("sss"), Cause: aws.String("xxx"), StartTime: aws.Time(time.Now()), StatusCode: aws.String("200"), StatusMessage: aws.String("success")}
+	output.Activity = &asgChange
 	return output, nil
 }
 
@@ -309,9 +309,8 @@ func TestTerminateNodeSuccess(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-	mockEC2Instance := MockEC2Instance{errorFlag: false, awsErr: nil}
-
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockEC2Instance)
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: false, awsErr: nil}
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockAutoscalingGroup)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -321,11 +320,11 @@ func TestTerminateNodeErrorNotFound(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-	mockEC2Instance := MockEC2Instance{errorFlag: true, awsErr: awserr.New("InvalidInstanceID.NotFound",
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New("InvalidInstanceID.NotFound",
 		"some message",
 		nil)}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockEC2Instance)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockAutoscalingGroup)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -335,11 +334,11 @@ func TestTerminateNodeErrorOtherError(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-	mockEC2Instance := MockEC2Instance{errorFlag: true, awsErr: awserr.New("some-other-aws-error",
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New("some-other-aws-error",
 		"some message",
 		errors.New("some error"))}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockEC2Instance)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockAutoscalingGroup)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("some error"))
 }
 
@@ -350,9 +349,9 @@ func TestTerminateNodePostTerminateScriptSuccess(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostTerminate.Script = "echo hello!"
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-	mockEC2Instance := MockEC2Instance{errorFlag: false, awsErr: nil}
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: false, awsErr: nil}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockEC2Instance)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockAutoscalingGroup)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -363,9 +362,9 @@ func TestTerminateNodePostTerminateScriptErrorNotFoundFromServer(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostTerminate.Script = "echo 'Error from server (NotFound)'; exit 1"
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-	mockEC2Instance := MockEC2Instance{errorFlag: false, awsErr: nil}
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: false, awsErr: nil}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockEC2Instance)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockAutoscalingGroup)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -376,9 +375,9 @@ func TestTerminateNodePostTerminateScriptErrorOtherError(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostTerminate.Script = "exit 1"
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-	mockEC2Instance := MockEC2Instance{errorFlag: false, awsErr: nil}
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: false, awsErr: nil}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockEC2Instance)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockAutoscalingGroup)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to run postTerminate script: "))
 }
@@ -704,7 +703,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg},
 	}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -729,7 +728,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 
 	ctx := context.TODO()
 
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, "exit 0;")
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, "exit 0;")
 	g.Expect(nodesProcessed).To(gomega.Equal(1))
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -750,7 +749,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -776,7 +775,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 
 	ctx := context.TODO()
 
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, "exit 0;")
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, "exit 0;")
 	g.Expect(nodesProcessed).To(gomega.Equal(2))
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -794,7 +793,7 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -812,7 +811,7 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 	ctx := context.TODO()
 
 	// This execution should not perform drain or termination, but should pass
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, KubeCtlBinary)
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(nodesProcessed).To(gomega.Equal(1))
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -821,12 +820,12 @@ func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
 	ctx := context.TODO()
 
 	g.Expect(rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)).To(gomega.BeNil())
-	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, KubeCtlBinary)
+	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(int).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollingUpgrade/ name in map."))
@@ -846,7 +845,7 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -866,7 +865,7 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 	ctx := context.TODO()
 
 	// This execution gets past the different launch config check, but fails to be found at the node level
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, KubeCtlBinary)
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(nodesProcessed).To(gomega.Equal(1))
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -885,7 +884,7 @@ func TestRunRestackNoNodeName(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -910,7 +909,7 @@ func TestRunRestackNoNodeName(t *testing.T) {
 	ctx := context.TODO()
 
 	// This execution gets past the different launch config check, but since there is no node name, it is skipped
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, KubeCtlBinary)
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(nodesProcessed).To(gomega.Equal(1))
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -938,7 +937,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 			PreDrain: somePreDrain,
 		},
 	}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -964,7 +963,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 	ctx := context.TODO()
 
 	// This execution gets past the different launch config check, but fails to drain the node because of a predrain failing script
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, KubeCtlBinary)
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(nodesProcessed).To(gomega.Equal(0))
 	g.Expect(err.Error()).To(gomega.HavePrefix(ruObj.Name + ": Predrain script failed"))
 }
@@ -984,7 +983,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
 	// Error flag set, should return error
-	mockEC2Instance := MockEC2Instance{errorFlag: true, awsErr: awserr.New("some-other-aws-error",
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New("some-other-aws-error",
 		"some message",
 		errors.New("some error"))}
 
@@ -1012,7 +1011,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	ctx := context.TODO()
 
 	// This execution gets past the different launch config check, but fails to terminate node
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, "exit 0;")
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, "exit 0;")
 	g.Expect(nodesProcessed).To(gomega.Equal(0))
 	g.Expect(err.Error()).To(gomega.ContainSubstring("some error"))
 }
@@ -1700,7 +1699,7 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 			Strategy: upgrademgrv1alpha1.UpdateStrategy{Type: upgrademgrv1alpha1.RandomUpdateStrategy},
 		},
 	}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1719,7 +1718,7 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 	ctx := context.TODO()
 
 	// This execution gets past the different launch config check, but since there is no node name, it is skipped
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, KubeCtlBinary)
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(nodesProcessed).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -1744,7 +1743,7 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 			},
 		},
 	}
-	mockEC2Instance := MockEC2Instance{}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
 
 	mgr, err := manager.New(cfg, manager.Options{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1762,7 +1761,7 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 	ctx := context.TODO()
 
 	// This execution should not perform drain or termination, but should pass
-	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockEC2Instance, KubeCtlBinary)
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(nodesProcessed).To(gomega.Equal(1))
 }
