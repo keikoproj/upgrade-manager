@@ -39,7 +39,7 @@ type ClusterState interface {
 	instanceUpdateInProgress(instanceId string) bool
 	instanceUpdateCompleted(instanceId string) bool
 	deleteEntryOfAsg(asgName string) bool
-	getNextAvailableInstanceId(asgName string) string
+	getNextAvailableInstanceIdInAz(asgName string, azName string) string
 	initializeAsg(asgName string, instances []*autoscaling.Instance)
 	addInstanceState(instanceData *InstanceData)
 	updateInstanceState(instanceId, instanceState string)
@@ -127,14 +127,16 @@ func (c *ClusterStateImpl) initializeAsg(asgName string, instances []*autoscalin
 
 // getNextAvailableInstanceId returns the id of the next instance available for update in an ASG
 // adding a mutex to avoid the race conditions and same instance returned for 2 go-routines
-func (c *ClusterStateImpl) getNextAvailableInstanceId(asgName string) string {
+func (c *ClusterStateImpl) getNextAvailableInstanceIdInAz(asgName string, azName string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	instanceId := ""
 	ClusterStateStore.Range(func(key interface{}, value interface{}) bool {
 		state, _ := value.(*InstanceData)
-		if state.AsgName == asgName && state.InstanceState == updateInitialized {
+		if state.AsgName == asgName &&
+			(azName == "" || state.AzName == azName) &&
+			state.InstanceState == updateInitialized {
 			c.markUpdateInProgress(state.Id)
 			instanceId = state.Id
 			return false

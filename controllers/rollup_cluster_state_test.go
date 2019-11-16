@@ -128,7 +128,7 @@ func TestInstanceStateUpdateSequence(t *testing.T) {
 	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeFalse())
 }
 
-func TestGetNextAvailableInstanceId(t *testing.T) {
+func TestGetNextAvailableInstanceIdInAz(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	populateClusterState()
@@ -138,7 +138,9 @@ func TestGetNextAvailableInstanceId(t *testing.T) {
 
 	clusterState.markUpdateInProgress(mockInstance1)
 
-	g.Expect(clusterState.getNextAvailableInstanceId(mockAsgName)).To(gomega.ContainSubstring(mockInstance2))
+	g.Expect(clusterState.getNextAvailableInstanceIdInAz(mockAsgName, "az-1")).To(gomega.ContainSubstring(mockInstance2))
+
+	g.Expect(clusterState.getNextAvailableInstanceIdInAz(mockAsgName, "az-2")).To(gomega.ContainSubstring(""))
 }
 
 func populateClusterState() {
