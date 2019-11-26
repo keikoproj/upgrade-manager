@@ -39,7 +39,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
 
 	"github.com/go-logr/logr"
-	"github.com/keikoproj/upgrade-manager/pkg/log"
+	log "github.com/keikoproj/upgrade-manager/pkg/log"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"

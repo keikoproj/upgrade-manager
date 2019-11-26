@@ -3,12 +3,13 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	log "github.com/keikoproj/upgrade-manager/pkg/log"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
