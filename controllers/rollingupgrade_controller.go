@@ -230,9 +230,11 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	result, err := svc.TerminateInstanceInAutoScalingGroup(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case "InvalidInstanceID.NotFound":
+			if strings.Contains(aerr.Message(), "not found") {
 				log.Printf("Instance %s not found. Moving on\n", instanceID)
+				return nil
+			}
+			switch aerr.Code() {
 			case autoscaling.ErrCodeScalingActivityInProgressFault:
 				log.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
 			case autoscaling.ErrCodeResourceContentionFault:
@@ -637,7 +639,7 @@ func (r *RollingUpgradeReconciler) RandomUpdate(ctx *context.Context, ruObj *upg
 
 	value, ok := r.ruObjNameToASG.Load(ruObj.Name)
 	if !ok {
-		msg := "Failed to find rollup name in map."
+		msg := "Failed to find rollingUpgrade name in map."
 		log.Printf(msg)
 		return 0, errors.New(msg)
 	}
