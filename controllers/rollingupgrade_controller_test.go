@@ -1032,6 +1032,94 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	g.Expect(err.Error()).To(gomega.ContainSubstring("some error"))
 }
 
+func constructAutoScalingInstance(instanceId string, launchConfigName string, azName string) *autoscaling.Instance {
+	return &autoscaling.Instance{InstanceId: &instanceId, LaunchConfigurationName: &launchConfigName, AvailabilityZone: &azName}
+}
+
+func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	someAsg := "some-asg"
+	mockID := "some-id"
+	someLaunchConfig := "some-launch-config"
+	diffLaunchConfig := "different-launch-config"
+	az := "az-1"
+	az2 := "az-2"
+	az3 := "az-3"
+	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances: []*autoscaling.Instance{
+			constructAutoScalingInstance(mockID+"1"+az, diffLaunchConfig, az),
+			constructAutoScalingInstance(mockID+"2"+az, diffLaunchConfig, az),
+			constructAutoScalingInstance(mockID+"1"+az2, diffLaunchConfig, az2),
+			constructAutoScalingInstance(mockID+"2"+az2, diffLaunchConfig, az2),
+			constructAutoScalingInstance(mockID+"3"+az2, diffLaunchConfig, az2),
+			constructAutoScalingInstance(mockID+"1"+az3, diffLaunchConfig, az3),
+			constructAutoScalingInstance(mockID+"2"+az3, diffLaunchConfig, az3),
+			constructAutoScalingInstance(mockID+"3"+az3, diffLaunchConfig, az3),
+			constructAutoScalingInstance(mockID+"4"+az3, diffLaunchConfig, az3),
+		},
+	}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Type: upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy,
+			},
+		},
+	}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
+
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	fooNode1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/9213851"}}
+	fooNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/1234501"}}
+	correctNode1az1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "1" + az},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2az1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "2" + az},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode1az2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "1" + az2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2az2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "2" + az2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode3az2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "3" + az2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode1az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "1" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "2" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode3az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "3" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode4az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "4" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+
+	nodeList := corev1.NodeList{Items: []corev1.Node{
+		fooNode1, fooNode2,
+		correctNode1az1, correctNode2az1,
+		correctNode1az2, correctNode2az2, correctNode3az2,
+		correctNode1az3, correctNode2az3, correctNode3az3, correctNode4az3,
+	}}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		NodeList:        &nodeList,
+		ClusterState:    NewClusterState(),
+	}
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	ctx := context.TODO()
+
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, "exit 0;")
+	g.Expect(nodesProcessed).To(gomega.Equal(9))
+	g.Expect(err).To(gomega.BeNil())
+}
+
 func TestUpdateInstances(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 

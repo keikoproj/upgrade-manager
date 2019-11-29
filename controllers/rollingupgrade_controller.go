@@ -357,6 +357,9 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 	case upgrademgrv1alpha1.RandomUpdateStrategy:
 		log.Printf("Random update triggered for %s with strategy spec %+v", ruObj.Name, ruObj.Spec.Strategy)
 		return r.RandomUpdate(ctx, ruObj, svc, KubeCtlCall)
+	case upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy:
+		log.Printf("Uniform update across AZ's triggered for %s with strategy spec %+v", ruObj.Name, ruObj.Spec.Strategy)
+		return r.UniformAcrossAzUpdate(ctx, ruObj, svc, KubeCtlCall)
 	default:
 		error := errors.New(fmt.Sprintf("%s is not one of the predefined update strategies!", ruObj.Spec.Strategy.Type))
 		return 0, error
@@ -789,6 +792,7 @@ func (r *RollingUpgradeReconciler) UniformAcrossAzUpdate(ctx *context.Context,
 			return processedInstances, err
 		}
 	}
+	r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
 	return processedInstances, nil
 }
 
