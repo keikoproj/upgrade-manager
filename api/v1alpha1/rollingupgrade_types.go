@@ -95,6 +95,9 @@ const (
 	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
 	RandomUpdateStrategy UpdateStrategyType = "randomUpdate"
 
+	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
+	UniformAcrossAzUpdateStrategy UpdateStrategyType = "uniformAcrossAzUpdate"
+
 	// Other update strategies such as rolling update by Az or rolling update with a predifined instance list
 	// can be implemented in future by adding more update strategy types
 )
