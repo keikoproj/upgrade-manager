@@ -591,7 +591,8 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 	}
 
 	// validating the strategy type
-	if strategy.Type != upgrademgrv1alpha1.RandomUpdateStrategy {
+	if strategy.Type != upgrademgrv1alpha1.RandomUpdateStrategy &&
+		strategy.Type != upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy {
 		err := errors.New(fmt.Sprintf("%s: Invalid value for strategy type - %s", ruObj.Name, strategy.Type))
 		log.Print(err)
 		return err
@@ -706,8 +707,6 @@ func (r *RollingUpgradeReconciler) RandomUpdate(ctx *context.Context,
 
 type nodesProcessedState struct {
 	TotalNodes          int
-	ProcessedNodes      int
-	TriggeredNodes      int
 	MaxUnavailableNodes int
 }
 
@@ -729,11 +728,6 @@ func (r *RollingUpgradeReconciler) UniformAcrossAzUpdate(ctx *context.Context,
 	asg := value.(*autoscaling.Group)
 	log.Printf("Nodes in ASG %s that *might* need to be updated: %d\n", *asg.AutoScalingGroupName, len(asg.Instances))
 
-	// set the state of instances in the ASG to new in the cluster store
-	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
-
-	currentLaunchConfigName := aws.StringValue(asg.LaunchConfigurationName)
-
 	// No further processing is required if ASG doesn't have an instance running
 	totalNodes := len(asg.Instances)
 	// No further processing is required if ASG doesn't have an instance running
@@ -741,6 +735,11 @@ func (r *RollingUpgradeReconciler) UniformAcrossAzUpdate(ctx *context.Context,
 		log.Printf("Total nodes found for %s is 0", ruObj.Name)
 		return 0, nil
 	}
+
+	// set the state of instances in the ASG to new in the cluster store
+	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
+
+	currentLaunchConfigName := aws.StringValue(asg.LaunchConfigurationName)
 
 	// find total number of nodes in each AZ
 	processedStateByAz := make(map[string]*nodesProcessedState)
