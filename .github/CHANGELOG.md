@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file.
 
 
+## [v0.1] - 2019-12-02
+
+* Add semaphore ci (#10)
+* Added sample CRD and spec field definitions for random update strategy (#9)
+* Mark maxUnavailable and drainTimeout as optional. (#12)
+* Fix instances not available error (#21)
+* using autoscaling:TerminateInstanceInAutoScalingGroup (#20)
+* update Go modules & mirate to Go 1.13.1 (#23)
+* Fixes for autoscaling API changes (#26)
+
 ## [v0.1] - 2019-08-28
 
 ### Added
