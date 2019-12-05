@@ -11,11 +11,6 @@ import (
 // getMaxUnavailable calculates and returns the maximum unavailable nodes
 // takes an update strategy and total number of nodes as input
 func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes int) int {
-	// Below are the constants set in intstr package
-	// const (
-	//	Int    Type = iota // The IntOrString holds an int.
-	//	String             // The IntOrString holds a string.
-	//)
 	maxUnavailable := 1
 	if strategy.MaxUnavailable.Type == 0 {
 		maxUnavailable = int(strategy.MaxUnavailable.IntVal)
