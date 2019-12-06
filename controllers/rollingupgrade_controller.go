@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"strconv"
@@ -33,11 +32,14 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	awsclient "github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
 
 	"github.com/go-logr/logr"
+	log "github.com/keikoproj/upgrade-manager/pkg/log"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -73,6 +75,14 @@ const (
 	// ShellBinary is the path to the shell executable
 	ShellBinary = "/bin/sh"
 )
+
+var DefaultRetryer = awsclient.DefaultRetryer{
+	NumMaxRetries:    250,
+	MinThrottleDelay: time.Second * 5,
+	MaxThrottleDelay: time.Second * 20,
+	MinRetryDelay:    time.Second * 1,
+	MaxRetryDelay:    time.Second * 5,
+}
 
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
 type RollingUpgradeReconciler struct {
@@ -223,9 +233,11 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	result, err := svc.TerminateInstanceInAutoScalingGroup(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case "InvalidInstanceID.NotFound":
+			if strings.Contains(aerr.Message(), "not found") {
 				log.Printf("Instance %s not found. Moving on\n", instanceID)
+				return nil
+			}
+			switch aerr.Code() {
 			case autoscaling.ErrCodeScalingActivityInProgressFault:
 				log.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
 			case autoscaling.ErrCodeResourceContentionFault:
@@ -460,11 +472,15 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 
 	r.setDefaults(ruObj)
 
-	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String(ruObj.Spec.Region)},
-	)
+	config := aws.NewConfig().WithRegion(ruObj.Spec.Region)
+	config = config.WithCredentialsChainVerboseErrors(true)
+	config = request.WithRetryer(config, log.NewRetryLogger(DefaultRetryer))
+	sess, err := session.NewSession(config)
+	if err != nil {
+		log.Fatalf("failed to create asg client, %v", err)
+	}
 	svc := autoscaling.New(sess)
-	err := r.populateAsg(ruObj, svc)
+	err = r.populateAsg(ruObj, svc)
 	if err != nil {
 		return r.finishExecution(StatusError, 0, ctx, ruObj)
 	}

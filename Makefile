@@ -1,4 +1,4 @@
-VERSION=0.2-dev
+VERSION=0.4-dev
 # Image URL to use all building/pushing image targets
 IMG ?= keikoproj/rolling-upgrade-controller:${VERSION}
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
@@ -43,7 +43,6 @@ vet:
 
 # Generate code
 generate: controller-gen
-	$(CONTROLLER_GEN) --help
 	$(CONTROLLER_GEN) object:headerFile=./hack/boilerplate.go.txt paths=./api/...
 
 # Build the docker image

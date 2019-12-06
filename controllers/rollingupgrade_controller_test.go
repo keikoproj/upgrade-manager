@@ -3,12 +3,13 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	log "github.com/keikoproj/upgrade-manager/pkg/log"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -330,7 +331,7 @@ func TestTerminateNodeErrorNotFound(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
 	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New("InvalidInstanceID.NotFound",
-		"some message",
+		"ValidationError: Instance Id not found - No managed instance found for instance ID i-0bba",
 		nil)}
 
 	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, mockAutoscalingGroup)
