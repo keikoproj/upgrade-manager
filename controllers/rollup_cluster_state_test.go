@@ -27,128 +27,129 @@ var clusterState = NewClusterState()
 func TestMarkUpdateInProgress(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg"
-	mockNodeName := "some-node-name"
-	clusterState.markUpdateInProgress(mockAsgName, mockNodeName)
+	populateClusterState()
+	mockNodeName := "instance-1"
+	clusterState.markUpdateInProgress(mockNodeName)
 
-	g.Expect(clusterState.instanceUpdateInProgress(mockAsgName, mockNodeName)).To(gomega.BeTrue())
+	g.Expect(clusterState.instanceUpdateInProgress(mockNodeName)).To(gomega.BeTrue())
 }
 
 func TestMarkUpdateCompleted(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg"
-	mockNodeName := "some-node-name"
-	clusterState.markUpdateCompleted(mockAsgName, mockNodeName)
+	populateClusterState()
+	mockNodeName := "instance-1"
+	clusterState.markUpdateCompleted(mockNodeName)
 
-	g.Expect(clusterState.instanceUpdateCompleted(mockAsgName, mockNodeName)).To(gomega.BeTrue())
+	g.Expect(clusterState.instanceUpdateCompleted(mockNodeName)).To(gomega.BeTrue())
 }
 
 func TestMarkUpdateInitialized(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg"
-	mockNodeName := "some-node-name"
-	clusterState.markUpdateInitialized(mockAsgName, mockNodeName)
+	populateClusterState()
+	mockNodeName := "instance-1"
+	clusterState.markUpdateInitialized(mockNodeName)
 
-	g.Expect(clusterState.instanceUpdateInitialized(mockAsgName, mockNodeName)).To(gomega.BeTrue())
+	g.Expect(clusterState.instanceUpdateInitialized(mockNodeName)).To(gomega.BeTrue())
 }
 
 func TestInstanceUpdateInitialized(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg-1"
-	mockNodeName := "some-node-name-1"
-
-	g.Expect(clusterState.instanceUpdateInitialized(mockAsgName, mockNodeName)).To(gomega.BeFalse())
+	mockNodeName := "instance-3"
+	g.Expect(clusterState.instanceUpdateInitialized(mockNodeName)).To(gomega.BeFalse())
 }
 
-func TestIinstanceUpdateInProgress(t *testing.T) {
+func TestInstanceUpdateInProgress(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg-2"
-	mockNodeName := "some-node-name-2"
+	populateClusterState()
+	mockNodeName := "instance-2"
 
-	g.Expect(clusterState.instanceUpdateInProgress(mockAsgName, mockNodeName)).To(gomega.BeFalse())
+	g.Expect(clusterState.instanceUpdateInProgress(mockNodeName)).To(gomega.BeFalse())
 }
 
-func TestIinstanceUpdateCompleted(t *testing.T) {
+func TestInstanceUpdateCompleted(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg-3"
-	mockNodeName := "some-node-name-3"
+	populateClusterState()
+	mockNodeName := "instance-1"
 
-	g.Expect(clusterState.instanceUpdateCompleted(mockAsgName, mockNodeName)).To(gomega.BeFalse())
+	g.Expect(clusterState.instanceUpdateCompleted(mockNodeName)).To(gomega.BeFalse())
 }
 
 func TestUpdateInstanceState(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg"
-	mockNodeName := "some-node-name"
+	populateClusterState()
+	mockNodeName := "instance-1"
 	mockInstanceState := "to-be-updated"
-	clusterState.updateInstanceState(mockAsgName, mockNodeName, mockInstanceState)
+	clusterState.updateInstanceState(mockNodeName, mockInstanceState)
 
-	g.Expect(clusterState.getInstanceState(mockAsgName, mockNodeName)).To(gomega.ContainSubstring(mockInstanceState))
+	g.Expect(clusterState.getInstanceState(mockNodeName)).To(gomega.ContainSubstring(mockInstanceState))
 }
 
 func TestInitializeAsg(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg"
-	mockInstance1 := "mock-instance-1"
-	mockInstance2 := "mock-instance-2"
-	instances := []*autoscaling.Instance{}
-	instances = append(instances, &autoscaling.Instance{InstanceId: &mockInstance1})
-	instances = append(instances, &autoscaling.Instance{InstanceId: &mockInstance2})
-	clusterState.initializeAsg(mockAsgName, instances)
+	populateClusterState()
 
-	for _, instance := range instances {
-		g.Expect(clusterState.instanceUpdateInitialized(mockAsgName, *instance.InstanceId)).To(gomega.BeTrue())
+	instanceIds := []string{"instance-1", "instance-2"}
+	for _, instance := range instanceIds {
+		g.Expect(clusterState.instanceUpdateInitialized(instance)).To(gomega.BeTrue())
 	}
 }
 
 func TestDeleteEntryOfAsg(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg-1"
-	mockNodeName := "some-node-1"
-	clusterState.markUpdateInProgress(mockAsgName, mockNodeName)
+	populateClusterState()
+	mockAsgName := "asg-1"
 
 	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
 	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeFalse())
-
 }
 
 func TestInstanceStateUpdateSequence(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg-2"
-	mockNodeName := "some-node-2"
-	clusterState.markUpdateInitialized(mockAsgName, mockNodeName)
-	g.Expect(clusterState.instanceUpdateInitialized(mockAsgName, mockNodeName)).To(gomega.BeTrue())
-	clusterState.markUpdateInProgress(mockAsgName, mockNodeName)
-	g.Expect(clusterState.instanceUpdateInProgress(mockAsgName, mockNodeName)).To(gomega.BeTrue())
-	clusterState.markUpdateCompleted(mockAsgName, mockNodeName)
-	g.Expect(clusterState.instanceUpdateCompleted(mockAsgName, mockNodeName)).To(gomega.BeTrue())
+	populateClusterState()
+	mockAsgName := "asg-1"
+	mockNodeName := "instance-1"
+	clusterState.markUpdateInitialized(mockNodeName)
+	g.Expect(clusterState.instanceUpdateInitialized(mockNodeName)).To(gomega.BeTrue())
+	clusterState.markUpdateInProgress(mockNodeName)
+	g.Expect(clusterState.instanceUpdateInProgress(mockNodeName)).To(gomega.BeTrue())
+	clusterState.markUpdateCompleted(mockNodeName)
+	g.Expect(clusterState.instanceUpdateCompleted(mockNodeName)).To(gomega.BeTrue())
 
 	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
 	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeFalse())
 }
 
-func TestGetNextAvailableInstanceId(t *testing.T) {
+func TestGetNextAvailableInstanceIdInAz(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mockAsgName := "some-asg-2"
-	mockInstance1 := "mock-instance-1"
-	mockInstance2 := "mock-instance-2"
+	populateClusterState()
+	mockAsgName := "asg-1"
+	mockInstance1 := "instance-1"
+	mockInstance2 := "instance-2"
+
+	clusterState.markUpdateInProgress(mockInstance1)
+
+	g.Expect(clusterState.getNextAvailableInstanceIdInAz(mockAsgName, "az-1")).To(gomega.ContainSubstring(mockInstance2))
+
+	g.Expect(clusterState.getNextAvailableInstanceIdInAz(mockAsgName, "az-2")).To(gomega.ContainSubstring(""))
+}
+
+func populateClusterState() {
+	asgName := "asg-1"
+	instance1 := "instance-1"
+	instance2 := "instance-2"
+	az := "az-1"
 	instances := []*autoscaling.Instance{}
-	instances = append(instances, &autoscaling.Instance{InstanceId: &mockInstance1})
-	instances = append(instances, &autoscaling.Instance{InstanceId: &mockInstance2})
-	clusterState.deleteEntryOfAsg(mockAsgName)
-
-	clusterState.initializeAsg(mockAsgName, instances)
-	clusterState.markUpdateInProgress(mockAsgName, mockInstance1)
-
-	g.Expect(clusterState.getNextAvailableInstanceId(mockAsgName)).To(gomega.ContainSubstring(mockInstance2))
+	instances = append(instances, &autoscaling.Instance{InstanceId: &instance1, AvailabilityZone: &az})
+	instances = append(instances, &autoscaling.Instance{InstanceId: &instance2, AvailabilityZone: &az})
+	clusterState.initializeAsg(asgName, instances)
 }
