@@ -41,6 +41,7 @@ import (
 	"github.com/go-logr/logr"
 	log "github.com/keikoproj/upgrade-manager/pkg/log"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -231,8 +232,7 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 
 func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
 	var (
-		nodeJoined bool
-		started    = time.Now()
+		started = time.Now()
 	)
 	for {
 		if time.Since(started) >= (time.Second * time.Duration(TerminationTimeoutSeconds)) {
@@ -240,18 +240,8 @@ func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInter
 			return false, nil
 		}
 
-		nodeList, err := nodeInterface.List(metav1.ListOptions{})
-		if err != nil {
-			return false, err
-		}
-
-		for _, node := range nodeList.Items {
-			if node.GetName() == nodeName {
-				nodeJoined = true
-			}
-		}
-
-		if !nodeJoined {
+		_, err := nodeInterface.Get(nodeName, metav1.GetOptions{})
+		if v1errors.IsNotFound(err) {
 			log.Printf("node %s is unjoined from cluster, upgrade will proceed", nodeName)
 			break
 		}
