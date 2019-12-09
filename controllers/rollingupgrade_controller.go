@@ -76,6 +76,13 @@ const (
 	ShellBinary = "/bin/sh"
 )
 
+var (
+	// TerminationTimeoutSeconds is the timeout threshold for waiting for a node object unjoin
+	TerminationTimeoutSeconds = 3600
+	// TerminationSleepIntervalSeconds is the polling interval for checking if a node object is unjoined
+	TerminationSleepIntervalSeconds = 30
+)
+
 var DefaultRetryer = awsclient.DefaultRetryer{
 	NumMaxRetries:    250,
 	MinThrottleDelay: time.Second * 5,
@@ -220,6 +227,40 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 		return
 	}
 	errChan <- nil
+}
+
+func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInterface v1.NodeInterface) error {
+	var (
+		nodeJoined bool
+		started    = time.Now()
+	)
+	for {
+
+		if time.Since(started) > (time.Second * time.Duration(TerminationTimeoutSeconds)) {
+			log.Println("WaitForTermination timed out while waiting for node to unjoin")
+			break
+		}
+
+		nodeList, err := nodeInterface.List(metav1.ListOptions{})
+		if err != nil {
+			return err
+		}
+
+		for _, node := range nodeList.Items {
+			if node.GetName() == nodeName {
+				nodeJoined = true
+			}
+		}
+
+		if !nodeJoined {
+			log.Printf("node %s is unjoined from cluster, upgrade will proceed", nodeName)
+			break
+		}
+
+		log.Printf("node %s is still joined to clutster, will wait %vs and retry", nodeName, TerminationSleepIntervalSeconds)
+		time.Sleep(time.Duration(TerminationSleepIntervalSeconds) * time.Second)
+	}
+	return nil
 }
 
 // TerminateNode actually terminates the given node.
@@ -756,6 +797,12 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 
 	// Terminate instance.
 	err = r.TerminateNode(ruObj, targetInstanceID, svc)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	err = r.WaitForTermination(nodeName, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
 		ch <- err
 		return
