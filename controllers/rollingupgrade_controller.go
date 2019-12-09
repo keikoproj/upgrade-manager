@@ -235,10 +235,9 @@ func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInter
 		started    = time.Now()
 	)
 	for {
-
-		if time.Since(started) > (time.Second * time.Duration(TerminationTimeoutSeconds)) {
+		if time.Since(started) >= (time.Second * time.Duration(TerminationTimeoutSeconds)) {
 			log.Println("WaitForTermination timed out while waiting for node to unjoin")
-			break
+			return false, nil
 		}
 
 		nodeList, err := nodeInterface.List(metav1.ListOptions{})
