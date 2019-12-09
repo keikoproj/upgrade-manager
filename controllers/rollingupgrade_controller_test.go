@@ -1956,12 +1956,15 @@ func TestWaitForTermination(t *testing.T) {
 	}
 	nodeInterface.Create(mockNode)
 
-	err = rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
-	g.Expect(err).To(gomega.HaveOccurred())
+	unjoined, err := rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(unjoined).To(gomega.BeFalse())
 
 	nodeInterface.Delete(mockNodeName, &metav1.DeleteOptions{})
-	err = rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+
+	unjoined, err = rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(unjoined).To(gomega.BeTrue())
 }
 
 func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {

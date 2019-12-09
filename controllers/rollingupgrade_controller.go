@@ -229,7 +229,7 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 	errChan <- nil
 }
 
-func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInterface v1.NodeInterface) error {
+func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
 	var (
 		nodeJoined bool
 		started    = time.Now()
@@ -243,7 +243,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInter
 
 		nodeList, err := nodeInterface.List(metav1.ListOptions{})
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		for _, node := range nodeList.Items {
@@ -260,7 +260,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInter
 		log.Printf("node %s is still joined to clutster, will wait %vs and retry", nodeName, TerminationSleepIntervalSeconds)
 		time.Sleep(time.Duration(TerminationSleepIntervalSeconds) * time.Second)
 	}
-	return nil
+	return true, nil
 }
 
 // TerminateNode actually terminates the given node.
@@ -802,10 +802,14 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 		return
 	}
 
-	err = r.WaitForTermination(nodeName, r.generatedClient.CoreV1().Nodes())
+	unjoined, err := r.WaitForTermination(nodeName, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
 		ch <- err
 		return
+	}
+
+	if !unjoined {
+		log.Warnf("termination waiter completed but %s is still joined, will proceed with upgrade", nodeName)
 	}
 
 	ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
