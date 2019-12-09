@@ -41,6 +41,7 @@ import (
 	"github.com/go-logr/logr"
 	log "github.com/keikoproj/upgrade-manager/pkg/log"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -74,6 +75,13 @@ const (
 	KubeCtlBinary = "/usr/local/bin/kubectl"
 	// ShellBinary is the path to the shell executable
 	ShellBinary = "/bin/sh"
+)
+
+var (
+	// TerminationTimeoutSeconds is the timeout threshold for waiting for a node object unjoin
+	TerminationTimeoutSeconds = 3600
+	// TerminationSleepIntervalSeconds is the polling interval for checking if a node object is unjoined
+	TerminationSleepIntervalSeconds = 30
 )
 
 var DefaultRetryer = awsclient.DefaultRetryer{
@@ -220,6 +228,28 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 		return
 	}
 	errChan <- nil
+}
+
+func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
+	var (
+		started = time.Now()
+	)
+	for {
+		if time.Since(started) >= (time.Second * time.Duration(TerminationTimeoutSeconds)) {
+			log.Println("WaitForTermination timed out while waiting for node to unjoin")
+			return false, nil
+		}
+
+		_, err := nodeInterface.Get(nodeName, metav1.GetOptions{})
+		if v1errors.IsNotFound(err) {
+			log.Printf("node %s is unjoined from cluster, upgrade will proceed", nodeName)
+			break
+		}
+
+		log.Printf("node %s is still joined to clutster, will wait %vs and retry", nodeName, TerminationSleepIntervalSeconds)
+		time.Sleep(time.Duration(TerminationSleepIntervalSeconds) * time.Second)
+	}
+	return true, nil
 }
 
 // TerminateNode actually terminates the given node.
@@ -759,6 +789,16 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	if err != nil {
 		ch <- err
 		return
+	}
+
+	unjoined, err := r.WaitForTermination(nodeName, r.generatedClient.CoreV1().Nodes())
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	if !unjoined {
+		log.Warnf("termination waiter completed but %s is still joined, will proceed with upgrade", nodeName)
 	}
 
 	ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
