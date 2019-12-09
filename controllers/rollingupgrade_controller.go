@@ -367,7 +367,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 
 	value, ok := r.ruObjNameToASG.Load(ruObj.Name)
 	if !ok {
-		msg := "Failed to find rollup name in map."
+		msg := "Failed to find rollingUpgrade name in map."
 		log.Printf(msg)
 		return 0, errors.New(msg)
 	}
