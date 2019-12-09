@@ -2,6 +2,8 @@
 
 > Reliable, extensible rolling-upgrades of Autoscaling groups in Kubernetes
 
+![Build Status](https://keikoproj-upgrade-manager.semaphoreci.com/badges/upgrade-manager.svg)
+
 RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates of instances in an AutoScaling group using a CRD and a controller.
 
 ## What does it do?
@@ -19,7 +21,9 @@ RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates 
   - `postDrain.postWaitScript`: The script to run after the node is drained and the waitSeconds have passed. This can be used for ensuring that the drained pods actually were able to start elsewhere.
   - `nodeIntervalSeconds`: The amount of time in seconds to wait after each node in the ASG is terminated.
   - `postTerminate.script`: Optional bash script to execute after the node has terminated.
-  - `strategy.type`: This field is optional and currently only random update strategy is supported. Refer to [random_update_strategy.yaml](examples/random_update_strategy.yaml) for sample custom resource definition.
+  - `strategy.type`: This field is optional and currently two strategies are supported
+    - `randomUpdate` - Default is type is not specified. Picks nodes randomly for updating. Refer to [random_update_strategy.yaml](examples/random_update_strategy.yaml) for sample custom resource definition.
+    - `uniformAcrossAzUpdate` - Picks same number of nodes or same percentage of nodes from each AZ for update. Refer to [uniform_across_az_update_strategy.yaml](examples/uniform_across_az_update_strategy.yaml) for sample custom resource definition.
   - `strategy.maxUnavailable`: Optional field. The number of nodes that can be unavailable during rolling upgrade, can be specified as number of nodes or the percent of total number of nodes. Default is "1".
   - `strategy.drainTimeout`: Optional field. Node will be terminated after drain timeout even if `kubectl drain` has not been completed and value has to be specified in seconds. Default is -1.
 

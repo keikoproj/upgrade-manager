@@ -17,9 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	"fmt"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
-	"strings"
 	"sync"
 )
 
@@ -34,17 +32,26 @@ const (
 
 // ClusterState contains the methods to store the instance states during a cluster update
 type ClusterState interface {
-	markUpdateInitialized(asgName, instanceId string)
-	markUpdateInProgress(asgName, instanceId string)
-	markUpdateCompleted(asgName, instanceId string)
-	instanceUpdateInitialized(asgName, instanceId string) bool
-	instanceUpdateInProgress(asgName, instanceId string) bool
-	instanceUpdateCompleted(asgName, instanceId string) bool
+	markUpdateInitialized(instanceId string)
+	markUpdateInProgress(instanceId string)
+	markUpdateCompleted(instanceId string)
+	instanceUpdateInitialized(instanceId string) bool
+	instanceUpdateInProgress(instanceId string) bool
+	instanceUpdateCompleted(instanceId string) bool
 	deleteEntryOfAsg(asgName string) bool
-	getNextAvailableInstanceId(asgName string) string
+	getNextAvailableInstanceIdInAz(asgName string, azName string) string
 	initializeAsg(asgName string, instances []*autoscaling.Instance)
-	updateInstanceState(asgName, instanceId, instanceState string)
-	getInstanceState(asgName, instanceId string) string
+	addInstanceState(instanceData *InstanceData)
+	updateInstanceState(instanceId, instanceState string)
+	getInstanceState(instanceId string) string
+}
+
+type InstanceData struct {
+	Id            string
+	AmiId         string
+	AsgName       string
+	AzName        string
+	InstanceState string
 }
 
 // ClusterStateImpl implements the ClusterState interface
@@ -61,23 +68,23 @@ func NewClusterState() ClusterState {
 }
 
 // markUpdateInProgress updates the instance state to in-progresss
-func (c *ClusterStateImpl) markUpdateInProgress(asgName, instanceId string) {
-	c.updateInstanceState(asgName, instanceId, updateInProgress)
+func (c *ClusterStateImpl) markUpdateInProgress(instanceId string) {
+	c.updateInstanceState(instanceId, updateInProgress)
 }
 
 // markUpdateCompleted updates the instance state to completed
-func (c *ClusterStateImpl) markUpdateCompleted(asgName, instanceId string) {
-	c.updateInstanceState(asgName, instanceId, updateCompleted)
+func (c *ClusterStateImpl) markUpdateCompleted(instanceId string) {
+	c.updateInstanceState(instanceId, updateCompleted)
 }
 
 // instanceUpdateInProgress returns true if the instance update is in progress
-func (c *ClusterStateImpl) instanceUpdateInProgress(asgName, instanceId string) bool {
-	return c.getInstanceState(asgName, instanceId) == updateInProgress
+func (c *ClusterStateImpl) instanceUpdateInProgress(instanceId string) bool {
+	return c.getInstanceState(instanceId) == updateInProgress
 }
 
 // instanceUpdateCompleted returns true if the instance update is completed
-func (c *ClusterStateImpl) instanceUpdateCompleted(asgName, instanceId string) bool {
-	return c.getInstanceState(asgName, instanceId) == updateCompleted
+func (c *ClusterStateImpl) instanceUpdateCompleted(instanceId string) bool {
+	return c.getInstanceState(instanceId) == updateCompleted
 }
 
 // deleteEntryOfAsg deletes the entry for an ASG in the cluster state map
@@ -85,7 +92,8 @@ func (c *ClusterStateImpl) deleteEntryOfAsg(asgName string) bool {
 	deleted := false
 	ClusterStateStore.Range(func(key interface{}, value interface{}) bool {
 		keyName, _ := key.(string)
-		if strings.Contains(keyName, asgName) {
+		instanceData, _ := value.(*InstanceData)
+		if instanceData.AsgName == asgName {
 			ClusterStateStore.Delete(keyName)
 			deleted = true
 		}
@@ -95,35 +103,42 @@ func (c *ClusterStateImpl) deleteEntryOfAsg(asgName string) bool {
 }
 
 // markUpdateInitialized updates the instance state to in-progresss
-func (c *ClusterStateImpl) markUpdateInitialized(asgName, instanceId string) {
-	c.updateInstanceState(asgName, instanceId, updateInitialized)
+func (c *ClusterStateImpl) markUpdateInitialized(instanceId string) {
+	c.updateInstanceState(instanceId, updateInitialized)
 }
 
 // instanceUpdateInitialized returns true if the instance update is in progress
-func (c *ClusterStateImpl) instanceUpdateInitialized(asgName, instanceId string) bool {
-	return c.getInstanceState(asgName, instanceId) == updateInitialized
+func (c *ClusterStateImpl) instanceUpdateInitialized(instanceId string) bool {
+	return c.getInstanceState(instanceId) == updateInitialized
 }
 
 // initializeAsg adds an entry for all the instances in an ASG with updateInitialized state
 func (c *ClusterStateImpl) initializeAsg(asgName string, instances []*autoscaling.Instance) {
 	for _, instance := range instances {
-		c.updateInstanceState(asgName, *instance.InstanceId, updateInitialized)
+		instanceData := &InstanceData{
+			Id:            *instance.InstanceId,
+			AzName:        *instance.AvailabilityZone,
+			AsgName:       asgName,
+			InstanceState: updateInitialized,
+		}
+		c.addInstanceState(instanceData)
 	}
 }
 
 // getNextAvailableInstanceId returns the id of the next instance available for update in an ASG
 // adding a mutex to avoid the race conditions and same instance returned for 2 go-routines
-func (c *ClusterStateImpl) getNextAvailableInstanceId(asgName string) string {
+func (c *ClusterStateImpl) getNextAvailableInstanceIdInAz(asgName string, azName string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	instanceId := ""
 	ClusterStateStore.Range(func(key interface{}, value interface{}) bool {
-		keyName, _ := key.(string)
-		state, _ := value.(string)
-		if strings.HasPrefix(keyName, asgName) && strings.EqualFold(state, updateInitialized) {
-			instanceId = strings.TrimPrefix(keyName, fmt.Sprintf("%s-", asgName))
-			c.markUpdateInProgress(asgName, instanceId)
+		state, _ := value.(*InstanceData)
+		if state.AsgName == asgName &&
+			(azName == "" || state.AzName == azName) &&
+			state.InstanceState == updateInitialized {
+			c.markUpdateInProgress(state.Id)
+			instanceId = state.Id
 			return false
 		}
 		return true
@@ -132,18 +147,26 @@ func (c *ClusterStateImpl) getNextAvailableInstanceId(asgName string) string {
 }
 
 // updateInstanceState updates the state of the instance in cluster store
-func (c *ClusterStateImpl) updateInstanceState(asgName, instanceId, instanceState string) {
-	key := fmt.Sprintf("%s-%s", asgName, instanceId)
-	ClusterStateStore.Store(key, instanceState)
+func (c *ClusterStateImpl) addInstanceState(instanceData *InstanceData) {
+	ClusterStateStore.Store(instanceData.Id, instanceData)
+}
+
+// updateInstanceState updates the state of the instance in cluster store
+func (c *ClusterStateImpl) updateInstanceState(instanceId, instanceState string) {
+	val, ok := ClusterStateStore.Load(instanceId)
+	if ok {
+		instanceData, _ := val.(*InstanceData)
+		instanceData.InstanceState = instanceState
+		ClusterStateStore.Store(instanceId, instanceData)
+	}
 }
 
 // getInstanceState returns the state of the instance from cluster store
-func (c *ClusterStateImpl) getInstanceState(asgName, instanceId string) string {
-	key := fmt.Sprintf("%s-%s", asgName, instanceId)
-	val, ok := ClusterStateStore.Load(key)
-	if !ok {
-
+func (c *ClusterStateImpl) getInstanceState(instanceId string) string {
+	val, ok := ClusterStateStore.Load(instanceId)
+	if ok {
+		state, _ := val.(*InstanceData)
+		return state.InstanceState
 	}
-	state, _ := val.(string)
-	return state
+	return ""
 }

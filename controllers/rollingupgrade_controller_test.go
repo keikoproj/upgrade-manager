@@ -279,7 +279,12 @@ func TestDrainNodePostDrainFailureToDrain(t *testing.T) {
 	// Force quit from the rest of the command
 	mockKubeCtlCall := "exit 1;"
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{DrainTimeout: -1},
+		},
+	}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
@@ -288,15 +293,19 @@ func TestDrainNodePostDrainFailureToDrain(t *testing.T) {
 
 type MockAutoscalingGroup struct {
 	autoscalingiface.AutoScalingAPI
-	errorFlag bool
-	awsErr    awserr.Error
+	errorFlag       bool
+	awsErr          awserr.Error
+	errorInstanceId string
 }
 
 func (mockAutoscalingGroup MockAutoscalingGroup) TerminateInstanceInAutoScalingGroup(input *autoscaling.TerminateInstanceInAutoScalingGroupInput) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
 	output := &autoscaling.TerminateInstanceInAutoScalingGroupOutput{}
 	if mockAutoscalingGroup.errorFlag {
 		if mockAutoscalingGroup.awsErr != nil {
-			return output, mockAutoscalingGroup.awsErr
+			if len(mockAutoscalingGroup.errorInstanceId) <= 0 ||
+				mockAutoscalingGroup.errorInstanceId == *input.InstanceId {
+				return output, mockAutoscalingGroup.awsErr
+			}
 		}
 	}
 	asgChange := autoscaling.Activity{ActivityId: aws.String("xxx"), AutoScalingGroupName: aws.String("sss"), Cause: aws.String("xxx"), StartTime: aws.Time(time.Now()), StatusCode: aws.String("200"), StatusMessage: aws.String("success")}
@@ -695,7 +704,8 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -742,8 +752,9 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 	mockID2 := "some-id-2"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
-	mockInstance2 := autoscaling.Instance{InstanceId: &mockID2, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockInstance2 := autoscaling.Instance{InstanceId: &mockID2, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
@@ -787,7 +798,8 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 	someAsg := "some-asg"
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -829,7 +841,7 @@ func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(int).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollingUpgrade/ name in map."))
+	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollingUpgrade name in map."))
 }
 
 func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
@@ -839,7 +851,8 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -878,7 +891,8 @@ func TestRunRestackNoNodeName(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -922,10 +936,15 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID,
+		LaunchConfigurationName: &diffLaunchConfig,
+		AvailabilityZone:        &az,
+	}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
-		Instances:               []*autoscaling.Instance{&mockInstance}}
+		Instances:               []*autoscaling.Instance{&mockInstance},
+	}
 
 	somePreDrain := upgrademgrv1alpha1.PreDrainSpec{
 		Script: "exit 1",
@@ -965,8 +984,8 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 
 	// This execution gets past the different launch config check, but fails to drain the node because of a predrain failing script
 	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
-	g.Expect(nodesProcessed).To(gomega.Equal(0))
-	g.Expect(err.Error()).To(gomega.HavePrefix(ruObj.Name + ": Predrain script failed"))
+	g.Expect(nodesProcessed).To(gomega.Equal(1))
+	g.Expect(err.Error()).To(gomega.HavePrefix("Error updating instances, ErrorCount: 1, Errors: ["))
 }
 
 func TestRunRestackTerminateNodeFail(t *testing.T) {
@@ -976,7 +995,8 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
@@ -1013,74 +1033,283 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 
 	// This execution gets past the different launch config check, but fails to terminate node
 	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, "exit 0;")
-	g.Expect(nodesProcessed).To(gomega.Equal(0))
+	g.Expect(nodesProcessed).To(gomega.Equal(1))
+	g.Expect(err.Error()).To(gomega.HavePrefix("Error updating instances, ErrorCount: 1, Errors: ["))
 	g.Expect(err.Error()).To(gomega.ContainSubstring("some error"))
 }
 
-func TestGetMaxUnavailableWithPercentageValue(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"75%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
-	}
-
-	g.Expect(getMaxUnavailable(strategy, 200)).To(gomega.Equal(150))
+func constructAutoScalingInstance(instanceId string, launchConfigName string, azName string) *autoscaling.Instance {
+	return &autoscaling.Instance{InstanceId: &instanceId, LaunchConfigurationName: &launchConfigName, AvailabilityZone: &azName}
 }
 
-func TestGetMaxUnavailableWithPercentageValue33(t *testing.T) {
+func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"67%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	someAsg := "some-asg"
+	mockID := "some-id"
+	someLaunchConfig := "some-launch-config"
+	diffLaunchConfig := "different-launch-config"
+	az := "az-1"
+	az2 := "az-2"
+	az3 := "az-3"
+	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances: []*autoscaling.Instance{
+			constructAutoScalingInstance(mockID+"1"+az, diffLaunchConfig, az),
+			constructAutoScalingInstance(mockID+"2"+az, diffLaunchConfig, az),
+			constructAutoScalingInstance(mockID+"1"+az2, diffLaunchConfig, az2),
+			constructAutoScalingInstance(mockID+"2"+az2, diffLaunchConfig, az2),
+			constructAutoScalingInstance(mockID+"3"+az2, diffLaunchConfig, az2),
+			constructAutoScalingInstance(mockID+"1"+az3, diffLaunchConfig, az3),
+			constructAutoScalingInstance(mockID+"2"+az3, diffLaunchConfig, az3),
+			constructAutoScalingInstance(mockID+"3"+az3, diffLaunchConfig, az3),
+			constructAutoScalingInstance(mockID+"4"+az3, diffLaunchConfig, az3),
+		},
 	}
 
-	g.Expect(getMaxUnavailable(strategy, 3)).To(gomega.Equal(2))
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Type: upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy,
+			},
+		},
+	}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
+
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	fooNode1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/9213851"}}
+	fooNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/1234501"}}
+	correctNode1az1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "1" + az},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2az1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "2" + az},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode1az2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "1" + az2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2az2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "2" + az2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode3az2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "3" + az2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode1az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "1" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "2" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode3az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "3" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode4az3 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID + "4" + az3},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+
+	nodeList := corev1.NodeList{Items: []corev1.Node{
+		fooNode1, fooNode2,
+		correctNode1az1, correctNode2az1,
+		correctNode1az2, correctNode2az2, correctNode3az2,
+		correctNode1az3, correctNode2az3, correctNode3az3, correctNode4az3,
+	}}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		NodeList:        &nodeList,
+		ClusterState:    NewClusterState(),
+	}
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	ctx := context.TODO()
+
+	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, "exit 0;")
+	g.Expect(nodesProcessed).To(gomega.Equal(9))
+	g.Expect(err).To(gomega.BeNil())
 }
 
-func TestGetMaxUnavailableWithPercentageAndSingleInstance(t *testing.T) {
+func TestUpdateInstances(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	totalNodes := 1
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"67%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
-	}
+	someAsg := "some-asg"
+	mockID := "some-id"
+	mockID2 := "some-id-2"
+	someLaunchConfig := "some-launch-config"
+	diffLaunchConfig := "different-launch-config"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockInstance2 := autoscaling.Instance{InstanceId: &mockID2, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
 
-	g.Expect(getMaxUnavailable(strategy, totalNodes)).To(gomega.Equal(1))
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+	mockAutoscalingGroup := MockAutoscalingGroup{}
+
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	fooNode1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/9213851"}}
+	fooNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/1234501"}}
+	correctNode := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node2"}}
+
+	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode, correctNode2}}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		NodeList:        &nodeList,
+		ClusterState:    NewClusterState(),
+	}
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	ctx := context.TODO()
+
+	err = rcRollingUpgrade.UpdateInstances(&ctx,
+		ruObj, mockAsg.Instances, "A", "exit 0;", mockAutoscalingGroup)
+	g.Expect(err).ShouldNot(gomega.HaveOccurred())
 }
 
-func TestGetMaxUnavailableWithPercentageNonIntResult(t *testing.T) {
+func TestUpdateInstancesError(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"37%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
-	}
+	someAsg := "some-asg"
+	mockID := "some-id"
+	mockID2 := "some-id-2"
+	someLaunchConfig := "some-launch-config"
+	diffLaunchConfig := "different-launch-config"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockInstance2 := autoscaling.Instance{InstanceId: &mockID2, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
 
-	g.Expect(getMaxUnavailable(strategy, 50)).To(gomega.Equal(18))
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+	mockAutoScalingGroup := MockAutoscalingGroup{
+		errorFlag: true,
+		awsErr: awserr.New("UnKnownError",
+			"some message",
+			nil)}
+
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	fooNode1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/9213851"}}
+	fooNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/1234501"}}
+	correctNode := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node2"}}
+
+	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode, correctNode2}}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		NodeList:        &nodeList,
+		ClusterState:    NewClusterState(),
+	}
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	ctx := context.TODO()
+
+	err = rcRollingUpgrade.UpdateInstances(&ctx,
+		ruObj, mockAsg.Instances, "A", "exit 0;", mockAutoScalingGroup)
+	g.Expect(err).Should(gomega.HaveOccurred())
+	g.Expect(err).Should(gomega.BeAssignableToTypeOf(&UpdateInstancesError{}))
+	if updateInstancesError, ok := err.(*UpdateInstancesError); ok {
+		g.Expect(len(updateInstancesError.InstanceUpdateErrors)).Should(gomega.Equal(2))
+		g.Expect(updateInstancesError.Error()).Should(gomega.ContainSubstring("Error updating instances, ErrorCount: 2"))
+	}
 }
 
-func TestGetMaxUnavailableWithIntValue(t *testing.T) {
+func TestUpdateInstancesPartialError(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 75, \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	someAsg := "some-asg"
+	mockID := "some-id"
+	mockID2 := "some-id-2"
+	someLaunchConfig := "some-launch-config"
+	diffLaunchConfig := "different-launch-config"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockInstance2 := autoscaling.Instance{InstanceId: &mockID2, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+	mockAutoScalingGroup := MockAutoscalingGroup{
+		errorFlag: true,
+		awsErr: awserr.New("UnKnownError",
+			"some message",
+			nil),
+		errorInstanceId: mockID2,
 	}
 
-	g.Expect(getMaxUnavailable(strategy, 200)).To(gomega.Equal(75))
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	fooNode1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/9213851"}}
+	fooNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/1234501"}}
+	correctNode := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+	correctNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID2},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node2"}}
+
+	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode, correctNode2}}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		NodeList:        &nodeList,
+		ClusterState:    NewClusterState(),
+	}
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	ctx := context.TODO()
+
+	err = rcRollingUpgrade.UpdateInstances(&ctx,
+		ruObj, mockAsg.Instances, "A", "exit 0;", mockAutoScalingGroup)
+	g.Expect(err).Should(gomega.HaveOccurred())
+	g.Expect(err).Should(gomega.BeAssignableToTypeOf(&UpdateInstancesError{}))
+	if updateInstancesError, ok := err.(*UpdateInstancesError); ok {
+		g.Expect(len(updateInstancesError.InstanceUpdateErrors)).Should(gomega.Equal(1))
+		g.Expect(updateInstancesError.Error()).Should(gomega.Equal("Error updating instances, ErrorCount: 1, Errors: [UnKnownError: some message]"))
+	}
+}
+
+func TestUpdateInstancesWithZeroInstances(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+	}
+
+	ctx := context.TODO()
+
+	err = rcRollingUpgrade.UpdateInstances(&ctx,
+		nil, nil, "A", "exit 0;", nil)
+	g.Expect(err).ShouldNot(gomega.HaveOccurred())
 }
 
 func TestTestCallKubectlDrainWithoutDrainTimeout(t *testing.T) {
@@ -1273,27 +1502,7 @@ func TestTestCallKubectlDrainWithTimeoutOccurring(t *testing.T) {
 	g.Expect(output).To(gomega.ContainSubstring("timed-out"))
 }
 
-func TestGetNextAvailableInstance(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-
-	mockAsgName := "some-asg"
-	mockInstanceName1 := "foo1"
-	mockInstanceName2 := "bar1"
-	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1}
-	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2}
-
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
-	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
-	_, available := rcRollingUpgrade.getNextAvailableInstance(mockAsgName, instancesList)
-
-	g.Expect(available).To(gomega.BeTrue())
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
-
-}
-
-func TestValidateruObj(t *testing.T) {
+func TestValidateRuObj(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 75, \"drainTimeout\": 15 }"
@@ -1680,11 +1889,6 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyMaxUnavailable(t *test
 	g.Expect(error).To((gomega.BeNil()))
 }
 
-func get(r *RollingUpgradeReconciler, asgName string, instanceList []*autoscaling.Instance, ch chan string) {
-	instance, _ := r.getNextAvailableInstance(asgName, instanceList)
-	ch <- *instance.InstanceId
-}
-
 func TestRunRestackNoNodeInAsg(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
@@ -1730,7 +1934,8 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 	someAsg := "some-asg"
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}

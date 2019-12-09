@@ -38,7 +38,7 @@ func (l RetryLogger) RetryRules(r *request.Request) time.Duration {
 	} else {
 		err = fmt.Sprintf("%d %s", r.HTTPResponse.StatusCode, r.HTTPResponse.Status)
 	}
-	Debugf("retryable: %v -- %v, will retry after %v", err, method, duration)
+	Infof("retryable: %v -- %v, will retry after %v", err, method, duration)
 
 	return duration
 }
