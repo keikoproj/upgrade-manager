@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -1926,6 +1927,44 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(nodesProcessed).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.BeNil())
+}
+
+func TestWaitForTermination(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	TerminationTimeoutSeconds = 1
+	TerminationSleepIntervalSeconds = 1
+
+	mockNodeName := "node-123"
+	mockNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: mockNodeName,
+		},
+	}
+	kuberenetesClient := fake.NewSimpleClientset()
+	nodeInterface := kuberenetesClient.CoreV1().Nodes()
+
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+	}
+	nodeInterface.Create(mockNode)
+
+	unjoined, err := rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(unjoined).To(gomega.BeFalse())
+
+	nodeInterface.Delete(mockNodeName, &metav1.DeleteOptions{})
+
+	unjoined, err = rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(unjoined).To(gomega.BeTrue())
 }
 
 func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
