@@ -17,9 +17,10 @@ limitations under the License.
 package controllers
 
 import (
+	"testing"
+
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/onsi/gomega"
-	"testing"
 )
 
 var clusterState = NewClusterState()

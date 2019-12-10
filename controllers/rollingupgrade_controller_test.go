@@ -842,7 +842,7 @@ func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj, mockAutoscalingGroup, KubeCtlBinary)
 	g.Expect(int).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollup name in map."))
+	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollingUpgrade name in map."))
 }
 
 func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
