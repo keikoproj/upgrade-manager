@@ -3,7 +3,7 @@ module github.com/keikoproj/upgrade-manager
 go 1.13
 
 require (
-	github.com/aws/aws-sdk-go v1.25.42
+	github.com/aws/aws-sdk-go v1.25.0
 	github.com/go-logr/logr v0.1.0
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/json-iterator/go v1.1.6 // indirect
