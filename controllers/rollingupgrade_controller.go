@@ -578,7 +578,9 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 
 	// acquire/release semaphore lock
 	if r.isUsingSemaphore {
+		logr.Info("trying to acquire semaphore lock...")
 		r.maxParallel.Acquire(ctx, 1)
+		logr.Info("acquired lock")
 		defer r.maxParallel.Release(1)
 	}
 
