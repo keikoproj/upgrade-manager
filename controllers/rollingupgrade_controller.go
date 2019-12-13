@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/semaphore"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	corev1 "k8s.io/api/core/v1"
@@ -95,13 +96,20 @@ var DefaultRetryer = awsclient.DefaultRetryer{
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
 type RollingUpgradeReconciler struct {
 	client.Client
-	Log             logr.Logger
-	generatedClient *kubernetes.Clientset
-	Asg             *autoscaling.Group
-	NodeList        *corev1.NodeList
-	admissionMap    sync.Map
-	ruObjNameToASG  sync.Map
-	ClusterState    ClusterState
+	Log              logr.Logger
+	generatedClient  *kubernetes.Clientset
+	Asg              *autoscaling.Group
+	NodeList         *corev1.NodeList
+	admissionMap     sync.Map
+	ruObjNameToASG   sync.Map
+	ClusterState     ClusterState
+	maxParallel      *semaphore.Weighted
+	isUsingSemaphore bool
+}
+
+func (r *RollingUpgradeReconciler) SetMaxParallel(sem *semaphore.Weighted) {
+	r.maxParallel = sem
+	r.isUsingSemaphore = true
 }
 
 func runScript(script string, background bool, objName string) (string, error) {
@@ -567,6 +575,12 @@ func MarkObjForCleanup(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	logr := r.Log.WithValues("rollingupgrade", req.NamespacedName)
+
+	// acquire/release semaphore lock
+	if r.isUsingSemaphore {
+		r.maxParallel.Acquire(ctx, 1)
+		defer r.maxParallel.Release(1)
+	}
 
 	// Fetch the RollingUpgrade instance
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{}
