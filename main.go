@@ -21,7 +21,6 @@ import (
 
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers"
-	"golang.org/x/sync/semaphore"
 	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -78,7 +77,7 @@ func main() {
 	}
 
 	if maxParallel > 0 {
-		reconciler.SetMaxParallel(semaphore.NewWeighted(int64(maxParallel)))
+		reconciler.SetMaxParallel(maxParallel)
 	}
 
 	err = (reconciler).SetupWithManager(mgr)

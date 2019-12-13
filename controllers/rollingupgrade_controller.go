@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/semaphore"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	corev1 "k8s.io/api/core/v1"
@@ -103,12 +102,12 @@ type RollingUpgradeReconciler struct {
 	admissionMap     sync.Map
 	ruObjNameToASG   sync.Map
 	ClusterState     ClusterState
-	maxParallel      *semaphore.Weighted
+	maxParallel      chan int
 	isUsingSemaphore bool
 }
 
-func (r *RollingUpgradeReconciler) SetMaxParallel(sem *semaphore.Weighted) {
-	r.maxParallel = sem
+func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
+	r.maxParallel = make(chan int, max)
 	r.isUsingSemaphore = true
 }
 
@@ -480,9 +479,14 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	return reconcile.Result{}, nil
 }
 
+func (r *RollingUpgradeReconciler) ClearSemaphore() {
+	<-r.maxParallel
+}
+
 // Process actually performs the ec2-instance restacking.
 func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade) (reconcile.Result, error) {
+	defer r.ClearSemaphore()
 	logr := r.Log.WithValues("rollingupgrade", ruObj.Name)
 
 	// If the object is being deleted, nothing to do.
@@ -576,14 +580,6 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	ctx := context.Background()
 	logr := r.Log.WithValues("rollingupgrade", req.NamespacedName)
 
-	// acquire/release semaphore lock
-	if r.isUsingSemaphore {
-		logr.Info("trying to acquire semaphore lock...")
-		r.maxParallel.Acquire(ctx, 1)
-		logr.Info("acquired lock")
-		defer r.maxParallel.Release(1)
-	}
-
 	// Fetch the RollingUpgrade instance
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{}
 	err := r.Get(ctx, req.NamespacedName, ruObj)
@@ -618,6 +614,14 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			logr.Info("Sync map with invalid entry for ", "name", ruObj.Name)
 		}
 	} else {
+
+		// acquire/release semaphore lock
+		if r.isUsingSemaphore {
+			logr.Info("trying to acquire semaphore lock...")
+			r.maxParallel <- 1
+			logr.Info("acquired lock")
+		}
+
 		go r.Process(&ctx, ruObj)
 		logr.Info("Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
