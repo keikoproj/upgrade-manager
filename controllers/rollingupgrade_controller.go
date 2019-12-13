@@ -107,6 +107,7 @@ type RollingUpgradeReconciler struct {
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
+	log.Infof("setting max parallel reconciles to %v", max)
 	r.maxParallel = make(chan int, max)
 	r.isUsingSemaphore = true
 }
