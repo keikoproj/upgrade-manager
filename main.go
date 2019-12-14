@@ -76,9 +76,7 @@ func main() {
 		ClusterState: controllers.NewClusterState(),
 	}
 
-	if maxParallel > 0 {
-		reconciler.SetMaxParallel(maxParallel)
-	}
+	reconciler.SetMaxParallel(maxParallel)
 
 	err = (reconciler).SetupWithManager(mgr)
 	if err != nil {
