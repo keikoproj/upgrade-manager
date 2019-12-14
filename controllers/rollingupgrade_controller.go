@@ -95,21 +95,19 @@ var DefaultRetryer = awsclient.DefaultRetryer{
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
 type RollingUpgradeReconciler struct {
 	client.Client
-	Log              logr.Logger
-	generatedClient  *kubernetes.Clientset
-	Asg              *autoscaling.Group
-	NodeList         *corev1.NodeList
-	admissionMap     sync.Map
-	ruObjNameToASG   sync.Map
-	ClusterState     ClusterState
-	maxParallel      chan int
-	isUsingSemaphore bool
+	Log             logr.Logger
+	generatedClient *kubernetes.Clientset
+	Asg             *autoscaling.Group
+	NodeList        *corev1.NodeList
+	admissionMap    sync.Map
+	ruObjNameToASG  sync.Map
+	ClusterState    ClusterState
+	maxParallel     chan int
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
 	log.Infof("setting max parallel reconciles to %v", max)
 	r.maxParallel = make(chan int, max)
-	r.isUsingSemaphore = true
 }
 
 func runScript(script string, background bool, objName string) (string, error) {
@@ -617,7 +615,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	} else {
 
 		// acquire/release semaphore lock
-		if r.isUsingSemaphore {
+		if r.maxParallel != nil {
 			logr.Info("trying to acquire semaphore lock...")
 			r.maxParallel <- 1
 			logr.Info("acquired lock")
