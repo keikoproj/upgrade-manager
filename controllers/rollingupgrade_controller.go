@@ -102,6 +102,22 @@ type RollingUpgradeReconciler struct {
 	admissionMap    sync.Map
 	ruObjNameToASG  sync.Map
 	ClusterState    ClusterState
+	maxParallel     chan int
+}
+
+func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
+	if max >= 1 {
+		log.Infof("setting max parallel reconciles to %v", max)
+		r.maxParallel = make(chan int, max)
+	}
+}
+
+func (r *RollingUpgradeReconciler) ReleaseSemaphore() {
+	<-r.maxParallel
+}
+
+func (r *RollingUpgradeReconciler) AcquireSemaphore() {
+	r.maxParallel <- 1
 }
 
 func runScript(script string, background bool, objName string) (string, error) {
@@ -477,6 +493,10 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade) (reconcile.Result, error) {
 	logr := r.Log.WithValues("rollingupgrade", ruObj.Name)
 
+	if r.maxParallel != nil {
+		defer r.ReleaseSemaphore()
+	}
+
 	// If the object is being deleted, nothing to do.
 	if !ruObj.DeletionTimestamp.IsZero() {
 		logr.Info("Object is being deleted. No more processing")
@@ -602,6 +622,13 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			logr.Info("Sync map with invalid entry for ", "name", ruObj.Name)
 		}
 	} else {
+
+		if r.maxParallel != nil {
+			logr.Info("trying to acquire semaphore lock...")
+			r.AcquireSemaphore()
+			logr.Info("acquired lock")
+		}
+
 		go r.Process(&ctx, ruObj)
 		logr.Info("Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
