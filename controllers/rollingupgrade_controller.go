@@ -110,6 +110,14 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
 	r.maxParallel = make(chan int, max)
 }
 
+func (r *RollingUpgradeReconciler) ReleaseSemaphore() {
+	<-r.maxParallel
+}
+
+func (r *RollingUpgradeReconciler) AcquireSemaphore() {
+	r.maxParallel <- 1
+}
+
 func runScript(script string, background bool, objName string) (string, error) {
 	log.Printf("%s: Running script %s", objName, script)
 	if background {
@@ -478,15 +486,14 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	return reconcile.Result{}, nil
 }
 
-func (r *RollingUpgradeReconciler) ClearSemaphore() {
-	<-r.maxParallel
-}
-
 // Process actually performs the ec2-instance restacking.
 func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade) (reconcile.Result, error) {
-	defer r.ClearSemaphore()
 	logr := r.Log.WithValues("rollingupgrade", ruObj.Name)
+
+	if r.maxParallel != nil {
+		defer r.ReleaseSemaphore()
+	}
 
 	// If the object is being deleted, nothing to do.
 	if !ruObj.DeletionTimestamp.IsZero() {
@@ -614,10 +621,9 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		}
 	} else {
 
-		// acquire/release semaphore lock
 		if r.maxParallel != nil {
 			logr.Info("trying to acquire semaphore lock...")
-			r.maxParallel <- 1
+			r.AcquireSemaphore()
 			logr.Info("acquired lock")
 		}
 
