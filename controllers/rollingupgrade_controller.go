@@ -494,7 +494,10 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	logr := r.Log.WithValues("rollingupgrade", ruObj.Name)
 
 	if r.maxParallel != nil {
+		logr.Info("trying to acquire semaphore lock...")
+		r.AcquireSemaphore()
 		defer r.ReleaseSemaphore()
+		logr.Info("acquired lock")
 	}
 
 	// If the object is being deleted, nothing to do.
@@ -622,13 +625,6 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			logr.Info("Sync map with invalid entry for ", "name", ruObj.Name)
 		}
 	} else {
-
-		if r.maxParallel != nil {
-			logr.Info("trying to acquire semaphore lock...")
-			r.AcquireSemaphore()
-			logr.Info("acquired lock")
-		}
-
 		go r.Process(&ctx, ruObj)
 		logr.Info("Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
