@@ -48,7 +48,7 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&namespace, "namespace", "", "The namespace in which to watch objects")
-	flag.IntVar(&maxParallel, "max-parallel", 0, "The max number of parallel rolling upgrades")
+	flag.IntVar(&maxParallel, "max-parallel", 10, "The max number of parallel rolling upgrades")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.Logger(true))

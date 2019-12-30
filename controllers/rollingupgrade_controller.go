@@ -39,6 +39,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
 
 	"github.com/go-logr/logr"
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	log "github.com/keikoproj/upgrade-manager/pkg/log"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1errors "k8s.io/apimachinery/pkg/api/errors"
@@ -47,9 +48,8 @@ import (
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 )
 
 const (
@@ -102,22 +102,14 @@ type RollingUpgradeReconciler struct {
 	admissionMap    sync.Map
 	ruObjNameToASG  sync.Map
 	ClusterState    ClusterState
-	maxParallel     chan int
+	maxParallel     int
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
 	if max >= 1 {
 		log.Infof("max parallel reconciles = %v", max)
-		r.maxParallel = make(chan int, max)
+		r.maxParallel = max
 	}
-}
-
-func (r *RollingUpgradeReconciler) ReleaseSemaphore() {
-	<-r.maxParallel
-}
-
-func (r *RollingUpgradeReconciler) AcquireSemaphore() {
-	r.maxParallel <- 1
 }
 
 func runScript(script string, background bool, objName string) (string, error) {
@@ -493,13 +485,6 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade) (reconcile.Result, error) {
 	logr := r.Log.WithValues("rollingupgrade", ruObj.Name)
 
-	if r.maxParallel != nil {
-		logr.Info("trying to acquire semaphore lock...")
-		r.AcquireSemaphore()
-		defer r.ReleaseSemaphore()
-		logr.Info("acquired lock")
-	}
-
 	// If the object is being deleted, nothing to do.
 	if !ruObj.DeletionTimestamp.IsZero() {
 		logr.Info("Object is being deleted. No more processing")
@@ -625,7 +610,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			logr.Info("Sync map with invalid entry for ", "name", ruObj.Name)
 		}
 	} else {
-		go r.Process(&ctx, ruObj)
+		r.Process(&ctx, ruObj)
 		logr.Info("Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
 	}
@@ -638,6 +623,7 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.generatedClient = kubernetes.NewForConfigOrDie(mgr.GetConfig())
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&upgrademgrv1alpha1.RollingUpgrade{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
 }
 
