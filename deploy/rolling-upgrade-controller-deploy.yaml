@@ -1,7 +1,6 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  creationTimestamp: "2019-01-13T08:39:06Z"
   name: rolling-upgrade-sa
   namespace: kube-system
 ---
@@ -18,13 +17,9 @@ subjects:
   name: rolling-upgrade-sa
   namespace: kube-system
 ---
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    deployment.kubernetes.io/revision: "2"
-  creationTimestamp: "2019-01-13T08:34:22Z"
-  generation: 3
   labels:
     app: rolling-upgrade-controller
   name: rolling-upgrade-controller
