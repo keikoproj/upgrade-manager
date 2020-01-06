@@ -2,6 +2,29 @@
 All notable changes to this project will be documented in this file.
 
 
+## [v0.4] - 2020-01-06
+
+* Parallel Reconcile Limit (#38)
+* Use apps/v1, remove unnecessary fields (#39)
+* Add build badge (#36)
+* wait for node unjoined (#35)
+* Added uniformAcrossAzUpdate strategy (#27)
+
+## [v0.3] - 2019-12-02
+
+* Fix #30 and release v0.3 (#31)
+
+## [v0.2] - 2019-12-02
+
+* Fixes for autoscaling API changes (#26)
+* update Go modules & mirate to Go 1.13.1 (#23)
+* using autoscaling:TerminateInstanceInAutoScalingGroup instead of ec2:TerminateInstances while terminating instances to support lifecycle hooks. Testing Done, ran unit tests for rollingupgrade_controller (#20)
+* Fix instances not available error (#21)
+* added comment (#13)
+* Mark maxUnavailable and drainTimeout as optional. (#12)
+* Added sample CRD and spec field definitions for random update strategy (#9)
+* Add semaphore ci (#10)
+
 ## [v0.1] - 2019-12-02
 
 * Add semaphore ci (#10)
