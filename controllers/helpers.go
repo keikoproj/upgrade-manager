@@ -59,10 +59,6 @@ func getTaggedInstances(tagKey, tagValue string, client ec2iface.EC2API) ([]stri
 	input := &ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
 			{
-				Name:   aws.String("instance-state-name"),
-				Values: aws.StringSlice([]string{"running"}),
-			},
-			{
 				Name:   aws.String(key),
 				Values: aws.StringSlice([]string{tagValue}),
 			},
