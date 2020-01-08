@@ -446,24 +446,21 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
 
 	currentLaunchConfigName := aws.StringValue(asg.LaunchConfigurationName)
-
 	processedInstances := 0
-	inProgressInstances, err := r.getInProgressInstances(asg.Instances)
+
+	instances, err := r.getInProgressInstances(asg.Instances)
 	if err != nil {
 		log.Errorf("Failed to acquire in-progress instances, %v", err)
 	}
 
-	var instances []*autoscaling.Instance
 	for processedInstances < totalNodes {
-		if len(inProgressInstances) > 0 {
-			// Prefer in progress instances over new ones
-			log.Printf("found in progress instances: %+v", inProgressInstances)
-			instances = inProgressInstances
-			inProgressInstances = []*autoscaling.Instance{}
-		} else {
+		if len(instances) == 0 {
 			// Fetch instances to update from node selector
 			instances = nodeSelector.SelectNodesForRestack(r.ClusterState)
 			log.Printf("selected instances for rotation: %+v", instances)
+		} else {
+			// Prefer in progress instances over new ones
+			log.Printf("found in progress instances: %+v", instances)
 		}
 
 		if instances == nil {
