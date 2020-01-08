@@ -448,18 +448,21 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 	currentLaunchConfigName := aws.StringValue(asg.LaunchConfigurationName)
 	processedInstances := 0
 
-	instances, err := r.getInProgressInstances(asg.Instances)
+	inProgress, err := r.getInProgressInstances(asg.Instances)
 	if err != nil {
 		log.Errorf("Failed to acquire in-progress instances, %v", err)
 	}
 
 	for processedInstances < totalNodes {
-		if len(instances) == 0 {
+		instances := []*autoscaling.Instance{}
+		if len(inProgress) == 0 {
 			// Fetch instances to update from node selector
 			instances = nodeSelector.SelectNodesForRestack(r.ClusterState)
 			log.Printf("selected instances for rotation: %+v", instances)
 		} else {
 			// Prefer in progress instances over new ones
+			instances = inProgress
+			inProgress = []*autoscaling.Instance{}
 			log.Printf("found in progress instances: %+v", instances)
 		}
 
@@ -660,6 +663,7 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *RollingUpgradeReconciler) setStateTag(instanceID string, state string) error {
+	log.Printf("setting instance %v state to %v", instanceID, state)
 	err := tagEC2instance(instanceID, EC2StateTagKey, state, r.EC2Client)
 	if err != nil {
 		return err
