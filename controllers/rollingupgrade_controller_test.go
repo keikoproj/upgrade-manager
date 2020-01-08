@@ -339,7 +339,6 @@ func (mockAutoscalingGroup MockAutoscalingGroup) TerminateInstanceInAutoScalingG
 }
 
 func TestGetInProgressInstances(t *testing.T) {
-	t.Log("Start")
 	g := gomega.NewGomegaWithT(t)
 	mockInstances := []*autoscaling.Instance{
 		{
@@ -371,7 +370,6 @@ func TestGetInProgressInstances(t *testing.T) {
 	}
 	inProgressInstances, err := reconciler.getInProgressInstances(mockInstances)
 	g.Expect(err).To(gomega.BeNil())
-	t.Log(inProgressInstances)
 	g.Expect(inProgressInstances).To(gomega.ContainElement(expectedInstance))
 	g.Expect(inProgressInstances).To(gomega.HaveLen(1))
 }
