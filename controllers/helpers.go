@@ -1,7 +1,11 @@
 package controllers
 
 import (
+	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"log"
 	"strconv"
@@ -30,6 +34,58 @@ func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes in
 		maxUnavailable = 1
 	}
 	return maxUnavailable
+}
+
+func tagEC2instance(instanceID, tagKey, tagValue string, client ec2iface.EC2API) error {
+	input := &ec2.CreateTagsInput{
+		Resources: aws.StringSlice([]string{instanceID}),
+		Tags: []*ec2.Tag{
+			{
+				Key:   aws.String(tagKey),
+				Value: aws.String(tagValue),
+			},
+		},
+	}
+	_, err := client.CreateTags(input)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func getTaggedInstances(tagKey, tagValue string, client ec2iface.EC2API) ([]string, error) {
+	instances := []string{}
+	key := fmt.Sprintf("tag:%v", tagKey)
+	input := &ec2.DescribeInstancesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String(key),
+				Values: aws.StringSlice([]string{tagValue}),
+			},
+		},
+	}
+
+	err := client.DescribeInstancesPages(input, func(page *ec2.DescribeInstancesOutput, lastPage bool) bool {
+		for _, res := range page.Reservations {
+			for _, instance := range res.Instances {
+				instances = append(instances, aws.StringValue(instance.InstanceId))
+			}
+		}
+		return page.NextToken != nil
+	})
+	if err != nil {
+		return instances, err
+	}
+	return instances, nil
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
 
 // getNextAvailableInstances checks the cluster state store for the instance state
