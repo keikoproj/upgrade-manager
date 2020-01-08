@@ -63,7 +63,8 @@ If you already have an existing cluster created using kops, follow the instructi
 {
     "Effect": "Allow",
     "Action": [
-        "ec2:TerminateInstances",
+        "ec2:CreateTags",
+        "ec2:DescribeInstances",
         "autoscaling:DescribeAutoScalingGroups",
         "autoscaling:TerminateInstanceInAutoScalingGroup"
     ],
