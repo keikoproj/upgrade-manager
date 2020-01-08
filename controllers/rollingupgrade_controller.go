@@ -161,7 +161,7 @@ func (r *RollingUpgradeReconciler) postDrainHelper(ruObj *upgrademgrv1alpha1.Rol
 			return errors.New(msg)
 		}
 	}
-	log.Printf("%s: Waiting for postDrainDelay", ruObj.Name)
+	log.Printf("%s: Waiting for postDrainDelay of %v seconds", ruObj.Name, ruObj.Spec.PostDrainDelaySeconds)
 	time.Sleep(time.Duration(ruObj.Spec.PostDrainDelaySeconds) * time.Second)
 
 	if ruObj.Spec.PostDrain.PostWaitScript != "" {
@@ -295,6 +295,7 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 
 	log.Printf("%s: Termination output: %v\n", ruObj.Name, result)
 
+	log.Printf("starting post termination sleep for %v seconds", ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
 	if ruObj.Spec.PostTerminate.Script != "" {
 		out, err := runScript(ruObj.Spec.PostTerminate.Script, false, ruObj.Name)
