@@ -40,8 +40,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
-	log "github.com/keikoproj/upgrade-manager/pkg/log"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,6 +49,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	log "github.com/keikoproj/upgrade-manager/pkg/log"
 )
 
 const (
@@ -446,7 +447,8 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 	// set the state of instances in the ASG to new in the cluster store
 	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
 
-	currentLaunchConfigName := aws.StringValue(asg.LaunchConfigurationName)
+	launchDefinition := NewLaunchDefinition(asg)
+
 	processedInstances := 0
 
 	inProgress, err := r.getInProgressInstances(asg.Instances)
@@ -479,7 +481,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 		}
 
 		// update the instances
-		err := r.UpdateInstances(ctx, ruObj, instances, currentLaunchConfigName, KubeCtlCall)
+		err := r.UpdateInstances(ctx, ruObj, instances, launchDefinition, KubeCtlCall)
 		processedInstances += len(instances)
 		if err != nil {
 			return processedInstances, err
@@ -754,7 +756,7 @@ func NewUpdateInstancesError(instanceUpdateErrors []error) *UpdateInstancesError
 func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	instances []*autoscaling.Instance,
-	currentLaunchConfigName string,
+	launchDefinition *launchDefinition,
 	KubeCtlCall string) error {
 
 	totalNodes := len(instances)
@@ -765,7 +767,7 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 	ch := make(chan error)
 
 	for _, instance := range instances {
-		go r.UpdateInstance(ctx, ruObj, instance, currentLaunchConfigName, KubeCtlCall, ch)
+		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, KubeCtlCall, ch)
 	}
 
 	// wait for upgrades to complete
@@ -796,24 +798,19 @@ Loop:
 func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	i *autoscaling.Instance,
-	currentLaunchConfigName string,
+	launchDefinition *launchDefinition,
 	KubeCtlCall string,
 	ch chan error) {
 
-	targetLaunchConfigName := aws.StringValue(i.LaunchConfigurationName)
-	targetInstanceID := aws.StringValue(i.InstanceId)
-
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
-	if targetLaunchConfigName != "" {
-		// if LaunchConfig is blank, the instance is not inline with the active LaunchConfig
-		if targetLaunchConfigName == currentLaunchConfigName {
-			log.Printf("Ignoring %s since it has the correct launch-config", targetInstanceID)
-			ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
-			r.Update(*ctx, ruObj)
-			ch <- nil
-			return
-		}
+	targetInstanceID := aws.StringValue(i.InstanceId)
+	if !requiresRefresh(i, launchDefinition) {
+		log.Printf("Ignoring %s since it has the correct launch-config", targetInstanceID)
+		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
+		r.Update(*ctx, ruObj)
+		ch <- nil
+		return
 	}
 
 	nodeName := r.getNodeName(i, r.NodeList, ruObj)
@@ -874,4 +871,25 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	r.ClusterState.markUpdateCompleted(*i.InstanceId)
 	ch <- nil
 	return
+}
+
+func requiresRefresh(ec2Instance *autoscaling.Instance, definition *launchDefinition) bool {
+	if definition.launchConfigurationName != nil {
+		if *(definition.launchConfigurationName) != aws.StringValue(ec2Instance.LaunchConfigurationName) {
+			return true
+		}
+	} else if definition.launchTemplate != nil && ec2Instance.LaunchTemplate != nil {
+		instanceLaunchTemplate := ec2Instance.LaunchTemplate
+		targetLaunchTemplate := definition.launchTemplate
+		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateId) != aws.StringValue(targetLaunchTemplate.LaunchTemplateId) {
+			return true
+		}
+		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateName) != aws.StringValue(targetLaunchTemplate.LaunchTemplateName) {
+			return true
+		}
+		if aws.String(*instanceLaunchTemplate.Version) != aws.String(*targetLaunchTemplate.Version) {
+			return true
+		}
+	}
+	return false
 }
