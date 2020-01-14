@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/keikoproj/upgrade-manager/pkg/log"
+	"github.com/keikoproj/upgrade-manager/pkg/log"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -27,25 +27,19 @@ import (
 	"golang.org/x/net/context"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 )
 
 var c client.Client
 
-var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo", Namespace: "default"}}
-var depKey = types.NamespacedName{Name: "foo-deployment", Namespace: "default"}
 var defaultMsgPrefix = "ru-foo"
-
-const timeout = time.Second * 5
 
 func TestMain(m *testing.M) {
 	testEnv = &envtest.Environment{
@@ -1276,8 +1270,9 @@ func TestUpdateInstances(t *testing.T) {
 
 	ctx := context.TODO()
 
+	lcName := "A"
 	err = rcRollingUpgrade.UpdateInstances(&ctx,
-		ruObj, mockAsg.Instances, "A", "exit 0;")
+		ruObj, mockAsg.Instances, &launchDefinition{launchConfigurationName: &lcName}, "exit 0;")
 	g.Expect(err).ShouldNot(gomega.HaveOccurred())
 }
 
@@ -1330,8 +1325,9 @@ func TestUpdateInstancesError(t *testing.T) {
 
 	ctx := context.TODO()
 
+	lcName := "A"
 	err = rcRollingUpgrade.UpdateInstances(&ctx,
-		ruObj, mockAsg.Instances, "A", "exit 0;")
+		ruObj, mockAsg.Instances, &launchDefinition{launchConfigurationName: &lcName}, "exit 0;")
 	g.Expect(err).Should(gomega.HaveOccurred())
 	g.Expect(err).Should(gomega.BeAssignableToTypeOf(&UpdateInstancesError{}))
 	if updateInstancesError, ok := err.(*UpdateInstancesError); ok {
@@ -1391,8 +1387,9 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 
 	ctx := context.TODO()
 
+	lcName := "A"
 	err = rcRollingUpgrade.UpdateInstances(&ctx,
-		ruObj, mockAsg.Instances, "A", "exit 0;")
+		ruObj, mockAsg.Instances, &launchDefinition{launchConfigurationName: &lcName}, "exit 0;")
 	g.Expect(err).Should(gomega.HaveOccurred())
 	g.Expect(err).Should(gomega.BeAssignableToTypeOf(&UpdateInstancesError{}))
 	if updateInstancesError, ok := err.(*UpdateInstancesError); ok {
@@ -1418,8 +1415,9 @@ func TestUpdateInstancesWithZeroInstances(t *testing.T) {
 
 	ctx := context.TODO()
 
+	lcName := "A"
 	err = rcRollingUpgrade.UpdateInstances(&ctx,
-		nil, nil, "A", "exit 0;")
+		nil, nil, &launchDefinition{launchConfigurationName: &lcName}, "exit 0;")
 	g.Expect(err).ShouldNot(gomega.HaveOccurred())
 }
 
@@ -2121,4 +2119,119 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, KubeCtlBinary)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(nodesProcessed).To(gomega.Equal(1))
+}
+
+func TestRequiresRefreshHandlesLaunchConfiguration(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockID := "some-id"
+	someLaunchConfig := "some-launch-config-v1"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
+
+	newLaunchConfig := "some-launch-config-v2"
+	definition := launchDefinition{
+		kind:                    launchKindLaunchConfiguration,
+		launchConfigurationName: &newLaunchConfig,
+	}
+
+	result := requiresRefresh(&mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
+}
+
+func TestRequiresRefreshHandlesLaunchTemplateNameVersionUpdate(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockID := "some-id"
+	oldLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateName: aws.String("launch-template"),
+		Version:            aws.String("1"),
+	}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: oldLaunchTemplate, AvailabilityZone: &az}
+
+	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateName: aws.String("launch-template"),
+		Version:            aws.String("2"),
+	}
+	definition := launchDefinition{
+		kind:           launchKindLaunchTemplate,
+		launchTemplate: newLaunchTemplate,
+	}
+
+	result := requiresRefresh(&mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
+}
+
+func TestRequiresRefreshHandlesLaunchTemplateIDVersionUpdate(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockID := "some-id"
+	oldLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v1"),
+		Version:            aws.String("1"),
+	}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: oldLaunchTemplate, AvailabilityZone: &az}
+
+	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v1"),
+		Version:            aws.String("2"),
+	}
+	definition := launchDefinition{
+		kind:           launchKindLaunchTemplate,
+		launchTemplate: newLaunchTemplate,
+	}
+
+	result := requiresRefresh(&mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
+}
+
+func TestRequiresRefreshHandlesLaunchTemplateNameUpdate(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockID := "some-id"
+	oldLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateName: aws.String("launch-template"),
+		Version:            aws.String("1"),
+	}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: oldLaunchTemplate, AvailabilityZone: &az}
+
+	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateName: aws.String("launch-template-v2"),
+		Version:            aws.String("1"),
+	}
+	definition := launchDefinition{
+		kind:           launchKindLaunchTemplate,
+		launchTemplate: newLaunchTemplate,
+	}
+
+	result := requiresRefresh(&mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
+}
+
+
+func TestRequiresRefreshHandlesLaunchTemplateIDUpdate(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockID := "some-id"
+	oldLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v1"),
+		Version:            aws.String("1"),
+	}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: oldLaunchTemplate, AvailabilityZone: &az}
+
+	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v2"),
+		Version:            aws.String("1"),
+	}
+	definition := launchDefinition{
+		kind:           launchKindLaunchTemplate,
+		launchTemplate: newLaunchTemplate,
+	}
+
+	result := requiresRefresh(&mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
 }
