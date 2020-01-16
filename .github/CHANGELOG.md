@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file.
 
 
+## [v0.5] - 2020-01-16
+
+* RollingUpgrade idempotency fix (#41)
+* Migrate deprecated code (#44)
+* Add support for LaunchTemplates (#43)
+* Use go 1.13 for building (#46)
+
 ## [v0.4] - 2020-01-06
 
 * Parallel Reconcile Limit (#38)
