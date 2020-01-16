@@ -41,7 +41,7 @@ _3. What types of testing has rolling-upgrade gone through?_
   - Run `kops update cluster` to ensure that the LaunchConfigurations have been updated.
   - Create a new RollingUpgrade CR in the cluster for each ASG.
 
-_4. Are there any best practices for running RollinUpgrade?_
+_4. Are there any best practices for running RollingUpgrade?_
 
 - Ensure that DNS resolution does not fail in the cluster during upgrades. RollingUpgrade requires making calls to ec2.amazonaws.com or autoscaling.amazonaws.com.
 - Ensure that the rolling-upgrade controller is run as Kubernetes deployment.
