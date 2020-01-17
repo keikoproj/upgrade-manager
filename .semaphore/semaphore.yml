@@ -1,5 +1,5 @@
 # For more Go information and examples, see
-# https://docs.semaphoreci.com/article/86-language-golang
+# https://docs.semaphoreci.com/programming-languages/go/
 version: v1.0
 name: Upgrade Manager
 agent:
@@ -8,7 +8,7 @@ agent:
     # os_image: ubuntu1804
   containers:
     - name: main
-      image: semaphoreci/golang:1.12.9
+      image: semaphoreci/golang:1.13.6
 blocks:
   - name: Setup
     task:
@@ -23,21 +23,21 @@ blocks:
     task:
       prologue:
         commands:
-          - cache restore $SEMAPHORE_PROJECT_NAME-dep
+          - checkout
+          - cache restore $SEMAPHORE_PROJECT_NAME-dep-$(checksum .semaphore/setup.sh)
           - ls -l /packages
           - pushd /packages
-          - sudo tar -xvf go1.12.7.linux-amd64.tar.gz
+          - sudo tar -xf go1.13.6.linux-amd64.tar.gz
           - sudo cp go/bin/go /usr/local/bin
           - sudo rm -rf /usr/local/go
           - sudo mv go /usr/local
           - export os=$(go env GOOS)
           - export arch=$(go env GOARCH)
-          - tar -xzvf kubebuilder_master_${os}_${arch}.tar.gz
+          - tar -xzf kubebuilder_master_${os}_${arch}.tar.gz
           - sudo mv kubebuilder_master_${os}_${arch} /usr/local/kubebuilder
           - ls /usr/local/kubebuilder
           - export PATH=$PATH:/usr/local/kubebuilder/bin
           - popd
-          - checkout
       jobs:
         - name: Docker Build
           commands:
