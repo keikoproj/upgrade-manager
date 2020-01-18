@@ -305,23 +305,23 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
+func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
 	var (
 		started = time.Now()
 	)
 	for {
 		if time.Since(started) >= (time.Second * time.Duration(TerminationTimeoutSeconds)) {
-			log.Println("WaitForTermination timed out while waiting for node to unjoin")
+			log.Printf("%v: WaitForTermination timed out while waiting for node to unjoin", ruObj.Name)
 			return false, nil
 		}
 
 		_, err := nodeInterface.Get(nodeName, metav1.GetOptions{})
 		if v1errors.IsNotFound(err) {
-			log.Printf("node %s is unjoined from cluster, upgrade will proceed", nodeName)
+			log.Printf("%v: node %s is unjoined from cluster, upgrade will proceed", ruObj.Name, nodeName)
 			break
 		}
 
-		log.Printf("node %s is still joined to clutster, will wait %vs and retry", nodeName, TerminationSleepIntervalSeconds)
+		log.Printf("%v: node %s is still joined to clutster, will wait %vs and retry", ruObj.Name, nodeName, TerminationSleepIntervalSeconds)
 		time.Sleep(time.Duration(TerminationSleepIntervalSeconds) * time.Second)
 	}
 	return true, nil
@@ -343,7 +343,11 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 	}
 
 	for _, instance := range r.Asg.Instances {
-		if aws.StringValue(instance.InstanceId) == instanceID && aws.StringValue(instance.LifecycleState) != autoscaling.LifecycleStateInService {
+		if aws.StringValue(instance.InstanceId) == instanceID {
+			if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateStandby {
+				// already in standby
+				return nil
+			}
 			log.Warnf("%v: cannot set instance %v to stand-by, instance in state %v", ruObj.Name, instanceID, aws.StringValue(instance.LifecycleState))
 			return nil
 		}
@@ -397,9 +401,10 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 		}
 	}
 
-	log.Printf("%s: Termination output: %v\n", ruObj.Name, result)
+	log.Infof("%v: terminated instance %v", ruObj.Name, instanceID)
+	log.Debugf("%v: Termination output: %v\n", ruObj.Name, result)
 
-	log.Printf("starting post termination sleep for %v seconds", ruObj.Spec.NodeIntervalSeconds)
+	log.Printf("%v: starting post termination sleep for %v seconds", ruObj.Name, ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
 	if ruObj.Spec.PostTerminate.Script != "" {
 		out, err := runScript(ruObj.Spec.PostTerminate.Script, false, ruObj.Name)
@@ -768,8 +773,8 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *RollingUpgradeReconciler) setStateTag(instanceID string, state string) error {
-	log.Printf("setting instance %v state to %v", instanceID, state)
+func (r *RollingUpgradeReconciler) setStateTag(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, state string) error {
+	log.Printf("%v: setting instance %v state to %v", ruObj.Name, instanceID, state)
 	err := tagEC2instance(instanceID, EC2StateTagKey, state, r.EC2Client)
 	if err != nil {
 		return err
@@ -991,33 +996,33 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	}
 
 	// set the EC2 tag indicating the state to in-progress
-	err = r.setStateTag(targetInstanceID, "in-progress")
+	err = r.setStateTag(ruObj, targetInstanceID, "in-progress")
 	if err != nil {
 		ch <- err
 		return
 	}
 
-	switch ruObj.Spec.Strategy.Mode {
-	case upgrademgrv1alpha1.UpdateStrategyModeEager:
+	mode := ruObj.Spec.Strategy.Mode.String()
+	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
 		log.Printf("%v: starting replacement with eager mode", ruObj.Name)
 		r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
-	case upgrademgrv1alpha1.UpdateStrategyModeLazy:
+	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
 		log.Printf("%v: starting replacement with lazy mode", ruObj.Name)
 		r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
 	}
 
-	unjoined, err := r.WaitForTermination(nodeName, r.generatedClient.CoreV1().Nodes())
+	unjoined, err := r.WaitForTermination(ruObj, nodeName, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
 		ch <- err
 		return
 	}
 
 	if !unjoined {
-		log.Warnf("termination waiter completed but %s is still joined, will proceed with upgrade", nodeName)
+		log.Warnf("%v: termination waiter completed but %s is still joined, will proceed with upgrade", ruObj.Name, nodeName)
 	}
 
 	// set the EC2 tag indicating the state to completed
-	err = r.setStateTag(targetInstanceID, "completed")
+	err = r.setStateTag(ruObj, targetInstanceID, "completed")
 	if err != nil {
 		ch <- err
 		return

@@ -106,6 +106,10 @@ const (
 	// can be implemented in future by adding more update strategy types
 )
 
+func (c UpdateStrategyMode) String() string {
+	return string(c)
+}
+
 // UpdateStrategy holds the information needed to perform update based on different update strategies
 type UpdateStrategy struct {
 	Type UpdateStrategyType `json:"type,omitempty"`
