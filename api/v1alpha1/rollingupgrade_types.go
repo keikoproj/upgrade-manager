@@ -91,6 +91,8 @@ func init() {
 // whether to roll the update Az wise or all Azs at once
 type UpdateStrategyType string
 
+type UpdateStrategyMode string
+
 const (
 	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
 	RandomUpdateStrategy UpdateStrategyType = "randomUpdate"
@@ -98,13 +100,20 @@ const (
 	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
 	UniformAcrossAzUpdateStrategy UpdateStrategyType = "uniformAcrossAzUpdate"
 
+	UpdateStrategyModeLazy  UpdateStrategyMode = "lazy"
+	UpdateStrategyModeEager UpdateStrategyMode = "eager"
 	// Other update strategies such as rolling update by Az or rolling update with a predifined instance list
 	// can be implemented in future by adding more update strategy types
 )
 
+func (c UpdateStrategyMode) String() string {
+	return string(c)
+}
+
 // UpdateStrategy holds the information needed to perform update based on different update strategies
 type UpdateStrategy struct {
 	Type UpdateStrategyType `json:"type,omitempty"`
+	Mode UpdateStrategyMode `json:"mode,omitempty"`
 	// MaxUnavailable can be specified as number of nodes or the percent of total number of nodes
 	MaxUnavailable intstr.IntOrString `json:"maxUnavailable,omitempty"`
 	// Node will be terminated after drain timeout even if `kubectl drain` has not been completed
