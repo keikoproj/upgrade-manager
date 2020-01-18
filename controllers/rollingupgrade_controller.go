@@ -344,7 +344,9 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 
 	for _, instance := range r.Asg.Instances {
 		if aws.StringValue(instance.InstanceId) == instanceID {
-			if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateStandby {
+			if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
+				break
+			} else if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateStandby {
 				// already in standby
 				return nil
 			}
