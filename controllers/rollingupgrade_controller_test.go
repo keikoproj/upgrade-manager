@@ -317,6 +317,36 @@ func (m MockEC2) DescribeInstancesPages(input *ec2.DescribeInstancesInput, callb
 	return nil
 }
 
+func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(input *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
+	output := &autoscaling.EnterStandbyOutput{}
+	return output, nil
+}
+
+func (mockAutoscalingGroup MockAutoscalingGroup) DescribeAutoScalingGroups(input *autoscaling.DescribeAutoScalingGroupsInput) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
+	output := autoscaling.DescribeAutoScalingGroupsOutput{
+		AutoScalingGroups: []*autoscaling.Group{},
+	}
+
+	correctAsg := "correct-asg"
+	tooMany := "too-many"
+
+	switch *input.AutoScalingGroupNames[0] {
+	case correctAsg:
+		output.AutoScalingGroups = []*autoscaling.Group{
+			{AutoScalingGroupName: &correctAsg},
+		}
+	case tooMany:
+		output.AutoScalingGroups = []*autoscaling.Group{
+			{AutoScalingGroupName: &tooMany},
+			{AutoScalingGroupName: &tooMany},
+		}
+	default:
+		output.AutoScalingGroups = []*autoscaling.Group{}
+	}
+
+	return &output, nil
+}
+
 func (mockAutoscalingGroup MockAutoscalingGroup) TerminateInstanceInAutoScalingGroup(input *autoscaling.TerminateInstanceInAutoScalingGroupInput) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
 	output := &autoscaling.TerminateInstanceInAutoScalingGroupOutput{}
 	if mockAutoscalingGroup.errorFlag {
@@ -579,35 +609,6 @@ func TestGetNodeFromAsgMissingNode(t *testing.T) {
 	g.Expect(node).To(gomega.BeNil())
 }
 
-type MockAutoScalingAPI struct {
-	autoscalingiface.AutoScalingAPI
-}
-
-func (mockAutoScalingInstance *MockAutoScalingAPI) DescribeAutoScalingGroups(input *autoscaling.DescribeAutoScalingGroupsInput) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
-	output := autoscaling.DescribeAutoScalingGroupsOutput{
-		AutoScalingGroups: []*autoscaling.Group{},
-	}
-
-	correctAsg := "correct-asg"
-	tooMany := "too-many"
-
-	switch *input.AutoScalingGroupNames[0] {
-	case correctAsg:
-		output.AutoScalingGroups = []*autoscaling.Group{
-			{AutoScalingGroupName: &correctAsg},
-		}
-	case tooMany:
-		output.AutoScalingGroups = []*autoscaling.Group{
-			{AutoScalingGroupName: &tooMany},
-			{AutoScalingGroupName: &tooMany},
-		}
-	default:
-		output.AutoScalingGroups = []*autoscaling.Group{}
-	}
-
-	return &output, nil
-}
-
 func TestPopulateAsgSuccess(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
@@ -617,7 +618,7 @@ func TestPopulateAsgSuccess(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
-		ASGClient:    &MockAutoScalingAPI{},
+		ASGClient:    &MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
 	}
 	err := rcRollingUpgrade.populateAsg(ruObj)
@@ -641,7 +642,7 @@ func TestPopulateAsgTooMany(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
-		ASGClient:    &MockAutoScalingAPI{},
+		ASGClient:    &MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
 	}
 	err := rcRollingUpgrade.populateAsg(ruObj)
@@ -659,7 +660,7 @@ func TestPopulateAsgNone(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
-		ASGClient:    &MockAutoScalingAPI{},
+		ASGClient:    &MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
 	}
 	err := rcRollingUpgrade.populateAsg(ruObj)
@@ -2064,14 +2065,20 @@ func TestWaitForTermination(t *testing.T) {
 		ClusterState:    NewClusterState(),
 	}
 	nodeInterface.Create(mockNode)
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foo",
+			Namespace: "default",
+		},
+	}
 
-	unjoined, err := rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+	unjoined, err := rcRollingUpgrade.WaitForTermination(ruObj, mockNodeName, nodeInterface)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	g.Expect(unjoined).To(gomega.BeFalse())
 
 	nodeInterface.Delete(mockNodeName, &metav1.DeleteOptions{})
 
-	unjoined, err = rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+	unjoined, err = rcRollingUpgrade.WaitForTermination(ruObj, mockNodeName, nodeInterface)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	g.Expect(unjoined).To(gomega.BeTrue())
 }
