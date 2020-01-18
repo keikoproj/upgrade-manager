@@ -21,6 +21,9 @@ RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates 
   - `postDrain.postWaitScript`: The script to run after the node is drained and the waitSeconds have passed. This can be used for ensuring that the drained pods actually were able to start elsewhere.
   - `nodeIntervalSeconds`: The amount of time in seconds to wait after each node in the ASG is terminated.
   - `postTerminate.script`: Optional bash script to execute after the node has terminated.
+  - `strategy.mode`: This field is optional and allows for two possible modes
+    - `lazy` - this is the default mode, upgrade will terminate an instance first.
+    - `eager` - upgrade will launch an instance prior to terminating.
   - `strategy.type`: This field is optional and currently two strategies are supported
     - `randomUpdate` - Default is type is not specified. Picks nodes randomly for updating. Refer to [random_update_strategy.yaml](examples/random_update_strategy.yaml) for sample custom resource definition.
     - `uniformAcrossAzUpdate` - Picks same number of nodes or same percentage of nodes from each AZ for update. Refer to [uniform_across_az_update_strategy.yaml](examples/uniform_across_az_update_strategy.yaml) for sample custom resource definition.
@@ -65,6 +68,7 @@ If you already have an existing cluster created using kops, follow the instructi
     "Action": [
         "ec2:CreateTags",
         "ec2:DescribeInstances",
+        "autoscaling:EnterStandby",
         "autoscaling:DescribeAutoScalingGroups",
         "autoscaling:TerminateInstanceInAutoScalingGroup"
     ],

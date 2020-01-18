@@ -84,6 +84,10 @@ const (
 var (
 	// TerminationTimeoutSeconds is the timeout threshold for waiting for a node object unjoin
 	TerminationTimeoutSeconds = 3600
+	// ScaleoutTimeoutSeconds is the timeout threshold for waiting for a node to join the scaling group
+	ScaleoutTimeoutSeconds = 300
+	// ScaleoutSleepIntervalSeconds is the polling interval for checking if an instance has joined the scaling group
+	ScaleoutSleepIntervalSeconds = 30
 	// TerminationSleepIntervalSeconds is the polling interval for checking if a node object is unjoined
 	TerminationSleepIntervalSeconds = 30
 )
@@ -244,6 +248,63 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 	errChan <- nil
 }
 
+func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	var (
+		started = time.Now()
+	)
+	for {
+		if time.Since(started) >= (time.Second * time.Duration(ScaleoutTimeoutSeconds)) {
+			err := errors.New("WaitForDesired timed out while waiting for instance to be added")
+			return err
+		}
+		err := r.populateAsg(ruObj)
+		if err != nil {
+			return err
+		}
+		if getInServiceCount(r.Asg.Instances) == aws.Int64Value(r.Asg.DesiredCapacity) {
+			break
+		}
+		log.Printf("%v: new instance has not yet joined the scaling group, will wait %vs and retry", ruObj.Name, ScaleoutSleepIntervalSeconds)
+		time.Sleep(time.Duration(ScaleoutSleepIntervalSeconds) * time.Second)
+	}
+	return nil
+}
+
+func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	var (
+		started = time.Now()
+	)
+	for {
+		if time.Since(started) >= (time.Second * time.Duration(ScaleoutTimeoutSeconds)) {
+			err := errors.New("WaitForDesired timed out while waiting for instance to be added")
+			return err
+		}
+
+		r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
+
+		// get list of inService instance IDs
+		inServiceInstances := getInServiceIds(r.Asg.Instances)
+		desiredCapacity := aws.Int64Value(r.Asg.DesiredCapacity)
+
+		// check all of them are nodes and are ready
+		var foundCount int64 = 0
+		for _, node := range r.NodeList.Items {
+			tokens := strings.Split(node.Spec.ProviderID, "/")
+			instanceID := tokens[len(tokens)-1]
+			if contains(inServiceInstances, instanceID) && isNodeReady(node) {
+				foundCount++
+			}
+		}
+		if foundCount == desiredCapacity {
+			break
+		}
+
+		log.Printf("%v: new node has not yet joined the cluster, will wait %vs and retry", ruObj.Name, ScaleoutSleepIntervalSeconds)
+		time.Sleep(time.Duration(ScaleoutSleepIntervalSeconds) * time.Second)
+	}
+	return nil
+}
+
 func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
 	var (
 		started = time.Now()
@@ -264,6 +325,48 @@ func (r *RollingUpgradeReconciler) WaitForTermination(nodeName string, nodeInter
 		time.Sleep(time.Duration(TerminationSleepIntervalSeconds) * time.Second)
 	}
 	return true, nil
+}
+
+// SetStandby sets the autoscaling instance to standby mode.
+func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string) error {
+
+	log.Infof("%v: Setting %v to stand-by", ruObj.Name, instanceID)
+	input := &autoscaling.EnterStandbyInput{
+		AutoScalingGroupName:           aws.String(ruObj.Spec.AsgName),
+		InstanceIds:                    aws.StringSlice([]string{instanceID}),
+		ShouldDecrementDesiredCapacity: aws.Bool(false),
+	}
+
+	err := r.populateAsg(ruObj)
+	if err != nil {
+		return err
+	}
+
+	for _, instance := range r.Asg.Instances {
+		if aws.StringValue(instance.InstanceId) == instanceID && aws.StringValue(instance.LifecycleState) != autoscaling.LifecycleStateInService {
+			log.Warnf("%v: cannot set instance %v to stand-by, instance in state %v", ruObj.Name, instanceID, aws.StringValue(instance.LifecycleState))
+			return nil
+		}
+	}
+	_, err = r.ASGClient.EnterStandby(input)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if strings.Contains(aerr.Message(), "not found") {
+				log.Printf("Instance %s not found. Moving on\n", instanceID)
+				return nil
+			}
+			switch aerr.Code() {
+			case autoscaling.ErrCodeResourceContentionFault:
+				log.Warn(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
+				return nil
+			default:
+				log.Println(aerr.Error())
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // TerminateNode actually terminates the given node.
@@ -366,6 +469,7 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	}
 
 	asg := result.AutoScalingGroups[0]
+	r.Asg = asg
 	r.ruObjNameToASG.Store(ruObj.Name, asg)
 
 	return nil
@@ -383,7 +487,6 @@ func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.Ro
 	for _, n := range nodeList.Items {
 		nodesFound = n.Name + "," + nodesFound
 	}
-	log.Printf("%s: Kubernetes nodes found: %s", ruObj.Name, nodesFound)
 
 	r.NodeList = nodeList
 	return nil
@@ -722,6 +825,7 @@ func (r *RollingUpgradeReconciler) setDefaultsForRollingUpdateStrategy(ruObj *up
 		log.Printf("Update strategy not set on the rollup object - %s, setting the default strategy.", ruObj.Name)
 		strategy := upgrademgrv1alpha1.UpdateStrategy{
 			Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+			Mode:           upgrademgrv1alpha1.UpdateStrategyModeLazy,
 			MaxUnavailable: intstr.IntOrString{IntVal: 1},
 			DrainTimeout:   -1,
 		}
@@ -729,6 +833,10 @@ func (r *RollingUpgradeReconciler) setDefaultsForRollingUpdateStrategy(ruObj *up
 	} else {
 		if ruObj.Spec.Strategy.Type == "" {
 			ruObj.Spec.Strategy.Type = upgrademgrv1alpha1.RandomUpdateStrategy
+		}
+		if ruObj.Spec.Strategy.Mode == "" {
+			// default to lazy mode
+			ruObj.Spec.Strategy.Mode = upgrademgrv1alpha1.UpdateStrategyModeLazy
 		}
 		// intstr.IntOrString has the default value 0 with int types
 		if ruObj.Spec.Strategy.MaxUnavailable.Type == 0 && ruObj.Spec.Strategy.MaxUnavailable.IntVal == 0 {
@@ -795,6 +903,62 @@ Loop:
 	return nil
 }
 
+func (r *RollingUpgradeReconciler) UpdateInstanceEager(
+	ruObj *upgrademgrv1alpha1.RollingUpgrade,
+	nodeName,
+	targetInstanceID,
+	KubeCtlCall string,
+	ch chan error) {
+
+	// Set instance to standby.
+	err := r.SetStandby(ruObj, targetInstanceID)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	// Wait for new instance to be created
+	err = r.WaitForDesiredInstances(ruObj)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	// Wait for in-service nodes to be ready and match desired
+	err = r.WaitForDesiredNodes(ruObj)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	// Drain and wait for draining node.
+	r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+
+}
+
+func (r *RollingUpgradeReconciler) DrainTerminate(
+	ruObj *upgrademgrv1alpha1.RollingUpgrade,
+	nodeName,
+	targetInstanceID,
+	KubeCtlCall string,
+	ch chan error) {
+
+	// Drain and wait for draining node.
+	err := r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+	// Terminate instance.
+	err = r.TerminateNode(ruObj, targetInstanceID)
+	if err != nil {
+		ch <- err
+		return
+	}
+
+}
+
 func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	i *autoscaling.Instance,
@@ -833,18 +997,13 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 		return
 	}
 
-	// Drain and wait for draining node.
-	err = r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
-	if err != nil {
-		ch <- err
-		return
-	}
-
-	// Terminate instance.
-	err = r.TerminateNode(ruObj, targetInstanceID)
-	if err != nil {
-		ch <- err
-		return
+	switch ruObj.Spec.Strategy.Mode {
+	case upgrademgrv1alpha1.UpdateStrategyModeEager:
+		log.Printf("%v: starting replacement with eager mode", ruObj.Name)
+		r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+	case upgrademgrv1alpha1.UpdateStrategyModeLazy:
+		log.Printf("%v: starting replacement with lazy mode", ruObj.Name)
+		r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
 	}
 
 	unjoined, err := r.WaitForTermination(nodeName, r.generatedClient.CoreV1().Nodes())
