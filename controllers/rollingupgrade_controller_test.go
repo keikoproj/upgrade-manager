@@ -2065,14 +2065,20 @@ func TestWaitForTermination(t *testing.T) {
 		ClusterState:    NewClusterState(),
 	}
 	nodeInterface.Create(mockNode)
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foo",
+			Namespace: "default",
+		},
+	}
 
-	unjoined, err := rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+	unjoined, err := rcRollingUpgrade.WaitForTermination(ruObj, mockNodeName, nodeInterface)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	g.Expect(unjoined).To(gomega.BeFalse())
 
 	nodeInterface.Delete(mockNodeName, &metav1.DeleteOptions{})
 
-	unjoined, err = rcRollingUpgrade.WaitForTermination(mockNodeName, nodeInterface)
+	unjoined, err = rcRollingUpgrade.WaitForTermination(ruObj, mockNodeName, nodeInterface)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	g.Expect(unjoined).To(gomega.BeTrue())
 }
