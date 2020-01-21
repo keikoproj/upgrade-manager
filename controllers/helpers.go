@@ -41,7 +41,9 @@ func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes in
 func isNodeReady(node corev1.Node) bool {
 	for _, condition := range node.Status.Conditions {
 		if condition.Type == corev1.NodeReady {
-			return true
+			if condition.Status == corev1.ConditionTrue {
+				return true
+			}
 		}
 	}
 	return false
