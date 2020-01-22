@@ -25,3 +25,4 @@ bin
 vendor/
 config/default/manager_image_patch.yaml-e
 .vscode/
+cover.html

@@ -11,18 +11,18 @@ rules:
   resources:
   - rollingupgrades
   verbs:
+  - create
+  - delete
   - get
   - list
-  - watch
-  - create
-  - update
   - patch
-  - delete
+  - update
+  - watch
 - apiGroups:
   - upgrademgr.keikoproj.io
   resources:
   - rollingupgrades/status
   verbs:
   - get
-  - update
   - patch
+  - update
