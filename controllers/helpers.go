@@ -6,6 +6,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	corev1 "k8s.io/api/core/v1"
+
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"log"
 	"strconv"
@@ -34,6 +36,37 @@ func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes in
 		maxUnavailable = 1
 	}
 	return maxUnavailable
+}
+
+func isNodeReady(node corev1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady {
+			if condition.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func getInServiceCount(instances []*autoscaling.Instance) int64 {
+	var count int64
+	for _, instance := range instances {
+		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
+			count++
+		}
+	}
+	return count
+}
+
+func getInServiceIds(instances []*autoscaling.Instance) []string {
+	list := []string{}
+	for _, instance := range instances {
+		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
+			list = append(list, aws.StringValue(instance.InstanceId))
+		}
+	}
+	return list
 }
 
 func tagEC2instance(instanceID, tagKey, tagValue string, client ec2iface.EC2API) error {
