@@ -262,8 +262,9 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 			return err
 		}
 
-		if getInServiceCount(r.Asg.Instances) == aws.Int64Value(r.Asg.DesiredCapacity) {
-			log.Printf("%v: desired capacity is met, %v instances in service", ruObj.Name, len(r.Asg.Instances))
+		inServiceCount := getInServiceCount(r.Asg.Instances)
+		if inServiceCount == aws.Int64Value(r.Asg.DesiredCapacity) {
+			log.Printf("%v: desired capacity is met, %v instances in service", ruObj.Name, inServiceCount)
 			return nil
 		}
 
@@ -293,7 +294,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 		}
 
 		if foundCount == desiredCapacity {
-			log.Printf("%v: desired capacity is met, %v nodes are in service", ruObj.Name, foundCount)
+			log.Printf("%v: desired capacity is met, %v nodes in service", ruObj.Name, foundCount)
 			return nil
 		}
 
