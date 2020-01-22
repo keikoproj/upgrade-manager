@@ -17,8 +17,8 @@ package controllers
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"github.com/pkg/errors"
 	"os"
 	"os/exec"
 	"strconv"
@@ -40,6 +40,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
+	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,12 +85,16 @@ const (
 var (
 	// TerminationTimeoutSeconds is the timeout threshold for waiting for a node object unjoin
 	TerminationTimeoutSeconds = 3600
-	// ScaleoutTimeoutSeconds is the timeout threshold for waiting for a node to join the scaling group
-	ScaleoutTimeoutSeconds = 300
-	// ScaleoutSleepIntervalSeconds is the polling interval for checking if an instance has joined the scaling group
-	ScaleoutSleepIntervalSeconds = 30
 	// TerminationSleepIntervalSeconds is the polling interval for checking if a node object is unjoined
 	TerminationSleepIntervalSeconds = 30
+	// WaiterMaxDelay is the maximum delay for waiters inverse exponential backoff
+	WaiterMaxDelay = time.Second * 90
+	// WaiterMinDelay is the minimum delay for waiters inverse exponential backoff
+	WaiterMinDelay = time.Second * 15
+	// WaiterFactor is the delay reduction factor per retry
+	WaiterFactor = 0.5
+	// WaiterMaxAttempts is the maximum number of retries for waiters
+	WaiterMaxAttempts = uint32(32)
 )
 
 var DefaultRetryer = awsclient.DefaultRetryer{
@@ -249,37 +254,28 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 }
 
 func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
-	var (
-		started = time.Now()
-	)
-	for {
-		if time.Since(started) >= (time.Second * time.Duration(ScaleoutTimeoutSeconds)) {
-			err := errors.New("WaitForDesired timed out while waiting for instance to be added")
-			return err
-		}
-		err := r.populateAsg(ruObj)
+
+	var err error
+	for ieb, err := iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
+		err = r.populateAsg(ruObj)
 		if err != nil {
 			return err
 		}
+
 		if getInServiceCount(r.Asg.Instances) == aws.Int64Value(r.Asg.DesiredCapacity) {
-			break
+			log.Printf("%v: desired capacity is met, %v instances in service", ruObj.Name, len(r.Asg.Instances))
+			return nil
 		}
-		log.Printf("%v: new instance has not yet joined the scaling group, will wait %vs and retry", ruObj.Name, ScaleoutSleepIntervalSeconds)
-		time.Sleep(time.Duration(ScaleoutSleepIntervalSeconds) * time.Second)
+
+		log.Printf("%v: new instance has not yet joined the scaling group", ruObj.Name)
 	}
-	return nil
+	return errors.Wrapf(err, "%v: WaitForDesiredInstances timed out while waiting for instance to be added", ruObj.Name)
 }
 
 func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
-	var (
-		started = time.Now()
-	)
-	for {
-		if time.Since(started) >= (time.Second * time.Duration(ScaleoutTimeoutSeconds)) {
-			err := errors.New("WaitForDesired timed out while waiting for instance to be added")
-			return err
-		}
 
+	var err error
+	for ieb, err := iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
 		r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 
 		// get list of inService instance IDs
@@ -295,14 +291,15 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 				foundCount++
 			}
 		}
+
 		if foundCount == desiredCapacity {
-			break
+			log.Printf("%v: desired capacity is met, %v nodes are in service", ruObj.Name, foundCount)
+			return nil
 		}
 
-		log.Printf("%v: new node has not yet joined the cluster, will wait %vs and retry", ruObj.Name, ScaleoutSleepIntervalSeconds)
-		time.Sleep(time.Duration(ScaleoutSleepIntervalSeconds) * time.Second)
+		log.Printf("%v: new node has not yet joined the cluster", ruObj.Name)
 	}
-	return nil
+	return errors.Wrapf(err, "%v: WaitForDesiredNodes timed out while waiting for nodes to join", ruObj.Name)
 }
 
 func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
@@ -337,36 +334,31 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
-	err := r.populateAsg(ruObj)
-	if err != nil {
-		return err
-	}
-
 	for _, instance := range r.Asg.Instances {
 		if aws.StringValue(instance.InstanceId) == instanceID {
 			if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
 				break
 			} else if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateStandby {
-				// already in standby
+				log.Infof("%v: cannot set instance %v to stand-by, instance is already in stand-by", ruObj.Name, instanceID)
 				return nil
 			}
 			log.Warnf("%v: cannot set instance %v to stand-by, instance in state %v", ruObj.Name, instanceID, aws.StringValue(instance.LifecycleState))
 			return nil
 		}
 	}
-	_, err = r.ASGClient.EnterStandby(input)
+	_, err := r.ASGClient.EnterStandby(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if strings.Contains(aerr.Message(), "not found") {
-				log.Printf("Instance %s not found. Moving on\n", instanceID)
+				log.Printf("%v: Instance %s not found. Moving on\n", ruObj.Name, instanceID)
 				return nil
 			}
 			switch aerr.Code() {
 			case autoscaling.ErrCodeResourceContentionFault:
-				log.Warn(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
+				log.Warnf("%v: instance %v failed to enter standby: %v", ruObj.Name, instanceID, aerr.Error())
 				return nil
 			default:
-				log.Println(aerr.Error())
+				log.Errorf("%v: instance %v failed to enter standby: %v", ruObj.Name, instanceID, aerr.Error())
 				return err
 			}
 		}
@@ -383,7 +375,7 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
-	result, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
+	_, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if strings.Contains(aerr.Message(), "not found") {
@@ -404,7 +396,6 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	}
 
 	log.Infof("%v: terminated instance %v", ruObj.Name, instanceID)
-	log.Debugf("%v: Termination output: %v\n", ruObj.Name, result)
 
 	log.Printf("%v: starting post termination sleep for %v seconds", ruObj.Name, ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
