@@ -2,6 +2,10 @@
 All notable changes to this project will be documented in this file.
 
 
+## [v0.6] - 2020-01-27
+
+* Eager mode: Launch Before Terminate (#49)
+
 ## [v0.5] - 2020-01-16
 
 * RollingUpgrade idempotency fix (#41)
