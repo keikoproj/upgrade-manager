@@ -8,6 +8,7 @@ metadata:
 rules:
 - apiGroups:
   - apps
+  - extensions
   resources:
   - daemonsets
   verbs:
@@ -19,6 +20,7 @@ rules:
   verbs:
   - get
   - list
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -31,12 +33,6 @@ rules:
   - pods/eviction
   verbs:
   - create
-- apiGroups:
-  - extensions
-  resources:
-  - daemonsets
-  verbs:
-  - get
 - apiGroups:
   - upgrademgr.keikoproj.io
   resources:
