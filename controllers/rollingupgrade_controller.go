@@ -709,6 +709,7 @@ func MarkObjForCleanup(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 
 // +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list
 
 // Reconcile reads that state of the cluster for a RollingUpgrade object and makes changes based on the state read
 // and the details in the RollingUpgrade.Spec
