@@ -7,6 +7,12 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - get
+- apiGroups:
   - ""
   resources:
   - nodes
@@ -25,6 +31,12 @@ rules:
   - pods/eviction
   verbs:
   - create
+- apiGroups:
+  - extensions
+  resources:
+  - daemonsets
+  verbs:
+  - get
 - apiGroups:
   - upgrademgr.keikoproj.io
   resources:
