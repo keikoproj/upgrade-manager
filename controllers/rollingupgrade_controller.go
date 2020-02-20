@@ -979,6 +979,8 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 		r.Update(*ctx, ruObj)
 		ch <- nil
 		return
+	} else {
+		log.Printf("Will replace instance: %s", targetInstanceID)
 	}
 
 	nodeName := r.getNodeName(i, r.NodeList, ruObj)
@@ -1050,7 +1052,7 @@ func requiresRefresh(ec2Instance *autoscaling.Instance, definition *launchDefini
 		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateName) != aws.StringValue(targetLaunchTemplate.LaunchTemplateName) {
 			return true
 		}
-		if aws.String(*instanceLaunchTemplate.Version) != aws.String(*targetLaunchTemplate.Version) {
+		if aws.StringValue(instanceLaunchTemplate.Version) != aws.StringValue(targetLaunchTemplate.Version) {
 			return true
 		}
 	}
