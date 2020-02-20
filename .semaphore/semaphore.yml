@@ -8,7 +8,7 @@ agent:
     # os_image: ubuntu1804
   containers:
     - name: main
-      image: semaphoreci/golang:1.13.6
+      image: semaphoreci/golang:1.13.8
 blocks:
   - name: Setup
     task:
@@ -27,7 +27,7 @@ blocks:
           - cache restore $SEMAPHORE_PROJECT_NAME-dep-$(checksum .semaphore/setup.sh)
           - ls -l /packages
           - pushd /packages
-          - sudo tar -xf go1.13.6.linux-amd64.tar.gz
+          - sudo tar -xf go1.13.8.linux-amd64.tar.gz
           - sudo cp go/bin/go /usr/local/bin
           - sudo rm -rf /usr/local/go
           - sudo mv go /usr/local
