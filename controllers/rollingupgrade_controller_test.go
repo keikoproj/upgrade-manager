@@ -2236,3 +2236,26 @@ func TestRequiresRefreshHandlesLaunchTemplateIDUpdate(t *testing.T) {
 	result := requiresRefresh(&mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(true))
 }
+
+func TestRequiresRefreshNotUpdateIfNoVersionChange(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockID := "some-id"
+	oldLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v1"),
+		Version:          aws.String("1"),
+	}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: oldLaunchTemplate, AvailabilityZone: &az}
+
+	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v1"),
+		Version:          aws.String("1"),
+	}
+	definition := launchDefinition{
+		launchTemplate: newLaunchTemplate,
+	}
+
+	result := requiresRefresh(&mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(false))
+}
