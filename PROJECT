@@ -1,6 +1,6 @@
 version: "2"
-domain: orkaproj.io
-repo: github.com/orkaproj/upgrade-manager
+domain: keikoproj.io
+repo: github.com/keikoproj/upgrade-manager
 resources:
 - group: upgrademgr
   version: v1alpha1
