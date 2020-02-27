@@ -280,8 +280,71 @@ func TestDrainNodePostDrainFailureToDrain(t *testing.T) {
 
 type MockEC2Instance struct {
 	ec2iface.EC2API
-	errorFlag bool
-	awsErr    awserr.Error
+	reservations []*ec2.Reservation
+}
+
+type MockAutoscalingGroup struct {
+	autoscalingiface.AutoScalingAPI
+	errorFlag       bool
+	awsErr          awserr.Error
+	errorInstanceId string
+}
+
+func (m MockEC2) CreateTags(input *ec2.CreateTagsInput) (*ec2.CreateTagsOutput, error) {
+	return &ec2.CreateTagsOutput{}, nil
+}
+
+func (m MockEC2) DescribeInstances(input *ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
+	return &ec2.DescribeInstancesOutput{Reservations: m.reservations}, nil
+}
+
+func (m MockEC2) DescribeInstancesPages(input *ec2.DescribeInstancesInput, callback func(*ec2.DescribeInstancesOutput, bool) bool) error {
+	page, err := m.DescribeInstances(input)
+	if err != nil {
+		return err
+	}
+	callback(page, false)
+	return nil
+}
+
+func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(input *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
+	output := &autoscaling.EnterStandbyOutput{}
+	return output, nil
+}
+
+func (mockAutoscalingGroup MockAutoscalingGroup) DescribeAutoScalingGroups(input *autoscaling.DescribeAutoScalingGroupsInput) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
+	output := autoscaling.DescribeAutoScalingGroupsOutput{
+		AutoScalingGroups: []*autoscaling.Group{},
+	}
+
+	correctAsg := "correct-asg"
+	tooMany := "too-many"
+	asgA := "asg-a"
+	asgB := "asg-b"
+
+	switch *input.AutoScalingGroupNames[0] {
+	case correctAsg:
+		output.AutoScalingGroups = []*autoscaling.Group{
+			{AutoScalingGroupName: &correctAsg},
+		}
+	case tooMany:
+		output.AutoScalingGroups = []*autoscaling.Group{
+			{AutoScalingGroupName: &tooMany},
+			{AutoScalingGroupName: &tooMany},
+		}
+	case asgA:
+		output.AutoScalingGroups = []*autoscaling.Group{
+			{AutoScalingGroupName: &asgA},
+		}
+	case asgB:
+		output.AutoScalingGroups = []*autoscaling.Group{
+			{AutoScalingGroupName: &asgB},
+		}
+	default:
+		output.AutoScalingGroups = []*autoscaling.Group{}
+	}
+
+	return &output, nil
 }
 
 func (mockEC2Instance MockEC2Instance) TerminateInstances(input *ec2.TerminateInstancesInput) (*ec2.TerminateInstancesOutput, error) {
@@ -547,7 +610,7 @@ func TestPopulateAsgTooMany(t *testing.T) {
 	err := rcRollingUpgrade.populateAsg(ruObj, mockAsgAPI)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.Equal("Too many asgs"))
+	g.Expect(err.Error()).To(gomega.Equal("Too many ASGs"))
 }
 
 func TestPopulateAsgNone(t *testing.T) {
@@ -563,6 +626,45 @@ func TestPopulateAsgNone(t *testing.T) {
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 	g.Expect(err.Error()).To(gomega.Equal("No ASG found"))
+}
+
+func TestParallelAsgTracking(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	asgAName := "asg-a"
+	asgBName := "asg-b"
+
+	ruObjA := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo-a", Namespace: "default"},
+		TypeMeta: metav1.TypeMeta{Kind: "RollingUpgrade", APIVersion: "v1alpha1"},
+		Spec:     upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: asgAName}}
+	ruObjB := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo-b", Namespace: "default"},
+		TypeMeta: metav1.TypeMeta{Kind: "RollingUpgrade", APIVersion: "v1alpha1"},
+		Spec:     upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: asgBName}}
+
+	expectedAsgA := autoscaling.Group{AutoScalingGroupName: &asgAName}
+	expectedAsgB := autoscaling.Group{AutoScalingGroupName: &asgBName}
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		ClusterState: NewClusterState(),
+		ASGClient:    &MockAutoscalingGroup{},
+		EC2Client:    MockEC2{},
+	}
+
+	err := rcRollingUpgrade.populateAsg(ruObjA)
+	g.Expect(err).To(gomega.BeNil())
+
+	err = rcRollingUpgrade.populateAsg(ruObjB)
+	g.Expect(err).To(gomega.BeNil())
+
+	//This test ensures that we can lookup each of 2 separate ASGs after populating both
+	requestedAsgA, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObjA.Name)
+	g.Expect(ok).To(gomega.BeTrue())
+
+	requestedAsgB, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObjB.Name)
+	g.Expect(ok).To(gomega.BeTrue())
+
+	g.Expect(requestedAsgA.(*autoscaling.Group).AutoScalingGroupName).To(gomega.Equal(expectedAsgA.AutoScalingGroupName))
+	g.Expect(requestedAsgB.(*autoscaling.Group).AutoScalingGroupName).To(gomega.Equal(expectedAsgB.AutoScalingGroupName))
 }
 
 type MockNodeList struct {
