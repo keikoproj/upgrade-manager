@@ -362,7 +362,7 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 			}
 		}
 	}
-	return errors.Wrapf(err, "%v: WaitForDesiredInstances timed out while waiting for instance to be added", ruObj.Name)
+	return nil
 }
 
 // TerminateNode actually terminates the given node.
