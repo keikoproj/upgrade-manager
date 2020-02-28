@@ -19,8 +19,8 @@ import (
 	"flag"
 	"os"
 
-	upgrademgrv1alpha1 "github.com/orkaproj/upgrade-manager/api/v1alpha1"
-	"github.com/orkaproj/upgrade-manager/controllers"
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers"
 	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -43,13 +43,15 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var namespace string
+	var maxParallel int
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&namespace, "namespace", "", "The namespace in which to watch objects")
+	flag.IntVar(&maxParallel, "max-parallel", 10, "The max number of parallel rolling upgrades")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.Logger(true))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stderr)))
 
 	mgo := ctrl.Options{
 		Scheme:             scheme,
@@ -68,10 +70,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = (&controllers.RollingUpgradeReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("RollingUpgrade"),
-	}).SetupWithManager(mgr)
+	reconciler := &controllers.RollingUpgradeReconciler{
+		Client:       mgr.GetClient(),
+		Log:          ctrl.Log.WithName("controllers").WithName("RollingUpgrade"),
+		ClusterState: controllers.NewClusterState(),
+	}
+
+	reconciler.SetMaxParallel(maxParallel)
+
+	err = (reconciler).SetupWithManager(mgr)
 	if err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RollingUpgrade")
 		os.Exit(1)

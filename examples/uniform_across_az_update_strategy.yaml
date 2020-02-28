@@ -1,0 +1,26 @@
+apiVersion: upgrademgr.keikoproj.io/v1alpha1
+kind: RollingUpgrade
+metadata:
+  generateName: rollingupgrade-sample-
+spec:
+  asgName: my-asg-1
+  nodeIntervalSeconds: 300
+  preDrain:
+    script: |
+      kubectl get pods --all-namespaces --field-selector spec.nodeName=${INSTANCE_NAME}
+  postDrain:
+    script: |
+      echo "Pods at PostDrain:"
+      kubectl get pods --all-namespaces --field-selector spec.nodeName=${INSTANCE_NAME}
+    waitSeconds: 90
+    postWaitScript: |
+      echo "Pods at postWait:"
+      kubectl get pods --all-namespaces --field-selector spec.nodeName=${INSTANCE_NAME}
+  postTerminate:
+    script: |
+      echo "PostTerminate:"
+      kubectl get pods --all-namespaces
+  strategy:
+    type: "uniformAcrossAzUpdate"
+    maxUnavailable: "25%"
+    drainTimeout: 120

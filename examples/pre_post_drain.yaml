@@ -1,4 +1,4 @@
-apiVersion: upgrademgr.orkaproj.io/v1alpha1
+apiVersion: upgrademgr.keikoproj.io/v1alpha1
 kind: RollingUpgrade
 metadata:
   generateName: rollingupgrade-sample-

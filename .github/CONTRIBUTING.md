@@ -1,6 +1,6 @@
 # How to contribute
 
-1. Fork it (<https://github.com/orkaproj/upgrade-manager/fork>)
+1. Fork it (<https://github.com/keikoproj/upgrade-manager/fork>)
 2. Add your fork as a git remote named, say `reviews`.
 2. Open an issue and discuss the feature / bug
 3. Create your feature branch in your fork (`git checkout -b feature/fooBar`)
