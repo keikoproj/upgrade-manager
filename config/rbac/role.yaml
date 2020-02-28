@@ -7,25 +7,20 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - upgrademgr.keikoproj.io
+  - apps
+  - extensions
   resources:
-  - rollingupgrades
+  - daemonsets
+  - replicasets
+  - statefulsets
   verbs:
   - get
-  - list
-  - watch
-  - create
-  - update
-  - patch
-  - delete
 - apiGroups:
-  - upgrademgr.keikoproj.io
+  - batch
   resources:
-  - rollingupgrades/status
+  - jobs
   verbs:
   - get
-  - update
-  - patch
 - apiGroups:
   - ""
   resources:
@@ -47,17 +42,22 @@ rules:
   verbs:
   - create
 - apiGroups:
-  - extensions
-  - apps
+  - upgrademgr.keikoproj.io
   resources:
-  - daemonsets
-  - replicasets
-  - statefulsets
+  - rollingupgrades
   verbs:
+  - create
+  - delete
   - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
-  - batch
+  - upgrademgr.keikoproj.io
   resources:
-  - jobs
+  - rollingupgrades/status
   verbs:
   - get
+  - patch
+  - update
