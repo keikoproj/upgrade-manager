@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [v0.6.1] - 2020-02-28
+## [v0.7] - 2020-02-28
 
 * Eager mode: Fix parallel RU bug (#57)
 
