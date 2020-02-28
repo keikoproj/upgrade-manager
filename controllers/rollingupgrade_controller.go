@@ -112,7 +112,6 @@ type RollingUpgradeReconciler struct {
 	EC2Client       ec2iface.EC2API
 	ASGClient       autoscalingiface.AutoScalingAPI
 	generatedClient *kubernetes.Clientset
-	Asg             *autoscaling.Group
 	NodeList        *corev1.NodeList
 	admissionMap    sync.Map
 	ruObjNameToASG  sync.Map
