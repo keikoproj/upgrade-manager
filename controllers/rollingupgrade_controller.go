@@ -109,12 +109,11 @@ type RollingUpgradeReconciler struct {
 	EC2Client       ec2iface.EC2API
 	ASGClient       autoscalingiface.AutoScalingAPI
 	generatedClient *kubernetes.Clientset
-	Asgs            map[string]*autoscaling.Group
-	NodeList        *corev1.NodeList
-	admissionMap    sync.Map
-	ruObjNameToASG  sync.Map
-	ClusterState    ClusterState
-	maxParallel     int
+	NodeList       *corev1.NodeList
+	admissionMap   sync.Map
+	ruObjNameToASG sync.Map
+	ClusterState   ClusterState
+	maxParallel    int
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
@@ -259,8 +258,14 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 			return err
 		}
 
-		inServiceCount := getInServiceCount(r.Asgs[ruObj.Name].Instances)
-		if inServiceCount == aws.Int64Value(r.Asgs[ruObj.Name].DesiredCapacity) {
+		val, ok := r.ruObjNameToASG.Load(ruObj.Name)
+		if !ok {
+			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		}
+		asg := val.(*autoscaling.Group)
+
+		inServiceCount := getInServiceCount(asg.Instances)
+		if inServiceCount == aws.Int64Value(asg.DesiredCapacity) {
 			log.Printf("%v: desired capacity is met, %v instances in service", ruObj.Name, inServiceCount)
 			return nil
 		}
@@ -276,9 +281,15 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 	for ieb, err := iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
 		r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 
+		val, ok := r.ruObjNameToASG.Load(ruObj.Name)
+		if !ok {
+			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		}
+		asg := val.(*autoscaling.Group)
+
 		// get list of inService instance IDs
-		inServiceInstances := getInServiceIds(r.Asgs[ruObj.Name].Instances)
-		desiredCapacity := aws.Int64Value(r.Asgs[ruObj.Name].DesiredCapacity)
+		inServiceInstances := getInServiceIds(asg.Instances)
+		desiredCapacity := aws.Int64Value(asg.DesiredCapacity)
 
 		// check all of them are nodes and are ready
 		var foundCount int64 = 0
@@ -332,7 +343,13 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
-	for _, instance := range r.Asgs[ruObj.Name].Instances {
+	val, ok := r.ruObjNameToASG.Load(ruObj.Name)
+	if !ok {
+		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+	}
+	asg := val.(*autoscaling.Group)
+
+	for _, instance := range asg.Instances {
 		if aws.StringValue(instance.InstanceId) == instanceID {
 			if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
 				break
@@ -464,11 +481,6 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	}
 
 	asg := result.AutoScalingGroups[0]
-	if r.Asgs == nil {
-		// Init map to hold all parallel reconciling ASGs
-		r.Asgs = make(map[string]*autoscaling.Group)
-	}
-	r.Asgs[ruObj.Name] = asg
 	r.ruObjNameToASG.Store(ruObj.Name, asg)
 
 	return nil
