@@ -110,11 +110,11 @@ type RollingUpgradeReconciler struct {
 	EC2Client       ec2iface.EC2API
 	ASGClient       autoscalingiface.AutoScalingAPI
 	generatedClient *kubernetes.Clientset
-	NodeList       *corev1.NodeList
-	admissionMap   sync.Map
-	ruObjNameToASG sync.Map
-	ClusterState   ClusterState
-	maxParallel    int
+	NodeList        *corev1.NodeList
+	admissionMap    sync.Map
+	ruObjNameToASG  sync.Map
+	ClusterState    ClusterState
+	maxParallel     int
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
