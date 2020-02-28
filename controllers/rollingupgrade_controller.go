@@ -17,7 +17,7 @@ package controllers
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -36,6 +36,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1errors "k8s.io/apimachinery/pkg/api/errors"
