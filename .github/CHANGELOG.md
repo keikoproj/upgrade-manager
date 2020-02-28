@@ -3,7 +3,10 @@ All notable changes to this project will be documented in this file.
 
 ## [v0.7] - 2020-02-28
 
-* Eager mode: Fix parallel RU bug (#57)
+* Fix parallel RU bug (#57)
+* Upgrade golang version to 1.13.8 (#56)
+* Check version by value rather than ptr (#55)
+* Add missing RBAC for node list/get (#53)
 
 ## [v0.6] - 2020-01-27
 
