@@ -18,17 +18,12 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"github.com/pkg/errors"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"k8s.io/apimachinery/pkg/util/intstr"
-
-	corev1 "k8s.io/api/core/v1"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -41,9 +36,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
+	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -261,8 +259,14 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 			return err
 		}
 
-		inServiceCount := getInServiceCount(r.Asg.Instances)
-		if inServiceCount == aws.Int64Value(r.Asg.DesiredCapacity) {
+		val, ok := r.ruObjNameToASG.Load(ruObj.Name)
+		if !ok {
+			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		}
+		asg := val.(*autoscaling.Group)
+
+		inServiceCount := getInServiceCount(asg.Instances)
+		if inServiceCount == aws.Int64Value(asg.DesiredCapacity) {
 			log.Printf("%v: desired capacity is met, %v instances in service", ruObj.Name, inServiceCount)
 			return nil
 		}
@@ -278,9 +282,15 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 	for ieb, err := iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
 		r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 
+		val, ok := r.ruObjNameToASG.Load(ruObj.Name)
+		if !ok {
+			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		}
+		asg := val.(*autoscaling.Group)
+
 		// get list of inService instance IDs
-		inServiceInstances := getInServiceIds(r.Asg.Instances)
-		desiredCapacity := aws.Int64Value(r.Asg.DesiredCapacity)
+		inServiceInstances := getInServiceIds(asg.Instances)
+		desiredCapacity := aws.Int64Value(asg.DesiredCapacity)
 
 		// check all of them are nodes and are ready
 		var foundCount int64 = 0
@@ -334,7 +344,13 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
-	for _, instance := range r.Asg.Instances {
+	val, ok := r.ruObjNameToASG.Load(ruObj.Name)
+	if !ok {
+		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+	}
+	asg := val.(*autoscaling.Group)
+
+	for _, instance := range asg.Instances {
 		if aws.StringValue(instance.InstanceId) == instanceID {
 			if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
 				break
@@ -355,15 +371,14 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 			}
 			switch aerr.Code() {
 			case autoscaling.ErrCodeResourceContentionFault:
-				log.Warnf("%v: instance %v failed to enter standby: %v", ruObj.Name, instanceID, aerr.Error())
+				log.Warnf("%v: instance %v failed to enter standby due to resource contention: %v", ruObj.Name, instanceID, aerr.Error())
 				return nil
 			default:
-				log.Errorf("%v: instance %v failed to enter standby: %v", ruObj.Name, instanceID, aerr.Error())
+				log.Errorf("%v: instance %v failed to enter standby due to unexpected reason: %v", ruObj.Name, instanceID, aerr.Error())
 				return err
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -463,11 +478,10 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 		return errors.New("No ASG found")
 	} else if len(result.AutoScalingGroups) > 1 {
 		log.Printf("%s: Too many asgs found with name %d!\n", ruObj.Name, len(result.AutoScalingGroups))
-		return errors.New("Too many asgs")
+		return errors.New("Too many ASGs")
 	}
 
 	asg := result.AutoScalingGroups[0]
-	r.Asg = asg
 	r.ruObjNameToASG.Store(ruObj.Name, asg)
 
 	return nil
@@ -913,7 +927,7 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	KubeCtlCall string,
 	ch chan error) {
 
-	// Set instance to standby.
+	// Set instance to standby
 	err := r.SetStandby(ruObj, targetInstanceID)
 	if err != nil {
 		ch <- err
