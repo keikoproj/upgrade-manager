@@ -369,20 +369,7 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 
 	_, err = r.ASGClient.EnterStandby(input)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if strings.Contains(aerr.Message(), "not found") {
-				log.Printf("%v: Instance %s not found. Moving on\n", ruObj.Name, instanceID)
-				return nil
-			}
-			switch aerr.Code() {
-			case autoscaling.ErrCodeResourceContentionFault:
-				log.Warnf("%v: instance %v failed to enter standby due to resource contention: %v", ruObj.Name, instanceID, aerr.Error())
-				return nil
-			default:
-				log.Errorf("%v: instance %v failed to enter standby due to unexpected reason: %v", ruObj.Name, instanceID, aerr.Error())
-				return err
-			}
-		}
+		log.Warnf("%v: instance %v failed to enter standby: %v", ruObj.Name, instanceID, err)
 	}
 	return nil
 }
