@@ -259,11 +259,10 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 			return err
 		}
 
-		val, ok := r.ruObjNameToASG.Load(ruObj.Name)
-		if !ok {
+		asg, err := r.GetAutoScalingGroup(ruObj.Name)
+		if err != nil {
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
-		asg := val.(*autoscaling.Group)
 
 		inServiceCount := getInServiceCount(asg.Instances)
 		if inServiceCount == aws.Int64Value(asg.DesiredCapacity) {
@@ -282,11 +281,10 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 	for ieb, err := iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
 		r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 
-		val, ok := r.ruObjNameToASG.Load(ruObj.Name)
-		if !ok {
+		asg, err := r.GetAutoScalingGroup(ruObj.Name)
+		if err != nil {
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
-		asg := val.(*autoscaling.Group)
 
 		// get list of inService instance IDs
 		inServiceInstances := getInServiceIds(asg.Instances)
@@ -334,6 +332,16 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 	return true, nil
 }
 
+func (r *RollingUpgradeReconciler) GetAutoScalingGroup(rollupName string) (*autoscaling.Group, error) {
+	asg := &autoscaling.Group{}
+	val, ok := r.ruObjNameToASG.Load(rollupName)
+	if !ok {
+		return asg, fmt.Errorf("Unable to load ASG with name: %s", rollupName)
+	}
+	asg = val.(*autoscaling.Group)
+	return asg, nil
+}
+
 // SetStandby sets the autoscaling instance to standby mode.
 func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string) error {
 
@@ -344,25 +352,22 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
-	val, ok := r.ruObjNameToASG.Load(ruObj.Name)
-	if !ok {
-		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	if err != nil {
+		return err
 	}
-	asg := val.(*autoscaling.Group)
 
-	for _, instance := range asg.Instances {
-		if aws.StringValue(instance.InstanceId) == instanceID {
-			if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
-				break
-			} else if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateStandby {
-				log.Infof("%v: cannot set instance %v to stand-by, instance is already in stand-by", ruObj.Name, instanceID)
-				return nil
-			}
-			log.Warnf("%v: cannot set instance %v to stand-by, instance in state %v", ruObj.Name, instanceID, aws.StringValue(instance.LifecycleState))
-			return nil
-		}
+	instanceState, err := getGroupInstanceState(asg, instanceID)
+	if err != nil {
+		return err
 	}
-	_, err := r.ASGClient.EnterStandby(input)
+
+	if !isInServiceLifecycleState(instanceState) {
+		log.Infof("%v: cannot set instance %v to stand-by, instance is in state %v", ruObj.Name, instanceID, instanceState)
+		return nil
+	}
+
+	_, err = r.ASGClient.EnterStandby(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if strings.Contains(aerr.Message(), "not found") {
@@ -536,17 +541,12 @@ func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscali
 }
 
 func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, KubeCtlCall string) (int, error) {
-	// Setting default values for the Strategy in rollup object
-	r.setDefaultsForRollingUpdateStrategy(ruObj)
 
-	value, ok := r.ruObjNameToASG.Load(ruObj.Name)
-	if !ok {
-		msg := "Failed to find rollingUpgrade name in map."
-		log.Printf(msg)
-		return 0, errors.New(msg)
+	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	if err != nil {
+		return 0, fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 	}
 
-	asg := value.(*autoscaling.Group)
 	log.Printf("Nodes in ASG %s that *might* need to be updated: %d\n", *asg.AutoScalingGroupName, len(asg.Instances))
 
 	// No further processing is required if ASG doesn't have an instance running
@@ -623,9 +623,10 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	} else {
 		ruObj.Status.TotalProcessingTime = endTime.Sub(startTime).String()
 	}
-
 	MarkObjForCleanup(ruObj)
-	r.Update(*ctx, ruObj)
+	if err := r.Status().Update(*ctx, ruObj); err != nil {
+		log.Errorf("failed to update status: %v", err)
+	}
 	r.admissionMap.Delete(ruObj.Name)
 	log.Printf("Deleted %s from admission map %p", ruObj.Name, &r.admissionMap)
 	return reconcile.Result{}, nil
@@ -651,7 +652,6 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		if exists := ruObj.ObjectMeta.Annotations[JanitorAnnotation]; exists == "" {
 			logr.Info("Marking object for deletion")
 			MarkObjForCleanup(ruObj)
-			r.Update(*ctx, ruObj)
 		}
 
 		r.admissionMap.Delete(ruObj.Name)
@@ -682,20 +682,21 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		return r.finishExecution(StatusError, 0, ctx, ruObj)
 	}
 
+	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	if err != nil {
+		log.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		return r.finishExecution(StatusError, 0, ctx, ruObj)
+	}
+
 	// Update the CR with some basic info before staring the restack.
 	ruObj.Status.StartTime = time.Now().Format(time.RFC3339)
 	ruObj.Status.CurrentStatus = StatusRunning
 	ruObj.Status.NodesProcessed = 0
-
-	value, ok := r.ruObjNameToASG.Load(ruObj.Name)
-	if !ok {
-		msg := "Failed to find rollingUpgrade name in map."
-		log.Printf(msg)
-		return r.finishExecution(StatusError, 0, ctx, ruObj)
-	}
-	asg := value.(*autoscaling.Group)
 	ruObj.Status.TotalNodes = len(asg.Instances)
-	r.Update(*ctx, ruObj)
+
+	if err := r.Status().Update(*ctx, ruObj); err != nil {
+		log.Errorf("failed to update status: %v", err)
+	}
 
 	// Run the restack that acutally performs the rolling update.
 	nodesProcessed, err := r.runRestack(ctx, ruObj, KubeCtlBinary)
@@ -753,10 +754,10 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	r.setDefaultsForRollingUpdateStrategy(ruObj)
 	log.Printf("Default strategy settings applied for %s, update strategy - %+v", ruObj.Name, ruObj.Spec.Strategy)
 
-	error := r.validateRollingUpgradeObj(ruObj)
-	if error != nil {
-		log.Printf("Validation failed for %s with error - %s", ruObj.Name, error.Error())
-		return reconcile.Result{}, error
+	err = r.validateRollingUpgradeObj(ruObj)
+	if err != nil {
+		log.Printf("Validation failed for %s with error - %s", ruObj.Name, err.Error())
+		return reconcile.Result{}, err
 	}
 
 	result, ok := r.admissionMap.Load(ruObj.Name)
@@ -773,6 +774,9 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		r.admissionMap.Store(ruObj.Name, "processing")
 	}
 
+	if err = r.Update(context.Background(), ruObj); err != nil {
+		log.Errorf("failed to update custom resource: %v", err)
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -989,11 +993,11 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	if !requiresRefresh(i, launchDefinition) {
 		log.Printf("Ignoring %s since it has the correct launch-config", targetInstanceID)
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
-		r.Update(*ctx, ruObj)
+		if err := r.Status().Update(*ctx, ruObj); err != nil {
+			log.Errorf("failed to update status: %v", err)
+		}
 		ch <- nil
 		return
-	} else {
-		log.Printf("Will replace instance: %s", targetInstanceID)
 	}
 
 	nodeName := r.getNodeName(i, r.NodeList, ruObj)
@@ -1043,7 +1047,9 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	}
 
 	ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
-	r.Update(*ctx, ruObj)
+	if err := r.Status().Update(*ctx, ruObj); err != nil {
+		log.Errorf("failed to update status: %v", err)
+	}
 
 	// TODO(shri): Run validate. How?
 	r.ClusterState.markUpdateCompleted(*i.InstanceId)
