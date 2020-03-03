@@ -2,16 +2,19 @@ package controllers
 
 import (
 	"fmt"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"log"
 	"strconv"
 	"strings"
+
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 )
 
 // getMaxUnavailable calculates and returns the maximum unavailable nodes
@@ -67,6 +70,23 @@ func getInServiceIds(instances []*autoscaling.Instance) []string {
 		}
 	}
 	return list
+}
+
+func getGroupInstanceState(group *autoscaling.Group, id string) (string, error) {
+	for _, instance := range group.Instances {
+		if aws.StringValue(instance.InstanceId) != id {
+			continue
+		}
+		return aws.StringValue(instance.LifecycleState), nil
+	}
+	return "", errors.Errorf("could not get instance group state, instance %v not found", id)
+}
+
+func isInServiceLifecycleState(state string) bool {
+	if state == autoscaling.LifecycleStateInService {
+		return true
+	}
+	return false
 }
 
 func tagEC2instance(instanceID, tagKey, tagValue string, client ec2iface.EC2API) error {
