@@ -34,6 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-logr/logr"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
@@ -193,6 +194,8 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	drainTimeout int) error {
 	// Running kubectl drain node.
 	err := r.preDrainHelper(ruObj)
+	spew.Println("err := r.preDrainHelper(ruObj)" , err)
+
 	if err != nil {
 		return errors.New(ruObj.Name + ": Predrain script failed: " + err.Error())
 	}
@@ -251,9 +254,9 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 }
 
 func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
-
 	var err error
-	for ieb, err := iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
+	var ieb *iebackoff.IEBackoff
+	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
 		err = r.populateAsg(ruObj)
 		if err != nil {
 			return err
@@ -276,9 +279,9 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 }
 
 func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
-
 	var err error
-	for ieb, err := iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
+	var ieb *iebackoff.IEBackoff
+	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
 		r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 
 		asg, err := r.GetAutoScalingGroup(ruObj.Name)
@@ -777,7 +780,7 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *RollingUpgradeReconciler) setStateTag(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, state string) error {
-	log.Printf("%v: setting instance %v state to %v", ruObj.Name, instanceID, state)
+	log.Printf("%v: setting instance %q state to %q", ruObj.Name, instanceID, state)
 	err := tagEC2instance(instanceID, EC2StateTagKey, state, r.EC2Client)
 	if err != nil {
 		return err
