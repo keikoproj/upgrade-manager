@@ -22,7 +22,6 @@ require (
 	k8s.io/client-go v0.17.0
 	k8s.io/utils v0.0.0-20191218082557-f07c713de883 // indirect
 	sigs.k8s.io/controller-runtime v0.4.0
-	sigs.k8s.io/controller-tools v0.2.4 // indirect
 )
 
 replace github.com/keikoproj/upgrade-manager/pkg/log => ./pkg/log
