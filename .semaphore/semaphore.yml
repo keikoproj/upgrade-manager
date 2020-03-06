@@ -33,8 +33,8 @@ blocks:
           - sudo mv go /usr/local
           - export os=$(go env GOOS)
           - export arch=$(go env GOARCH)
-          - tar -xzf kubebuilder_master_${os}_${arch}.tar.gz
-          - sudo mv kubebuilder_master_${os}_${arch} /usr/local/kubebuilder
+          - tar -xzf kubebuilder_2.3.0_${os}_${arch}.tar.gz
+          - sudo mv kubebuilder_2.3.0_${os}_${arch} /usr/local/kubebuilder
           - ls /usr/local/kubebuilder
           - export PATH=$PATH:/usr/local/kubebuilder/bin
           - popd
