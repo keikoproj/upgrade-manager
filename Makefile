@@ -10,7 +10,7 @@ all: manager
 
 # Run tests
 test: generate fmt vet manifests
-	go test ./api/... ./controllers/... -coverprofile cover.out
+	go test ./api/... ./controllers/... -coverprofile cover.out -v
 	go tool cover -html=./cover.out -o cover.html
 
 # Build manager binary
