@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	github.com/aws/aws-sdk-go v1.25.0
+	github.com/davecgh/go-spew v1.1.1
 	github.com/go-logr/logr v0.1.0
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/keikoproj/inverse-exp-backoff v0.0.0-20191216014651-04523236b6ca
