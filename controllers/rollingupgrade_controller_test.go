@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/client-go/kubernetes/scheme"
+
 	"github.com/keikoproj/upgrade-manager/pkg/log"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -78,7 +80,7 @@ func TestErrorStatusMarkJanitor(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	instance := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -781,7 +783,7 @@ func TestFinishExecutionCompleted(t *testing.T) {
 	startTime := time.Now()
 	ruObj.Status.StartTime = startTime.Format(time.RFC3339)
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -809,7 +811,7 @@ func TestFinishExecutionError(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 	rcRollingUpgrade := &RollingUpgradeReconciler{
@@ -853,7 +855,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg},
 	}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -901,7 +903,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -947,7 +949,7 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -985,7 +987,7 @@ func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj, KubeCtlBinary)
 	g.Expect(int).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to find rollingUpgrade name in map."))
+	g.Expect(err.Error()).To(gomega.HavePrefix("Unable to load ASG with name: foo"))
 }
 
 func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
@@ -1004,7 +1006,7 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1045,7 +1047,7 @@ func TestRunRestackNoNodeName(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1101,10 +1103,13 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
 			AsgName:  someAsg,
 			PreDrain: somePreDrain,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "eager",
+			},
 		},
 	}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1131,6 +1136,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 
 	// This execution gets past the different launch config check, but fails to drain the node because of a predrain failing script
 	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, KubeCtlBinary)
+
 	g.Expect(nodesProcessed).To(gomega.Equal(1))
 	g.Expect(err.Error()).To(gomega.HavePrefix("Error updating instances, ErrorCount: 1, Errors: ["))
 }
@@ -1148,14 +1154,21 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "eager",
+			},
+		},
+	}
 	// Error flag set, should return error
 	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New("some-other-aws-error",
 		"some message",
 		errors.New("some error"))}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1226,7 +1239,7 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		},
 	}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1294,7 +1307,7 @@ func TestUpdateInstances(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1349,7 +1362,7 @@ func TestUpdateInstancesError(t *testing.T) {
 			"some message",
 			nil)}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1411,7 +1424,7 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 		errorInstanceId: mockID2,
 	}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -1451,7 +1464,7 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 func TestUpdateInstancesWithZeroInstances(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -2064,7 +2077,7 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 		},
 	}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
@@ -2103,7 +2116,7 @@ func TestWaitForTermination(t *testing.T) {
 	kuberenetesClient := fake.NewSimpleClientset()
 	nodeInterface := kuberenetesClient.CoreV1().Nodes()
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
@@ -2132,6 +2145,14 @@ func TestWaitForTermination(t *testing.T) {
 	g.Expect(unjoined).To(gomega.BeTrue())
 }
 
+func buildManager() (manager.Manager, error) {
+	err := upgrademgrv1alpha1.AddToScheme(scheme.Scheme)
+	if err != nil {
+		return nil, err
+	}
+	return manager.New(cfg, manager.Options{MetricsBindAddress: "0"})
+}
+
 func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
@@ -2154,7 +2175,7 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 		},
 	}
 
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	c = mgr.GetClient()
 
