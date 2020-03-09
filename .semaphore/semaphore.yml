@@ -27,14 +27,9 @@ blocks:
           - cache restore $SEMAPHORE_PROJECT_NAME-dep-$(checksum .semaphore/setup.sh)
           - ls -l /packages
           - pushd /packages
-          - sudo tar -xf go1.13.8.linux-amd64.tar.gz
-          - sudo cp go/bin/go /usr/local/bin
-          - sudo rm -rf /usr/local/go
-          - sudo mv go /usr/local
-          - export os=$(go env GOOS)
-          - export arch=$(go env GOARCH)
-          - tar -xzf kubebuilder_2.3.0_${os}_${arch}.tar.gz
-          - sudo mv kubebuilder_2.3.0_${os}_${arch} /usr/local/kubebuilder
+          - mkdir kubebuilder
+          - tar -xzf kubebuilder.tar.gz -C kubebuilder --strip-components=1
+          - sudo mv kubebuilder /usr/local/kubebuilder
           - ls /usr/local/kubebuilder
           - export PATH=$PATH:/usr/local/kubebuilder/bin
           - popd
