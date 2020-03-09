@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 	}
 
 	cfg, _ = testEnv.Start()
-	m.Run()
+	os.Exit(m.Run())
 }
 
 func TestEchoScript(t *testing.T) {
@@ -1159,7 +1159,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
 			AsgName: someAsg,
 			Strategy: upgrademgrv1alpha1.UpdateStrategy{
-				Mode: "eager",
+				Mode: "lazy",
 			},
 		},
 	}
@@ -1304,8 +1304,15 @@ func TestUpdateInstances(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "lazy",
+			},
+		},
+	}
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1354,8 +1361,16 @@ func TestUpdateInstancesError(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "lazy",
+			},
+		},
+	}
+
 	mockAutoScalingGroup := MockAutoscalingGroup{
 		errorFlag: true,
 		awsErr: awserr.New("UnKnownError",
@@ -1414,8 +1429,16 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "lazy",
+			},
+		},
+	}
+
 	mockAutoScalingGroup := MockAutoscalingGroup{
 		errorFlag: true,
 		awsErr: awserr.New("UnKnownError",
