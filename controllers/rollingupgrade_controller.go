@@ -35,6 +35,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
+	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -93,6 +94,14 @@ var (
 	WaiterFactor = 0.5
 	// WaiterMaxAttempts is the maximum number of retries for waiters
 	WaiterMaxAttempts = uint32(32)
+)
+
+var (
+	CacheDefaultTTL              time.Duration = time.Second * 0
+	DescribeAutoScalingGroupsTTL time.Duration = 60 * time.Second
+	CacheMaxItems                int64         = 5000
+	CacheItemsToPrune            uint32        = 500
+	cacheCfg                                   = cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
 )
 
 var DefaultRetryer = awsclient.DefaultRetryer{
@@ -289,6 +298,11 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 	var err error
 	var ieb *iebackoff.IEBackoff
 	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
+		err = r.populateAsg(ruObj)
+		if err != nil {
+			return err
+		}
+
 		err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 		if err != nil {
 			log.Infof("%s: unable to populate node list: %v", ruObj.Name, err)
@@ -662,6 +676,8 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	if err != nil {
 		log.Fatalf("failed to create asg client, %v", err)
 	}
+	cache.AddCaching(sess, cacheCfg)
+	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
 	r.ASGClient = autoscaling.New(sess)
 	r.EC2Client = ec2.New(sess)
 
