@@ -9,9 +9,14 @@ export GO111MODULE = on
 all: manager
 
 # Run tests
-test: generate fmt vet manifests
+test: generate fmt vet lint manifests
 	go test ./api/... ./controllers/... -coverprofile cover.out -v
 	go tool cover -html=./cover.out -o cover.html
+
+# Run golangci lint tests
+lint:
+	golangci-lint run ./...
+.PHONY: lint
 
 # Build manager binary
 manager: generate fmt vet
