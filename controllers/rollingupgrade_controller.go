@@ -427,12 +427,6 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) setDefaults(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
-	if ruObj.Spec.Region == "" {
-		ruObj.Spec.Region = "us-west-2"
-	}
-}
-
 func (r *RollingUpgradeReconciler) getNodeName(i *autoscaling.Instance, nodeList *corev1.NodeList, ruObj *upgrademgrv1alpha1.RollingUpgrade) string {
 	node := r.getNodeFromAsg(i, nodeList, ruObj)
 	if node == nil {
@@ -645,8 +639,6 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		logr.Info("Deleted object from admission map")
 		return reconcile.Result{}, nil
 	}
-
-	r.setDefaults(ruObj)
 
 	err := r.populateAsg(ruObj)
 	if err != nil {
