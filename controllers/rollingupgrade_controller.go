@@ -27,15 +27,10 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	awsclient "github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
-	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -95,22 +90,6 @@ var (
 	// WaiterMaxAttempts is the maximum number of retries for waiters
 	WaiterMaxAttempts = uint32(32)
 )
-
-var (
-	CacheDefaultTTL              time.Duration = time.Second * 0
-	DescribeAutoScalingGroupsTTL time.Duration = 60 * time.Second
-	CacheMaxItems                int64         = 5000
-	CacheItemsToPrune            uint32        = 500
-	cacheCfg                                   = cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
-)
-
-var DefaultRetryer = awsclient.DefaultRetryer{
-	NumMaxRetries:    250,
-	MinThrottleDelay: time.Second * 5,
-	MaxThrottleDelay: time.Second * 20,
-	MinRetryDelay:    time.Second * 1,
-	MaxRetryDelay:    time.Second * 5,
-}
 
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
 type RollingUpgradeReconciler struct {
@@ -669,28 +648,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 
 	r.setDefaults(ruObj)
 
-	config := aws.NewConfig().WithRegion(ruObj.Spec.Region)
-	config = config.WithCredentialsChainVerboseErrors(true)
-	config = request.WithRetryer(config, log.NewRetryLogger(DefaultRetryer))
-	sess, err := session.NewSession(config)
-	if err != nil {
-		log.Fatalf("failed to create asg client, %v", err)
-	}
-	cache.AddCaching(sess, cacheCfg)
-	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
-	sess.Handlers.Complete.PushFront(func(r *request.Request) {
-		ctx := r.HTTPRequest.Context()
-		log.Debugf("cache hit => %v, service => %s.%s",
-			cache.IsCacheHit(ctx),
-			r.ClientInfo.ServiceName,
-			r.Operation.Name,
-		)
-	})
-
-	r.ASGClient = autoscaling.New(sess)
-	r.EC2Client = ec2.New(sess)
-
-	err = r.populateAsg(ruObj)
+	err := r.populateAsg(ruObj)
 	if err != nil {
 		return r.finishExecution(StatusError, 0, ctx, ruObj)
 	}
