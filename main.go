@@ -35,7 +35,10 @@ var (
 
 func init() {
 
-	upgrademgrv1alpha1.AddToScheme(scheme)
+	err := upgrademgrv1alpha1.AddToScheme(scheme)
+	if err != nil {
+		panic(err)
+	}
 	// +kubebuilder:scaffold:scheme
 }
 
