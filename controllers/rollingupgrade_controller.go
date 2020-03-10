@@ -128,13 +128,17 @@ func runScript(script string, background bool, objName string) (string, error) {
 	log.Printf("%s: Running script %s", objName, script)
 	if background {
 		log.Printf("%s: Running script in background. Logs not available.", objName)
-		exec.Command(ShellBinary, "-c", script).Run()
+		err := exec.Command(ShellBinary, "-c", script).Run()
+		if err != nil {
+			log.Printf("Script finished with error: %s", err)
+		}
+
 		return "", nil
 	}
 
-	out, err := exec.Command("/bin/sh", "-c", script).CombinedOutput()
+	out, err := exec.Command(ShellBinary, "-c", script).CombinedOutput()
 	if err != nil {
-		log.Printf("Script finished with output: %s\n,  error: %s", out, err)
+		log.Printf("Script finished with output: %s\n, error: %s", out, err)
 	} else {
 		log.Printf("%s: Script finished with output: %s", objName, out)
 	}
@@ -164,7 +168,10 @@ func (r *RollingUpgradeReconciler) postDrainHelper(ruObj *upgrademgrv1alpha1.Rol
 			log.Printf("%s: %s", ruObj.Name, msg)
 
 			log.Printf("%s: Uncordoning the node %s since it failed to run postDrain Script", ruObj.Name, nodeName)
-			runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj.Name)
+			_, err = runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj.Name)
+			if err != nil {
+				log.Printf("%s: Failed to uncordon node %s: %v", ruObj.Name, nodeName, err)
+			}
 			return errors.New(msg)
 		}
 	}
@@ -178,7 +185,10 @@ func (r *RollingUpgradeReconciler) postDrainHelper(ruObj *upgrademgrv1alpha1.Rol
 			log.Printf("%s: %s", ruObj.Name, msg)
 
 			log.Printf("%s: Uncordoning the node %s since it failed to run postDrainWait Script", ruObj.Name, nodeName)
-			runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj.Name)
+			_, err = runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj.Name)
+			if err != nil {
+				log.Printf("%s: Failed to uncordon node %s: %v", ruObj.Name, nodeName, err)
+			}
 			return errors.New(msg)
 		}
 	}
@@ -279,7 +289,10 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 	var err error
 	var ieb *iebackoff.IEBackoff
 	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
-		r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
+		err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
+		if err != nil {
+			log.Infof("%s: unable to populate node list: %v", ruObj.Name, err)
+		}
 
 		asg, err := r.GetAutoScalingGroup(ruObj.Name)
 		if err != nil {
@@ -326,7 +339,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 			break
 		}
 
-		log.Printf("%v: node %s is still joined to clutster, will wait %vs and retry", ruObj.Name, nodeName, TerminationSleepIntervalSeconds)
+		log.Printf("%v: node %s is still joined to cluster, will wait %vs and retry", ruObj.Name, nodeName, TerminationSleepIntervalSeconds)
 		time.Sleep(time.Duration(TerminationSleepIntervalSeconds) * time.Second)
 	}
 	return true, nil
@@ -486,12 +499,6 @@ func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.Ro
 		log.Printf("%s: %s", ruObj.Name, msg)
 		return errors.New(ruObj.Name + ": Failed to get all nodes in the cluster: " + err.Error())
 	}
-
-	nodesFound := ""
-	for _, n := range nodeList.Items {
-		nodesFound = n.Name + "," + nodesFound
-	}
-
 	r.NodeList = nodeList
 	return nil
 }
@@ -559,7 +566,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 	}
 
 	for processedInstances < totalNodes {
-		instances := []*autoscaling.Instance{}
+		var instances []*autoscaling.Instance
 		if len(inProgress) == 0 {
 			// Fetch instances to update from node selector
 			instances = nodeSelector.SelectNodesForRestack(r.ClusterState)
@@ -688,6 +695,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	// Run the restack that acutally performs the rolling update.
 	nodesProcessed, err := r.runRestack(ctx, ruObj, KubeCtlBinary)
 	if err != nil {
+		log.Errorf("%s: failed to runRestack: %v", ruObj.Name, err)
 		return r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
 	}
 
@@ -743,7 +751,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 
 	err = r.validateRollingUpgradeObj(ruObj)
 	if err != nil {
-		log.Printf("Validation failed for %s with error - %s", ruObj.Name, err.Error())
+		log.Printf("Validation failed for %s, error: %v", ruObj.Name, err.Error())
 		return reconcile.Result{}, err
 	}
 
@@ -756,12 +764,15 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			logr.Info("Sync map with invalid entry for ", "name", ruObj.Name)
 		}
 	} else {
-		r.Process(&ctx, ruObj)
+		_, err := r.Process(&ctx, ruObj)
+		if err != nil {
+			log.Printf("Processing failed for %s, error: %v", ruObj.Name, err.Error())
+		}
 		logr.Info("Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
 	}
 
-	if err = r.Update(context.Background(), ruObj); err != nil {
+	if err = r.Update(ctx, ruObj); err != nil {
 		log.Errorf("failed to update custom resource: %v", err)
 	}
 	return ctrl.Result{}, nil
@@ -905,7 +916,7 @@ Loop:
 		}
 	}
 
-	if instanceUpdateErrors != nil && len(instanceUpdateErrors) > 0 {
+	if len(instanceUpdateErrors) > 0 {
 		return NewUpdateInstancesError(instanceUpdateErrors)
 	}
 	return nil
@@ -1041,7 +1052,6 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	// TODO(shri): Run validate. How?
 	r.ClusterState.markUpdateCompleted(*i.InstanceId)
 	ch <- nil
-	return
 }
 
 func requiresRefresh(ec2Instance *autoscaling.Instance, definition *launchDefinition) bool {
