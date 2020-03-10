@@ -92,7 +92,8 @@ func TestErrorStatusMarkJanitor(t *testing.T) {
 	}
 
 	ctx := context.TODO()
-	rcRollingUpgrade.finishExecution(StatusError, 3, &ctx, instance)
+	_, err = rcRollingUpgrade.finishExecution(StatusError, 3, &ctx, instance)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
 	g.Expect(instance.ObjectMeta.Annotations[JanitorAnnotation]).To(gomega.Equal(ClearErrorFrequency))
 }
 
@@ -2149,7 +2150,8 @@ func TestWaitForTermination(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 	}
-	nodeInterface.Create(mockNode)
+	_, err = nodeInterface.Create(mockNode)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
@@ -2161,7 +2163,8 @@ func TestWaitForTermination(t *testing.T) {
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 	g.Expect(unjoined).To(gomega.BeFalse())
 
-	nodeInterface.Delete(mockNodeName, &metav1.DeleteOptions{})
+	err = nodeInterface.Delete(mockNodeName, &metav1.DeleteOptions{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	unjoined, err = rcRollingUpgrade.WaitForTermination(ruObj, mockNodeName, nodeInterface)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
