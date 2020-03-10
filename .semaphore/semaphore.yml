@@ -30,8 +30,9 @@ blocks:
           - mkdir kubebuilder
           - tar -xzf kubebuilder.tar.gz -C kubebuilder --strip-components=1
           - sudo mv kubebuilder /usr/local/kubebuilder
+          - sudo mv golangci-lint /usr/local/bin/
           - ls /usr/local/kubebuilder
-          - export PATH=$PATH:/usr/local/kubebuilder/bin
+          - export PATH=$PATH:/usr/local/kubebuilder/bin:/usr/local/bin
           - popd
       jobs:
         - name: Docker Build

@@ -83,10 +83,7 @@ func getGroupInstanceState(group *autoscaling.Group, id string) (string, error) 
 }
 
 func isInServiceLifecycleState(state string) bool {
-	if state == autoscaling.LifecycleStateInService {
-		return true
-	}
-	return false
+	return state == autoscaling.LifecycleStateInService
 }
 
 func tagEC2instance(instanceID, tagKey, tagValue string, client ec2iface.EC2API) error {
