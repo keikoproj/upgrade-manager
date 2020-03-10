@@ -678,6 +678,15 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	}
 	cache.AddCaching(sess, cacheCfg)
 	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
+	sess.Handlers.Complete.PushFront(func(r *request.Request) {
+		ctx := r.HTTPRequest.Context()
+		log.Debugf("cache hit => %v, service => %s.%s",
+			cache.IsCacheHit(ctx),
+			r.ClientInfo.ServiceName,
+			r.Operation.Name,
+		)
+	})
+
 	r.ASGClient = autoscaling.New(sess)
 	r.EC2Client = ec2.New(sess)
 
