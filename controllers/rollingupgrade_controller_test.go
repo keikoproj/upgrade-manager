@@ -535,16 +535,6 @@ func TestLoadEnvironmentVariables(t *testing.T) {
 	g.Expect(os.Getenv(instanceNameKey)).To(gomega.Equal("instance-name-foo"))
 }
 
-func TestSetDefaults(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-
-	g.Expect(ruObj.Spec.Region).To(gomega.Equal(""))
-	rcRollingUpgrade.setDefaults(ruObj)
-	g.Expect(ruObj.Spec.Region).To(gomega.Equal("us-west-2"))
-}
-
 func TestGetNodeNameFoundNode(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
