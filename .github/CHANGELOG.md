@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.8] - 2020-03-10
+
+* Refactor & Improvements (#63)
+* Fix shadowing of error. (#65)
+* Use existing go version, simplify maintenance (#66)
+* stabilize tests (#69)
+* Fix errors reported by golangci-lint (#72)
+
 ## [v0.7] - 2020-02-28
 
 * Fix parallel RU bug (#57)
