@@ -14,7 +14,6 @@ RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates 
 
 - The RollingUpgrade Kubernetes custom resource has the following options in the spec:
   - `asgName`: Name of the autoscaling group to perform the rolling-update.
-  - `region`: Name of the AWS region in which the ASG exists.
   - `preDrain.script`: The script to run before draining a node.
   - `postDrain.script`: The script to run after draining a node. This allows for performing actions such as quiescing network traffic, adding labels, etc.
   - `postDrain.waitSeconds`: The seconds to wait after a node is drained.
