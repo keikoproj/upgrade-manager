@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.9] - 2020-03-11
+
+* Add SDK caching & Refactor (#75)
+
 ## [v0.8] - 2020-03-10
 
 * Refactor & Improvements (#63)
