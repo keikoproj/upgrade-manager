@@ -640,6 +640,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		return reconcile.Result{}, nil
 	}
 
+	r.CacheConfig.FlushCache("autoscaling")
 	err := r.populateAsg(ruObj)
 	if err != nil {
 		return r.finishExecution(StatusError, 0, ctx, ruObj)
@@ -960,7 +961,6 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	KubeCtlCall string,
 	ch chan error) {
 
-	r.CacheConfig.FlushCache("autoscaling")
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
 	targetInstanceID := aws.StringValue(i.InstanceId)
