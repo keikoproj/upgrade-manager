@@ -149,7 +149,6 @@ metadata:
   generateName: rollingupgrade-sample-
 spec:
     asgName: nodes.test-cluster-kops.cluster.k8s.local
-    region: us-west-2
     nodeIntervalSeconds: 300
     preDrain:
         script: |

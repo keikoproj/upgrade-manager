@@ -41,7 +41,6 @@ type PostTerminateSpec struct {
 type RollingUpgradeSpec struct {
 	PostDrainDelaySeconds int               `json:"postDrainDelaySeconds,omitempty"`
 	NodeIntervalSeconds   int               `json:"nodeIntervalSeconds,omitempty"`
-	Region                string            `json:"region,omitempty"`
 	AsgName               string            `json:"asgName,omitempty"`
 	PreDrain              PreDrainSpec      `json:"preDrain,omitempty"`
 	PostDrain             PostDrainSpec     `json:"postDrain,omitempty"`

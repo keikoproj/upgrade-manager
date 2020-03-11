@@ -18,9 +18,20 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers"
+	"github.com/keikoproj/upgrade-manager/pkg/log"
+	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,6 +43,21 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
+
+var (
+	CacheDefaultTTL              time.Duration = time.Second * 0
+	DescribeAutoScalingGroupsTTL time.Duration = 60 * time.Second
+	CacheMaxItems                int64         = 5000
+	CacheItemsToPrune            uint32        = 500
+)
+
+var DefaultRetryer = client.DefaultRetryer{
+	NumMaxRetries:    250,
+	MinThrottleDelay: time.Second * 5,
+	MaxThrottleDelay: time.Second * 20,
+	MinRetryDelay:    time.Second * 1,
+	MaxRetryDelay:    time.Second * 5,
+}
 
 func init() {
 
@@ -47,6 +73,8 @@ func main() {
 	var enableLeaderElection bool
 	var namespace string
 	var maxParallel int
+	var debugMode bool
+	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
@@ -73,10 +101,43 @@ func main() {
 		os.Exit(1)
 	}
 
+	var region string
+	if region, err = deriveRegion(); err != nil {
+		setupLog.Error(err, "unable to get region")
+		os.Exit(1)
+	}
+
+	if debugMode {
+		log.SetLevel("debug")
+	}
+
+	config := aws.NewConfig().WithRegion(region)
+	config = config.WithCredentialsChainVerboseErrors(true)
+	config = request.WithRetryer(config, log.NewRetryLogger(DefaultRetryer))
+	sess, err := session.NewSession(config)
+	if err != nil {
+		log.Fatalf("failed to AWS session, %v", err)
+	}
+
+	cacheCfg := cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
+	cache.AddCaching(sess, cacheCfg)
+	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
+	sess.Handlers.Complete.PushFront(func(r *request.Request) {
+		ctx := r.HTTPRequest.Context()
+		log.Debugf("cache hit => %v, service => %s.%s",
+			cache.IsCacheHit(ctx),
+			r.ClientInfo.ServiceName,
+			r.Operation.Name,
+		)
+	})
+
 	reconciler := &controllers.RollingUpgradeReconciler{
 		Client:       mgr.GetClient(),
 		Log:          ctrl.Log.WithName("controllers").WithName("RollingUpgrade"),
 		ClusterState: controllers.NewClusterState(),
+		ASGClient:    autoscaling.New(sess),
+		EC2Client:    ec2.New(sess),
+		CacheConfig:  cacheCfg,
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
@@ -93,4 +154,23 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func deriveRegion() (string, error) {
+
+	if region := os.Getenv("AWS_REGION"); region != "" {
+		return region, nil
+	}
+
+	var config aws.Config
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+		Config:            config,
+	}))
+	c := ec2metadata.New(sess)
+	region, err := c.Region()
+	if err != nil {
+		return "", errors.Wrapf(err, "cannot reach ec2metadata, if running locally export AWS_REGION")
+	}
+	return region, nil
 }
