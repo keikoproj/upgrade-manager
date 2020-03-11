@@ -83,8 +83,6 @@ spec:
                 script:
                   type: string
               type: object
-            region:
-              type: string
             strategy:
               description: UpdateStrategy holds the information needed to perform
                 update based on different update strategies

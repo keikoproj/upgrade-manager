@@ -27,14 +27,11 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	awsclient "github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
+	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -95,14 +92,6 @@ var (
 	WaiterMaxAttempts = uint32(32)
 )
 
-var DefaultRetryer = awsclient.DefaultRetryer{
-	NumMaxRetries:    250,
-	MinThrottleDelay: time.Second * 5,
-	MaxThrottleDelay: time.Second * 20,
-	MinRetryDelay:    time.Second * 1,
-	MaxRetryDelay:    time.Second * 5,
-}
-
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
 type RollingUpgradeReconciler struct {
 	client.Client
@@ -115,6 +104,7 @@ type RollingUpgradeReconciler struct {
 	ruObjNameToASG  sync.Map
 	ClusterState    ClusterState
 	maxParallel     int
+	CacheConfig     *cache.Config
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
@@ -289,6 +279,11 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 	var err error
 	var ieb *iebackoff.IEBackoff
 	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
+		err = r.populateAsg(ruObj)
+		if err != nil {
+			return err
+		}
+
 		err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 		if err != nil {
 			log.Infof("%s: unable to populate node list: %v", ruObj.Name, err)
@@ -434,12 +429,6 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) setDefaults(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
-	if ruObj.Spec.Region == "" {
-		ruObj.Spec.Region = "us-west-2"
-	}
-}
-
 func (r *RollingUpgradeReconciler) getNodeName(i *autoscaling.Instance, nodeList *corev1.NodeList, ruObj *upgrademgrv1alpha1.RollingUpgrade) string {
 	node := r.getNodeFromAsg(i, nodeList, ruObj)
 	if node == nil {
@@ -464,8 +453,6 @@ func (r *RollingUpgradeReconciler) getNodeFromAsg(i *autoscaling.Instance, nodeL
 }
 
 func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
-	// Initialize a session in the given region that the SDK will use to load
-	// credentials.
 	input := &autoscaling.DescribeAutoScalingGroupsInput{
 		AutoScalingGroupNames: []*string{
 			aws.String(ruObj.Spec.AsgName),
@@ -653,19 +640,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		return reconcile.Result{}, nil
 	}
 
-	r.setDefaults(ruObj)
-
-	config := aws.NewConfig().WithRegion(ruObj.Spec.Region)
-	config = config.WithCredentialsChainVerboseErrors(true)
-	config = request.WithRetryer(config, log.NewRetryLogger(DefaultRetryer))
-	sess, err := session.NewSession(config)
-	if err != nil {
-		log.Fatalf("failed to create asg client, %v", err)
-	}
-	r.ASGClient = autoscaling.New(sess)
-	r.EC2Client = ec2.New(sess)
-
-	err = r.populateAsg(ruObj)
+	err := r.populateAsg(ruObj)
 	if err != nil {
 		return r.finishExecution(StatusError, 0, ctx, ruObj)
 	}
@@ -985,6 +960,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	KubeCtlCall string,
 	ch chan error) {
 
+	r.CacheConfig.FlushCache("autoscaling")
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
 	targetInstanceID := aws.StringValue(i.InstanceId)
