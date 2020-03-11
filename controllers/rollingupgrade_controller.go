@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
+	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -103,6 +104,7 @@ type RollingUpgradeReconciler struct {
 	ruObjNameToASG  sync.Map
 	ClusterState    ClusterState
 	maxParallel     int
+	CacheConfig     *cache.Config
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
@@ -958,6 +960,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	KubeCtlCall string,
 	ch chan error) {
 
+	r.CacheConfig.FlushCache("autoscaling")
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
 	targetInstanceID := aws.StringValue(i.InstanceId)
