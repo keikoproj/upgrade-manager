@@ -4,7 +4,6 @@ metadata:
   generateName: rollingupgrade-sample-
 spec:
   asgName: my-asg-1
-  region: us-west-2
   nodeIntervalSeconds: 300
   preDrain:
     script: |

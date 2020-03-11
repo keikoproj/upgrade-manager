@@ -11,6 +11,7 @@ import (
 
 	"k8s.io/client-go/kubernetes/scheme"
 
+	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/pkg/log"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -535,16 +536,6 @@ func TestLoadEnvironmentVariables(t *testing.T) {
 	g.Expect(os.Getenv(instanceNameKey)).To(gomega.Equal("instance-name-foo"))
 }
 
-func TestSetDefaults(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
-
-	g.Expect(ruObj.Spec.Region).To(gomega.Equal(""))
-	rcRollingUpgrade.setDefaults(ruObj)
-	g.Expect(ruObj.Spec.Region).To(gomega.Equal("us-west-2"))
-}
-
 func TestGetNodeNameFoundNode(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
@@ -876,6 +867,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -925,6 +917,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -962,6 +955,7 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1021,6 +1015,7 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &emptyNodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1067,6 +1062,7 @@ func TestRunRestackNoNodeName(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1130,6 +1126,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1189,6 +1186,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1280,6 +1278,7 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1336,6 +1335,7 @@ func TestUpdateInstances(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1399,6 +1399,7 @@ func TestUpdateInstancesError(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1469,6 +1470,7 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -1498,6 +1500,7 @@ func TestUpdateInstancesWithZeroInstances(t *testing.T) {
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 
 	ctx := context.TODO()
@@ -2114,6 +2117,7 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 		admissionMap:    sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
@@ -2213,6 +2217,7 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 	rcRollingUpgrade.ClusterState.deleteEntryOfAsg(someAsg)
