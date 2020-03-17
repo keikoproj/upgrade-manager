@@ -27,15 +27,19 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
-	"github.com/keikoproj/upgrade-manager/controllers"
-	"github.com/keikoproj/upgrade-manager/pkg/log"
 	"github.com/pkg/errors"
+	uberzap "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers"
+	"github.com/keikoproj/upgrade-manager/pkg/log"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -74,7 +78,9 @@ func main() {
 	var namespace string
 	var maxParallel int
 	var debugMode bool
+	var logMode string
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
+	flag.StringVar(&logMode, "log-format", "text", "Log mode: supported values: text, json. Default: text.")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
@@ -82,7 +88,7 @@ func main() {
 	flag.IntVar(&maxParallel, "max-parallel", 10, "The max number of parallel rolling upgrades")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stderr)))
+	ctrl.SetLogger(newLogger(logMode))
 
 	mgo := ctrl.Options{
 		Scheme:             scheme,
@@ -93,7 +99,7 @@ func main() {
 		mgo.Namespace = namespace
 		setupLog.Info("Watch RollingUpgrade objects only in namespace " + namespace)
 	} else {
-		setupLog.Info("Watch RollingUpgrade objects only in all namespaces")
+		setupLog.Info("Watch RollingUpgrade objects in all namespaces")
 	}
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgo)
 	if err != nil {
@@ -154,6 +160,22 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func newLogger(logMode string) logr.Logger {
+	var encoder *zapcore.Encoder = nil
+	if logMode == "json" {
+		log.SetJSONFormatter()
+		jsonEncoder := zapcore.NewJSONEncoder(uberzap.NewProductionEncoderConfig())
+		encoder = &jsonEncoder
+	}
+
+	opts := []zap.Opts{zap.UseDevMode(true), zap.WriteTo(os.Stderr)}
+	if encoder != nil {
+		opts = append(opts, zap.Encoder(*encoder))
+	}
+	logger := zap.New(opts...)
+	return logger
 }
 
 func deriveRegion() (string, error) {
