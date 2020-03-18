@@ -556,12 +556,12 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 		if len(inProgress) == 0 {
 			// Fetch instances to update from node selector
 			instances = nodeSelector.SelectNodesForRestack(r.ClusterState)
-			r.info(ruObj, "selected instances for rotation: %+v", instances)
+			r.info(ruObj, fmt.Sprintf("selected instances for rotation: %+v", instances))
 		} else {
 			// Prefer in progress instances over new ones
 			instances = inProgress
 			inProgress = []*autoscaling.Instance{}
-			r.info(ruObj, "found in progress instances: %+v", instances)
+			r.info(ruObj, fmt.Sprintf("found in progress instances: %+v", instances))
 		}
 
 		if instances == nil {
@@ -608,7 +608,7 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 		r.error(ruObj, err, "failed to update status")
 	}
 	r.admissionMap.Delete(ruObj.Name)
-	r.info(ruObj, "Deleted %s from admission map %p", ruObj.Name, &r.admissionMap)
+	r.info(ruObj, "Deleted from admission map ", "admissionMap", &r.admissionMap)
 	return reconcile.Result{}, nil
 }
 
@@ -626,7 +626,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 
 	if ruObj.Status.CurrentStatus == StatusComplete ||
 		ruObj.Status.CurrentStatus == StatusError {
-		r.info(ruObj, "No more processing", "Object state", ruObj.Status.CurrentStatus)
+		r.info(ruObj, "No more processing", "currentStatus", ruObj.Status.CurrentStatus)
 
 		if exists := ruObj.ObjectMeta.Annotations[JanitorAnnotation]; exists == "" {
 			r.info(ruObj, "Marking object for deletion")
@@ -711,7 +711,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			// Object not found, return. Created objects are automatically garbage collected.
 			// For additional cleanup logic use finalizers.
 			r.admissionMap.Delete(req.Name)
-			r.info(ruObj, "Deleted object from map", "name", req.Name)
+			r.info(ruObj, "Deleted object from map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -720,11 +720,12 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 
 	// Setting default values for the Strategy in rollup object
 	r.setDefaultsForRollingUpdateStrategy(ruObj)
-	r.info(ruObj, "Default strategy settings applied for %s, update strategy - %+v", ruObj.Name, ruObj.Spec.Strategy)
+	fmt.Println(ruObj.Spec.Strategy)
+	r.info(ruObj, "Default strategy settings applied.", "updateStrategy", ruObj.Spec.Strategy)
 
 	err = r.validateRollingUpgradeObj(ruObj)
 	if err != nil {
-		r.info(ruObj, "Validation failed for %s, error: %v", ruObj.Name, err.Error())
+		r.error(ruObj, err, "Validation failed")
 		return reconcile.Result{}, err
 	}
 
@@ -739,7 +740,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	} else {
 		_, err := r.Process(&ctx, ruObj)
 		if err != nil {
-			r.info(ruObj, "Processing failed for %s, error: %v", ruObj.Name, err.Error())
+			r.error(ruObj, err, "Processing failed")
 		}
 		r.info(ruObj, "Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
@@ -992,10 +993,10 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 
 	mode := ruObj.Spec.Strategy.Mode.String()
 	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
-		r.info(ruObj, "%v: starting replacement with eager mode", ruObj.Name)
+		r.info(ruObj, "starting replacement with eager mode", "mode", mode)
 		r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
 	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
-		r.info(ruObj, "%v: starting replacement with lazy mode", ruObj.Name)
+		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
 		r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
 	}
 
@@ -1054,10 +1055,10 @@ func (r *RollingUpgradeReconciler) logger(ruObj *upgrademgrv1alpha1.RollingUpgra
 
 // info logs message with Info level for the specified rolling upgrade.
 func (r *RollingUpgradeReconciler) info(ruObj *upgrademgrv1alpha1.RollingUpgrade, msg string, keysAndValues ...interface{}) {
-	r.logger(ruObj).Info(msg, keysAndValues)
+	r.logger(ruObj).Info(msg, keysAndValues...)
 }
 
 // error logs message with Error level for the specified rolling upgrade.
 func (r *RollingUpgradeReconciler) error(ruObj *upgrademgrv1alpha1.RollingUpgrade, err error, msg string, keysAndValues ...interface{}) {
-	r.logger(ruObj).Error(err, msg, keysAndValues)
+	r.logger(ruObj).Error(err, msg, keysAndValues...)
 }
