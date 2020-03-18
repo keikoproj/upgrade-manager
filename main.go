@@ -80,7 +80,7 @@ func main() {
 	var debugMode bool
 	var logMode string
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
-	flag.StringVar(&logMode, "log-format", "text", "Log mode: supported values: text, json. Default: text.")
+	flag.StringVar(&logMode, "log-format", "text", "Log mode: supported values: text, json.")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
