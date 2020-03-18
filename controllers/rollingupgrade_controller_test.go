@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"k8s.io/client-go/kubernetes/scheme"
+	log2 "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/pkg/log"
@@ -42,8 +43,6 @@ import (
 
 var c client.Client
 
-var defaultMsgPrefix = "ru-foo"
-
 func TestMain(m *testing.M) {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
@@ -55,7 +54,9 @@ func TestMain(m *testing.M) {
 
 func TestEchoScript(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	out, err := runScript("echo hello", false, defaultMsgPrefix)
+	ru := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	out, err := r.runScript("echo hello", false, ru)
 
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(out).To(gomega.Equal("hello\n"))
@@ -63,7 +64,9 @@ func TestEchoScript(t *testing.T) {
 
 func TestEchoBackgroundScript(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	out, err := runScript("echo background", true, defaultMsgPrefix)
+	ru := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	out, err := r.runScript("echo background", true, ru)
 
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(out).To(gomega.Equal(""))
@@ -71,7 +74,9 @@ func TestEchoBackgroundScript(t *testing.T) {
 
 func TestRunScriptFailure(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	out, err := runScript("echo this will fail; exit 1", false, defaultMsgPrefix)
+	ru := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	out, err := r.runScript("echo this will fail; exit 1", false, ru)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 	g.Expect(out).To(gomega.Not(gomega.Equal("")))
@@ -87,6 +92,7 @@ func TestErrorStatusMarkJanitor(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{Client: mgr.GetClient(),
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		Log:             log2.NullLogger{},
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
@@ -134,7 +140,7 @@ func TestPreDrainScriptSuccess(t *testing.T) {
 	instance := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	instance.Spec.PreDrain.Script = "echo 'Predrain script ran without error'"
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	err := rcRollingUpgrade.preDrainHelper(instance)
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -145,7 +151,7 @@ func TestPreDrainScriptError(t *testing.T) {
 	instance := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	instance.Spec.PreDrain.Script = "exit 1"
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	err := rcRollingUpgrade.preDrainHelper(instance)
 	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to run preDrain script"))
 }
@@ -158,7 +164,7 @@ func TestPostDrainHelperPostDrainScriptSuccess(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostDrain.Script = "echo Hello, postDrainScript!"
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	err := rcRollingUpgrade.postDrainHelper(ruObj, mockNode, mockKubeCtlCall)
 
 	g.Expect(err).To(gomega.BeNil())
@@ -172,7 +178,7 @@ func TestPostDrainHelperPostDrainScriptError(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostDrain.Script = "exit 1"
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	err := rcRollingUpgrade.postDrainHelper(ruObj, mockNode, mockKubeCtlCall)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
@@ -187,7 +193,7 @@ func TestPostDrainHelperPostDrainWaitScriptSuccess(t *testing.T) {
 	ruObj.Spec.PostDrain.PostWaitScript = "echo Hello, postDrainWaitScript!"
 	ruObj.Spec.PostDrainDelaySeconds = 0
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	err := rcRollingUpgrade.postDrainHelper(ruObj, mockNode, mockKubeCtlCall)
 
 	g.Expect(err).To(gomega.BeNil())
@@ -202,7 +208,7 @@ func TestPostDrainHelperPostDrainWaitScriptError(t *testing.T) {
 	ruObj.Spec.PostDrain.PostWaitScript = "exit 1"
 	ruObj.Spec.PostDrainDelaySeconds = 0
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	err := rcRollingUpgrade.postDrainHelper(ruObj, mockNode, mockKubeCtlCall)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
@@ -214,7 +220,7 @@ func TestDrainNodeSuccess(t *testing.T) {
 	mockKubeCtlCall := "echo"
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
 	g.Expect(err).To(gomega.BeNil())
@@ -227,7 +233,7 @@ func TestDrainNodePreDrainError(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PreDrain.Script = "exit 1"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
@@ -240,7 +246,7 @@ func TestDrainNodePostDrainScriptError(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostDrain.Script = "exit 1"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
@@ -253,7 +259,7 @@ func TestDrainNodePostDrainWaitScriptError(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostDrain.PostWaitScript = "exit 1"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
@@ -267,7 +273,7 @@ func TestDrainNodePostDrainFailureToDrainNotFound(t *testing.T) {
 	mockKubeCtlCall := "echo 'Error from server (NotFound)'; exit 1;"
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
 	g.Expect(err).To(gomega.BeNil())
@@ -286,10 +292,17 @@ func TestDrainNodePostDrainFailureToDrain(t *testing.T) {
 			Strategy: upgrademgrv1alpha1.UpdateStrategy{DrainTimeout: -1},
 		},
 	}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, mockKubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
+}
+
+func createReconciler() *RollingUpgradeReconciler {
+	return &RollingUpgradeReconciler{
+		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
+	}
 }
 
 type MockEC2 struct {
@@ -419,6 +432,7 @@ func TestTerminateNodeSuccess(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
 		EC2Client:    MockEC2{},
 		ASGClient: MockAutoscalingGroup{
 			errorFlag: false,
@@ -440,6 +454,7 @@ func TestTerminateNodeErrorNotFound(t *testing.T) {
 		nil)}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
 		ASGClient:    mockAutoscalingGroup,
 		EC2Client:    MockEC2{},
 	}
@@ -459,6 +474,7 @@ func TestTerminateNodeErrorOtherError(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
 		ASGClient:    mockAutoscalingGroup,
 		EC2Client:    MockEC2{},
 	}
@@ -475,6 +491,7 @@ func TestTerminateNodePostTerminateScriptSuccess(t *testing.T) {
 	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: false, awsErr: nil}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
 		ASGClient:    mockAutoscalingGroup,
 		EC2Client:    MockEC2{},
 	}
@@ -491,6 +508,7 @@ func TestTerminateNodePostTerminateScriptErrorNotFoundFromServer(t *testing.T) {
 	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: false, awsErr: nil}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
 		ASGClient:    mockAutoscalingGroup,
 		EC2Client:    MockEC2{},
 	}
@@ -507,6 +525,7 @@ func TestTerminateNodePostTerminateScriptErrorOtherError(t *testing.T) {
 	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: false, awsErr: nil}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
 		ASGClient:    mockAutoscalingGroup,
 		EC2Client:    MockEC2{},
 	}
@@ -551,7 +570,7 @@ func TestGetNodeNameFoundNode(t *testing.T) {
 
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode}}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	rcRollingUpgrade := RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	name := rcRollingUpgrade.getNodeName(&autoscalingInstance, &nodeList, ruObj)
 
 	g.Expect(name).To(gomega.Equal("correctNode"))
@@ -570,7 +589,7 @@ func TestGetNodeNameMissingNode(t *testing.T) {
 
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2}}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	rcRollingUpgrade := RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	name := rcRollingUpgrade.getNodeName(&autoscalingInstance, &nodeList, ruObj)
 
 	g.Expect(name).To(gomega.Equal(""))
@@ -588,7 +607,7 @@ func TestGetNodeFromAsgFoundNode(t *testing.T) {
 	correctNode := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockInstanceID}}
 
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode}}
-	rcRollingUpgrade := RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	node := rcRollingUpgrade.getNodeFromAsg(&autoscalingInstance, &nodeList, ruObj)
 
@@ -606,7 +625,7 @@ func TestGetNodeFromAsgMissingNode(t *testing.T) {
 	fooNode2 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/1234501"}}
 
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2}}
-	rcRollingUpgrade := RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	node := rcRollingUpgrade.getNodeFromAsg(&autoscalingInstance, &nodeList, ruObj)
 
@@ -621,6 +640,7 @@ func TestPopulateAsgSuccess(t *testing.T) {
 		Spec:     upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "correct-asg"}}
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
 		ASGClient:    &MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
@@ -645,6 +665,7 @@ func TestPopulateAsgTooMany(t *testing.T) {
 		Spec:     upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "too-many"}}
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
 		ASGClient:    &MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
@@ -663,6 +684,7 @@ func TestPopulateAsgNone(t *testing.T) {
 		Spec:     upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "no-asg-at-all"}}
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
 		ASGClient:    &MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
@@ -690,6 +712,7 @@ func TestParallelAsgTracking(t *testing.T) {
 	expectedAsgB := autoscaling.Group{AutoScalingGroupName: &asgBName}
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
 		ASGClient:    &MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
@@ -742,7 +765,7 @@ func TestPopulateNodeListSuccess(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		TypeMeta: metav1.TypeMeta{Kind: "RollingUpgrade", APIVersion: "v1alpha1"}}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	mockNodeListInterface := &MockNodeList{errorFlag: false}
 	err := rcRollingUpgrade.populateNodeList(ruObj, mockNodeListInterface)
@@ -758,7 +781,7 @@ func TestPopulateNodeListError(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		TypeMeta: metav1.TypeMeta{Kind: "RollingUpgrade", APIVersion: "v1alpha1"}}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	mockNodeListInterface := &MockNodeList{errorFlag: true}
 	err := rcRollingUpgrade.populateNodeList(ruObj, mockNodeListInterface)
@@ -781,6 +804,7 @@ func TestFinishExecutionCompleted(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{Client: mgr.GetClient(),
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		Log:             log2.NullLogger{},
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
@@ -808,6 +832,7 @@ func TestFinishExecutionError(t *testing.T) {
 	c = mgr.GetClient()
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
@@ -860,6 +885,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -910,6 +936,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode, correctNode2}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -949,6 +976,7 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -972,6 +1000,7 @@ func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
 		ASGClient:    MockAutoscalingGroup{},
 		EC2Client:    MockEC2{},
@@ -1008,6 +1037,7 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 	emptyNodeList := corev1.NodeList{}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1055,6 +1085,7 @@ func TestRunRestackNoNodeName(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1119,6 +1150,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1179,6 +1211,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       mockAutoscalingGroup,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1271,6 +1304,7 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 	}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1328,6 +1362,7 @@ func TestUpdateInstances(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode, correctNode2}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1392,6 +1427,7 @@ func TestUpdateInstancesError(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode, correctNode2}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       mockAutoScalingGroup,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1463,6 +1499,7 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, fooNode2, correctNode, correctNode2}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       mockAutoScalingGroup,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -1496,6 +1533,7 @@ func TestUpdateInstancesWithZeroInstances(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
@@ -1517,7 +1555,7 @@ func TestTestCallKubectlDrainWithoutDrainTimeout(t *testing.T) {
 	mockKubeCtlCall := "sleep 1; echo"
 	mockNodeName := "some-node-name"
 	mockAsgName := "some-asg"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: mockAsgName}}
 
@@ -1552,7 +1590,7 @@ func TestTestCallKubectlDrainWithDrainTimeout(t *testing.T) {
 
 	mockKubeCtlCall := "sleep 1; echo"
 	mockNodeName := "some-node-name"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	mockAsgName := "some-asg"
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
@@ -1591,7 +1629,7 @@ func TestTestCallKubectlDrainWithZeroDrainTimeout(t *testing.T) {
 
 	mockKubeCtlCall := "sleep 1; echo"
 	mockNodeName := "some-node-name"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	mockAsgName := "some-asg"
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
@@ -1630,7 +1668,7 @@ func TestTestCallKubectlDrainWithError(t *testing.T) {
 
 	mockKubeCtlCall := "cat xyz"
 	mockNodeName := "some-node-name"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	mockAsgName := "some-asg"
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
@@ -1667,7 +1705,7 @@ func TestTestCallKubectlDrainWithTimeoutOccurring(t *testing.T) {
 
 	mockKubeCtlCall := "sleep 1; echo"
 	mockNodeName := "some-node-name"
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 
 	mockAsgName := "some-asg"
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
@@ -1712,7 +1750,7 @@ func TestValidateRuObj(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1736,7 +1774,7 @@ func TestValidateruObjInvalidMaxUnavailable(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1760,7 +1798,7 @@ func TestValidateruObjMaxUnavailableZeroPercent(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1784,7 +1822,7 @@ func TestValidateruObjMaxUnavailableInt(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1808,7 +1846,7 @@ func TestValidateruObjMaxUnavailableIntZero(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1832,7 +1870,7 @@ func TestValidateruObjMaxUnavailableIntNegativeValue(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1856,7 +1894,7 @@ func TestValidateruObjWithStrategyAndDrainTimeoutOnly(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1878,7 +1916,7 @@ func TestValidateruObjWithoutStrategyOnly(t *testing.T) {
 	if err != nil {
 		fmt.Printf("Error occurred while unmarshalling RollingUpgrade object, error: %s", err.Error())
 	}
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	err = rcRollingUpgrade.validateRollingUpgradeObj(&ruObj)
 
 	g.Expect(err).To(gomega.BeNil())
@@ -1895,7 +1933,7 @@ func TestValidateruObjStrategyType(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1919,7 +1957,7 @@ func TestValidateruObjInvalidStrategyType(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1948,7 +1986,7 @@ type: randomUpdate
 		fmt.Printf("Error occurred while unmarshalling strategy yaml object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1973,7 +2011,7 @@ func TestSetDefaultsForRollingUpdateStrategy(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -1999,7 +2037,7 @@ func TestValidateruObjStrategyAfterSettingDefaults(t *testing.T) {
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -2024,7 +2062,7 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithInvalidStrategyType(t *tes
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -2049,7 +2087,7 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyDrainTimeout(t *testin
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -2074,7 +2112,7 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyMaxUnavailable(t *test
 		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
 	}
 
-	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: NewClusterState()}
+	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
@@ -2111,6 +2149,7 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 	nodeList := corev1.NodeList{Items: []corev1.Node{}}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
@@ -2149,6 +2188,7 @@ func TestWaitForTermination(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
 		admissionMap:    sync.Map{},
 		ruObjNameToASG:  sync.Map{},
@@ -2211,6 +2251,7 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
