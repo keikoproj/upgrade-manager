@@ -61,6 +61,11 @@ func SetLevel(logLevel string) {
 	}
 }
 
+// SetJSONFormatter sets JSON Formatter for default logger.
+func SetJSONFormatter() {
+	defaultLogger.SetFormatter(&logrus.JSONFormatter{})
+}
+
 type Fields map[string]interface{}
 
 func (f Fields) With(k string, v interface{}) Fields {
