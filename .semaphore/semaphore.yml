@@ -8,7 +8,7 @@ agent:
     # os_image: ubuntu1804
   containers:
     - name: main
-      image: semaphoreci/golang:1.13.8
+      image: semaphoreci/golang:1.14.0
 blocks:
   - name: Setup
     task:
