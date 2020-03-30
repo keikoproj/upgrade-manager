@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.13.8 as builder
+FROM golang:1.14.1 as builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -19,7 +19,7 @@ COPY controllers/ controllers/
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager main.go
 
 # Add kubectl
-RUN curl -L https://storage.googleapis.com/kubernetes-release/release/v1.14.4/bin/linux/amd64/kubectl -o /usr/local/bin/kubectl
+RUN curl -L https://storage.googleapis.com/kubernetes-release/release/v1.14.10/bin/linux/amd64/kubectl -o /usr/local/bin/kubectl
 RUN chmod +x /usr/local/bin/kubectl
 
 # Add busybox
