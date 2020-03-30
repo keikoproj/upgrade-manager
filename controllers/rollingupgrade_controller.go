@@ -597,6 +597,12 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	ruObj.Status.CurrentStatus = finalStatus
 	ruObj.Status.NodesProcessed = nodesProcessed
 
+	ruObj.Status.Conditions = append(ruObj.Status.Conditions,
+		upgrademgrv1alpha1.RollingUpgradeCondition{
+			Type:   upgrademgrv1alpha1.UpgradeComplete,
+			Status: corev1.ConditionTrue,
+		})
+
 	startTime, err := time.Parse(time.RFC3339, ruObj.Status.StartTime)
 	if err != nil {
 		r.info(ruObj, "Failed to calculate totalProcessingTime")
