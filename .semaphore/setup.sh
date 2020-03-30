@@ -1,6 +1,6 @@
 cache restore $SEMAPHORE_PROJECT_NAME-dep-$(checksum .semaphore/setup.sh)
 KUBE_BUILDER_VERSION=2.3.0
-GOLANGCI_LINT_VERSION=1.23.8
+GOLANGCI_LINT_VERSION=1.24.0
 
 export os=$(go env GOOS)
 export arch=$(go env GOARCH)
