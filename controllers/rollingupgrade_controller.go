@@ -942,7 +942,7 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 
 	// Drain and wait for draining node.
 	err := r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
-	if err != nil {
+	if err != nil && !ruObj.Spec.IgnoreDrainFailures {
 		ch <- err
 		return
 	}
