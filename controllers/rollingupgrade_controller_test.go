@@ -2417,3 +2417,44 @@ func TestRequiresRefreshNotUpdateIfNoVersionChange(t *testing.T) {
 	result := requiresRefresh(&mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(false))
 }
+
+func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	mockNode := "some-node-name"
+
+	// Force quit from the rest of the command
+	mockKubeCtlCall := "exit 1;"
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			Strategy:            upgrademgrv1alpha1.UpdateStrategy{DrainTimeout: -1},
+			IgnoreDrainFailures: true,
+			PreDrain: upgrademgrv1alpha1.PreDrainSpec{
+				Script: mockKubeCtlCall,
+			},
+		},
+	}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
+		EC2Client:    MockEC2{},
+		ASGClient: MockAutoscalingGroup{
+			errorFlag: false,
+			awsErr:    nil,
+		},
+	}
+
+	ch := make(chan error, 1)
+	rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, KubeCtlBinary, ch)
+
+	select {
+	case err, ok := <-ch:
+		fmt.Println(err)
+		g.Expect(ok).To(gomega.BeFalse()) // don't expect errors.
+	default:
+
+		// done.
+	}
+
+}
