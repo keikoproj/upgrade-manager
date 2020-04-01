@@ -27,9 +27,9 @@ const (
 	// EventReasonRUStarted Rolling Upgrade Started
 	EventReasonRUStarted EventReason = "RollingUpgradeStarted"
 	// EventReasonRUInstanceStarted Rolling Upgrade for Instance has started
-	EventReasonRUInstanceStarted EventReason = "EventReasonRUInstanceStarted"
+	EventReasonRUInstanceStarted EventReason = "RollingUpgradeInstanceStarted"
 	// EventReasonRUInstanceFinished Rolling Upgrade for Instance has finished
-	EventReasonRUInstanceFinished EventReason = "EventReasonRUInstanceFinished"
+	EventReasonRUInstanceFinished EventReason = "RollingUpgradeInstanceFinished"
 	// EventReasonRUFinished Rolling Upgrade Finished
 	EventReasonRUFinished EventReason = "RollingUpgradeFinished"
 )
