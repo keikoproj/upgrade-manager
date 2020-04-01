@@ -16,6 +16,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -56,6 +57,14 @@ type RollingUpgradeStatus struct {
 	TotalProcessingTime string `json:"totalProcessingTime,omitempty"`
 	NodesProcessed      int    `json:"nodesProcessed,omitempty"`
 	TotalNodes          int    `json:"totalNodes,omitempty"`
+
+	Conditions []RollingUpgradeCondition `json:"conditions,omitempty"`
+}
+
+// RollingUpgradeCondition describes the state of the RollingUpgrade
+type RollingUpgradeCondition struct {
+	Type   UpgradeConditionType   `json:"type,omitempty"`
+	Status corev1.ConditionStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -93,6 +102,8 @@ type UpdateStrategyType string
 
 type UpdateStrategyMode string
 
+type UpgradeConditionType string
+
 const (
 	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
 	RandomUpdateStrategy UpdateStrategyType = "randomUpdate"
@@ -104,6 +115,8 @@ const (
 	UpdateStrategyModeEager UpdateStrategyMode = "eager"
 	// Other update strategies such as rolling update by Az or rolling update with a predifined instance list
 	// can be implemented in future by adding more update strategy types
+
+	UpgradeComplete UpgradeConditionType = "Complete"
 )
 
 func (c UpdateStrategyMode) String() string {

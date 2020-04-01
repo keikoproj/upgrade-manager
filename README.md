@@ -34,6 +34,7 @@ RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates 
   - `startTime`: The RFC3339 timestamp when the rolling-update began. E.g. 2019-01-15T23:51:10Z
   - `endTime`: The RFC3339 timestamp when the rolling-update completed. E.g. 2019-01-15T00:35:10Z
   - `nodesProcessed`: The number of ec2 instances that were processed.
+  - `conditions`: Conditions describing the lifecycle of the rolling-update.
 
 ## Design
 
