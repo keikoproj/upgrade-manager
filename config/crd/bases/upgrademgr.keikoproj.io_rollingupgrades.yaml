@@ -113,6 +113,16 @@ spec:
         status:
           description: RollingUpgradeStatus defines the observed state of RollingUpgrade
           properties:
+            conditions:
+              items:
+                description: RollingUpgradeCondition describes the state of the RollingUpgrade
+                properties:
+                  status:
+                    type: string
+                  type:
+                    type: string
+                type: object
+              type: array
             currentStatus:
               type: string
             endTime:
