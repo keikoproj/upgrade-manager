@@ -609,6 +609,20 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	} else {
 		ruObj.Status.TotalProcessingTime = endTime.Sub(startTime).String()
 	}
+	// end event
+	var level string
+	if finalStatus == StatusComplete {
+		level = EventLevelNormal
+	} else {
+		level = EventLevelWarning
+	}
+	r.createK8sV1Event(ruObj, EventReasonRUFinished, level, map[string]string{
+		"status":   finalStatus,
+		"asgName":  ruObj.Spec.AsgName,
+		"strategy": string(ruObj.Spec.Strategy.Type),
+		"info":     fmt.Sprintf("Rolling Upgrade as finished (status=%s)", finalStatus),
+	})
+
 	MarkObjForCleanup(ruObj)
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
 		r.error(ruObj, err, "failed to update status")
@@ -643,7 +657,13 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		r.info(ruObj, "Deleted object from admission map")
 		return reconcile.Result{}, nil
 	}
-
+	// start event
+	r.createK8sV1Event(ruObj, EventReasonRUStarted, EventLevelNormal, map[string]string{
+		"status":   "started",
+		"asgName":  ruObj.Spec.AsgName,
+		"strategy": string(ruObj.Spec.Strategy.Type),
+		"msg":      "Rolling Upgrade has started",
+	})
 	r.CacheConfig.FlushCache("autoscaling")
 	err := r.populateAsg(ruObj)
 	if err != nil {
@@ -872,25 +892,38 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 	ch := make(chan error)
 
 	for _, instance := range instances {
+		// log it before we start updating the instance
+		r.createK8sV1Event(ruObj, EventReasonRUInstanceStarted, EventLevelNormal, map[string]string{
+			"status":   "in-progress",
+			"asgName":  ruObj.Spec.AsgName,
+			"strategy": string(ruObj.Spec.Strategy.Type),
+			"msg":      fmt.Sprintf("Started Updating Instance %s, in AZ: %s", *instance.InstanceId, *instance.AvailabilityZone),
+		})
 		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, KubeCtlCall, ch)
 	}
 
 	// wait for upgrades to complete
 	nodesProcessed := 0
 	var instanceUpdateErrors []error
-Loop:
+
 	for err := range ch {
 		nodesProcessed++
 		switch err {
 		case nil:
-			if nodesProcessed == totalNodes {
-				break Loop
-			}
+			// do nothing
 		default:
 			instanceUpdateErrors = append(instanceUpdateErrors, err)
-			if nodesProcessed == totalNodes {
-				break Loop
-			}
+		}
+		// log the event
+		r.createK8sV1Event(ruObj, EventReasonRUInstanceFinished, EventLevelNormal, map[string]string{
+			"status":   "in-progress",
+			"asgName":  ruObj.Spec.AsgName,
+			"strategy": string(ruObj.Spec.Strategy.Type),
+			"msg":      fmt.Sprintf("Finished Updating Instance %d/%d (Errors=%d)", nodesProcessed, totalNodes, len(instanceUpdateErrors)),
+		})
+		// break if we are done with all the nodes
+		if nodesProcessed == totalNodes {
+			break
 		}
 	}
 
