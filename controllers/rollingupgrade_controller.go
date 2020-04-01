@@ -913,9 +913,9 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 			"status":   "in-progress",
 			"asgName":  ruObj.Spec.AsgName,
 			"strategy": string(ruObj.Spec.Strategy.Type),
-			"msg":      fmt.Sprintf("Finished Updating Instance %d/%d(Errors=%d)", nodesProcessed, totalNodes, len(instanceUpdateErrors)),
+			"msg":      fmt.Sprintf("Finished Updating Instance %d/%d (Errors=%d)", nodesProcessed, totalNodes, len(instanceUpdateErrors)),
 		})
-		//
+		// break if we are done with all the nodes
 		if nodesProcessed == totalNodes {
 			break
 		}
