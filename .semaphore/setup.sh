@@ -5,6 +5,12 @@ GOLANGCI_LINT_VERSION=1.24.0
 export os=$(go env GOOS)
 export arch=$(go env GOARCH)
 
+# https://semaphoreci.com/docs/how-to-increase-the-amount-of-available-memory.html
+sudo swapoff -a
+sudo dd if=/dev/zero of=/swapfile bs=1M count=1024
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
 KUBE_BUILDER_PACKAGE="/packages/kubebuilder.tar.gz"
 KUBE_BUILDER_MARKER="/packages/kubebuilder_${KUBE_BUILDER_VERSION}.marker"
 
