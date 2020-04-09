@@ -1,6 +1,15 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.10] - 2020-03-30
+
+* support for v1.Event (#87)
+* Allow to ignore drain failures (#86)
+* Bump dependencies to new version (#85)
+* add support for conditions (#82)
+* Improve logging - tag messages with RollingUpgrade name and use structured logging. (#79)
+* Allow to use JSON logging (#78)
+
 ## [v0.9] - 2020-03-11
 
 * Add SDK caching & Refactor (#75)
