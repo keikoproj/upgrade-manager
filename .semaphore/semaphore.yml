@@ -25,6 +25,7 @@ blocks:
         commands:
           - checkout
           - cache restore $SEMAPHORE_PROJECT_NAME-dep-$(checksum .semaphore/setup.sh)
+          - source .semaphore/setup.sh
           - ls -l /packages
           - pushd /packages
           - mkdir kubebuilder
