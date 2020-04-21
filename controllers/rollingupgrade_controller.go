@@ -720,6 +720,7 @@ func MarkObjForCleanup(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 // +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;patch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=list
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create
 // +kubebuilder:rbac:groups=core,resources=pods/eviction,verbs=create
 // +kubebuilder:rbac:groups=extensions;apps,resources=daemonsets;replicasets;statefulsets,verbs=get
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get
