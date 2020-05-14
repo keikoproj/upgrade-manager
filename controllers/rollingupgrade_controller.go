@@ -990,6 +990,7 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 
 }
 
+// UpdateInstance runs the rolling upgrade on one instance from an autoscaling group
 func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	i *autoscaling.Instance,
@@ -1000,8 +1001,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
 	targetInstanceID := aws.StringValue(i.InstanceId)
-	if !requiresRefresh(i, launchDefinition) {
-		r.info(ruObj, "Ignoring since it has the correct launch-config", "instanceID", targetInstanceID)
+	if !r.requiresRefresh(ruObj, i, launchDefinition) {
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
 		if err := r.Status().Update(*ctx, ruObj); err != nil {
 			r.error(ruObj, err, "failed to update status")
@@ -1066,24 +1066,54 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	ch <- nil
 }
 
-func requiresRefresh(ec2Instance *autoscaling.Instance, definition *launchDefinition) bool {
+func (r *RollingUpgradeReconciler) getNodeCreationTimestamp(ec2Instance *autoscaling.Instance) (bool, time.Time) {
+	for _, node := range r.NodeList.Items {
+		tokens := strings.Split(node.Spec.ProviderID, "/")
+		instanceID := tokens[len(tokens)-1]
+		if instanceID == aws.StringValue(ec2Instance.InstanceId) {
+			return true, node.ObjectMeta.CreationTimestamp.Time
+		}
+	}
+	return false, time.Time{}
+}
+
+func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
+	definition *launchDefinition) bool {
+
+	if ruObj.Spec.ForceRefresh {
+		if ok, nodeCreationTS := r.getNodeCreationTimestamp(ec2Instance); ok {
+			if nodeCreationTS.Before(ruObj.CreationTimestamp.Time) {
+				r.info(ruObj, "rolling upgrade configured for forced refresh")
+				return true
+			}
+		}
+
+		r.info(ruObj, "node", aws.StringValue(ec2Instance.InstanceId), "created after rollingupgrade object. Ignoring forceRefresh")
+		return false
+	}
 	if definition.launchConfigurationName != nil {
 		if *(definition.launchConfigurationName) != aws.StringValue(ec2Instance.LaunchConfigurationName) {
+			r.info(ruObj, "launch configuration name differs")
 			return true
 		}
 	} else if definition.launchTemplate != nil && ec2Instance.LaunchTemplate != nil {
 		instanceLaunchTemplate := ec2Instance.LaunchTemplate
 		targetLaunchTemplate := definition.launchTemplate
 		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateId) != aws.StringValue(targetLaunchTemplate.LaunchTemplateId) {
+			r.info(ruObj, "launch template id differs")
 			return true
 		}
 		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateName) != aws.StringValue(targetLaunchTemplate.LaunchTemplateName) {
+			r.info(ruObj, "launch template name differs")
 			return true
 		}
 		if aws.StringValue(instanceLaunchTemplate.Version) != aws.StringValue(targetLaunchTemplate.Version) {
+			r.info(ruObj, "launch template version differs")
 			return true
 		}
 	}
+
+	r.info(ruObj, "node refresh not required")
 	return false
 }
 
