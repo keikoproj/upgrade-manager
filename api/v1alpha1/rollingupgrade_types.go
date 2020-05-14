@@ -40,16 +40,18 @@ type PostTerminateSpec struct {
 
 // RollingUpgradeSpec defines the desired state of RollingUpgrade
 type RollingUpgradeSpec struct {
-	PostDrainDelaySeconds int               `json:"postDrainDelaySeconds,omitempty"`
-	NodeIntervalSeconds   int               `json:"nodeIntervalSeconds,omitempty"`
+	PostDrainDelaySeconds int `json:"postDrainDelaySeconds,omitempty"`
+	NodeIntervalSeconds   int `json:"nodeIntervalSeconds,omitempty"`
 	// AsgName is AWS Autoscaling Group name to roll.
-	AsgName               string            `json:"asgName,omitempty"`
-	PreDrain              PreDrainSpec      `json:"preDrain,omitempty"`
-	PostDrain             PostDrainSpec     `json:"postDrain,omitempty"`
-	PostTerminate         PostTerminateSpec `json:"postTerminate,omitempty"`
-	Strategy              UpdateStrategy    `json:"strategy,omitempty"`
+	AsgName       string            `json:"asgName,omitempty"`
+	PreDrain      PreDrainSpec      `json:"preDrain,omitempty"`
+	PostDrain     PostDrainSpec     `json:"postDrain,omitempty"`
+	PostTerminate PostTerminateSpec `json:"postTerminate,omitempty"`
+	Strategy      UpdateStrategy    `json:"strategy,omitempty"`
 	// IgnoreDrainFailures allows ignoring node drain failures and proceed with rolling upgrade.
-	IgnoreDrainFailures    bool              `json:"ignoreDrainFailures,omitempty"`
+	IgnoreDrainFailures bool `json:"ignoreDrainFailures,omitempty"`
+	// ForceRefresh enables draining and terminating the node even if the launch config/template hasn't changed.
+	ForceRefresh bool `json:"forceRefresh,omitempty"`
 }
 
 // RollingUpgradeStatus defines the observed state of RollingUpgrade
