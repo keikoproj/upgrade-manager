@@ -2443,15 +2443,34 @@ func TestForceRefresh(t *testing.T) {
 		launchTemplate: launchTemplate,
 	}
 	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	currentTime := metav1.NewTime(metav1.Now().Time)
+	oldTime := metav1.NewTime(currentTime.Time.AddDate(0, 0, -1))
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
-		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default", CreationTimestamp: currentTime},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
 			Strategy:     upgrademgrv1alpha1.UpdateStrategy{DrainTimeout: -1},
 			ForceRefresh: true,
 		},
 	}
+	// If the node was created before the rollingupgrade object, requiresRefresh should return true
+	k8sNode := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "k8sNode", CreationTimestamp: oldTime},
+		Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID}}
+	nodeList := corev1.NodeList{Items: []corev1.Node{k8sNode}}
+	r.NodeList = &nodeList
 	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(true))
+
+	// If the node was created at the same time as rollingupgrade object, requiresRefresh should return false
+	k8sNode.CreationTimestamp = currentTime
+	nodeList = corev1.NodeList{Items: []corev1.Node{k8sNode}}
+	r.NodeList = &nodeList
+	result = r.requiresRefresh(ruObj, &mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(false))
+
+	// Reset the timestamp on the k8s node
+	k8sNode.CreationTimestamp = oldTime
+	nodeList = corev1.NodeList{Items: []corev1.Node{k8sNode}}
+	r.NodeList = &nodeList
 
 	// If launchTempaltes are different and forceRefresh is true, requiresRefresh should return true
 	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{

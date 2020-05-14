@@ -1066,12 +1066,29 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	ch <- nil
 }
 
+func (r *RollingUpgradeReconciler) getNodeCreationTimestamp(ec2Instance *autoscaling.Instance) time.Time {
+	for _, node := range r.NodeList.Items {
+		tokens := strings.Split(node.Spec.ProviderID, "/")
+		instanceID := tokens[len(tokens)-1]
+		if instanceID == aws.StringValue(ec2Instance.InstanceId) {
+			return node.ObjectMeta.CreationTimestamp.Time
+		}
+	}
+	return time.Time{}
+}
+
 func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
 	definition *launchDefinition) bool {
 
 	if ruObj.Spec.ForceRefresh {
-		r.info(ruObj, "rolling upgrade configured for forced refresh")
-		return true
+		nodeCreationTS := r.getNodeCreationTimestamp(ec2Instance)
+		if nodeCreationTS.Before(ruObj.CreationTimestamp.Time) {
+			r.info(ruObj, "rolling upgrade configured for forced refresh")
+			return true
+		}
+
+		r.info(ruObj, "node", aws.StringValue(ec2Instance.InstanceId), "created after rollingupgrade object. Ignoring forceRefresh")
+		return false
 	}
 	if definition.launchConfigurationName != nil {
 		if *(definition.launchConfigurationName) != aws.StringValue(ec2Instance.LaunchConfigurationName) {
