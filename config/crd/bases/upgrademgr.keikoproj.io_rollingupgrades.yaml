@@ -54,6 +54,10 @@ spec:
             asgName:
               description: AsgName is AWS Autoscaling Group name to roll.
               type: string
+            forceRefresh:
+              description: ForceRefresh enables draining and terminating the node
+                even if the launch config/template hasn't changed.
+              type: boolean
             ignoreDrainFailures:
               description: IgnoreDrainFailures allows ignoring node drain failures
                 and proceed with rolling upgrade.

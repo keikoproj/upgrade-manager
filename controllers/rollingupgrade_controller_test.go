@@ -2289,6 +2289,9 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 func TestRequiresRefreshHandlesLaunchConfiguration(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+
 	mockID := "some-id"
 	someLaunchConfig := "some-launch-config-v1"
 	az := "az-1"
@@ -2299,7 +2302,7 @@ func TestRequiresRefreshHandlesLaunchConfiguration(t *testing.T) {
 		launchConfigurationName: &newLaunchConfig,
 	}
 
-	result := requiresRefresh(&mockInstance, &definition)
+	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(true))
 }
 
@@ -2322,7 +2325,9 @@ func TestRequiresRefreshHandlesLaunchTemplateNameVersionUpdate(t *testing.T) {
 		launchTemplate: newLaunchTemplate,
 	}
 
-	result := requiresRefresh(&mockInstance, &definition)
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(true))
 }
 
@@ -2344,8 +2349,9 @@ func TestRequiresRefreshHandlesLaunchTemplateIDVersionUpdate(t *testing.T) {
 	definition := launchDefinition{
 		launchTemplate: newLaunchTemplate,
 	}
-
-	result := requiresRefresh(&mockInstance, &definition)
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(true))
 }
 
@@ -2367,8 +2373,9 @@ func TestRequiresRefreshHandlesLaunchTemplateNameUpdate(t *testing.T) {
 	definition := launchDefinition{
 		launchTemplate: newLaunchTemplate,
 	}
-
-	result := requiresRefresh(&mockInstance, &definition)
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(true))
 }
 
@@ -2390,8 +2397,9 @@ func TestRequiresRefreshHandlesLaunchTemplateIDUpdate(t *testing.T) {
 	definition := launchDefinition{
 		launchTemplate: newLaunchTemplate,
 	}
-
-	result := requiresRefresh(&mockInstance, &definition)
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(true))
 }
 
@@ -2413,8 +2421,87 @@ func TestRequiresRefreshNotUpdateIfNoVersionChange(t *testing.T) {
 	definition := launchDefinition{
 		launchTemplate: newLaunchTemplate,
 	}
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(false))
+}
 
-	result := requiresRefresh(&mockInstance, &definition)
+func TestForceRefresh(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	// Even if launchtemplate is identical but forceRefresh is set, requiresRefresh should return true.
+	mockID := "some-id"
+	launchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v1"),
+		Version:          aws.String("1"),
+	}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: launchTemplate, AvailabilityZone: &az}
+
+	definition := launchDefinition{
+		launchTemplate: launchTemplate,
+	}
+	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	currentTime := metav1.NewTime(metav1.Now().Time)
+	oldTime := metav1.NewTime(currentTime.Time.AddDate(0, 0, -1))
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default", CreationTimestamp: currentTime},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			Strategy:     upgrademgrv1alpha1.UpdateStrategy{DrainTimeout: -1},
+			ForceRefresh: true,
+		},
+	}
+	// If the node was created before the rollingupgrade object, requiresRefresh should return true
+	k8sNode := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "k8sNode", CreationTimestamp: oldTime},
+		Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID}}
+	nodeList := corev1.NodeList{Items: []corev1.Node{k8sNode}}
+	r.NodeList = &nodeList
+	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
+
+	// If the node was created at the same time as rollingupgrade object, requiresRefresh should return false
+	k8sNode.CreationTimestamp = currentTime
+	nodeList = corev1.NodeList{Items: []corev1.Node{k8sNode}}
+	r.NodeList = &nodeList
+	result = r.requiresRefresh(ruObj, &mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(false))
+
+	// Reset the timestamp on the k8s node
+	k8sNode.CreationTimestamp = oldTime
+	nodeList = corev1.NodeList{Items: []corev1.Node{k8sNode}}
+	r.NodeList = &nodeList
+
+	// If launchTempaltes are different and forceRefresh is true, requiresRefresh should return true
+	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+		LaunchTemplateId: aws.String("launch-template-id-v1"),
+		Version:          aws.String("1"),
+	}
+
+	definition = launchDefinition{
+		launchTemplate: newLaunchTemplate,
+	}
+	result = r.requiresRefresh(ruObj, &mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
+
+	// If launchTemplares are identical AND forceRefresh is false, requiresRefresh should return false
+	ruObj.Spec.ForceRefresh = false
+	result = r.requiresRefresh(ruObj, &mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(false))
+
+	// If launchConfigs are identical but forceRefresh is true, requiresRefresh should return true
+	ruObj.Spec.ForceRefresh = true
+	launchConfig := "launch-config"
+	mockInstance = autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &launchConfig, AvailabilityZone: &az}
+	definition = launchDefinition{
+		launchConfigurationName: &launchConfig,
+	}
+	result = r.requiresRefresh(ruObj, &mockInstance, &definition)
+	g.Expect(result).To(gomega.Equal(true))
+
+	// If launchConfigs are identical AND forceRefresh is false, requiresRefresh should return false
+	ruObj.Spec.ForceRefresh = false
+	result = r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(false))
 }
 
