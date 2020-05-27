@@ -7,7 +7,7 @@ export arch=$(go env GOARCH)
 
 # https://semaphoreci.com/docs/how-to-increase-the-amount-of-available-memory.html
 sudo swapoff -a
-sudo dd if=/dev/zero of=/swapfile bs=1M count=1024
+sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
 sudo mkswap /swapfile
 sudo swapon /swapfile
 
