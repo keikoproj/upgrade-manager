@@ -40,7 +40,7 @@ func (r *RollingUpgradeReconciler) createK8sV1Event(objMeta *upgrademgrv1alpha1.
 	// UnsupportedTypeError or UnsupportedValueError. Since our type is very rigid, these errors won't be triggered.
 	b, _ := json.Marshal(msgFields)
 	msgPayload := string(b)
-
+	t := metav1.Time{Time: time.Now()}
 	event := &v1.Event{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%v-%v.%v", objMeta.Name, time.Now().Unix(), rand.Int()),
@@ -57,12 +57,12 @@ func (r *RollingUpgradeReconciler) createK8sV1Event(objMeta *upgrademgrv1alpha1.
 			APIVersion:      upgrademgrv1alpha1.GroupVersion.Version,
 			UID:             objMeta.UID,
 		},
-		Reason:  string(reason),
-		Message: msgPayload,
-		Type:    level,
-		LastTimestamp: metav1.Time{
-			Time: time.Now(),
-		},
+		Reason:         string(reason),
+		Message:        msgPayload,
+		Type:           level,
+		Count:          1,
+		FirstTimestamp: t,
+		LastTimestamp:  t,
 	}
 
 	log.Debugf("Publishing event: %v", event)
