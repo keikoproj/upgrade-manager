@@ -18,6 +18,8 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"os"
 	"os/exec"
 	"strconv"
@@ -32,7 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
-	iebackoff "github.com/keikoproj/inverse-exp-backoff"
+	"github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,7 +42,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/kubernetes/typed/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -390,25 +392,36 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 		InstanceId:                     aws.String(instanceID),
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
-
-	_, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if strings.Contains(aerr.Message(), "not found") {
-				r.info(ruObj, "Instance not found. Moving on", "instanceID", instanceID)
-				return nil
-			}
+	err := retry.OnError(wait.Backoff{
+		Steps:    int(WaiterMaxAttempts),
+		Duration: WaiterMinDelay,
+		Factor:   WaiterFactor,
+		Jitter:   0.1,
+	}, func(e error) bool {
+		if aerr, ok := e.(awserr.Error); ok {
 			switch aerr.Code() {
 			case autoscaling.ErrCodeScalingActivityInProgressFault:
 				r.error(ruObj, aerr, autoscaling.ErrCodeScalingActivityInProgressFault, "instanceID", instanceID)
+				return true
 			case autoscaling.ErrCodeResourceContentionFault:
 				r.error(ruObj, aerr, autoscaling.ErrCodeResourceContentionFault, "instanceID", instanceID)
-				return nil
+				return true
 			default:
 				r.error(ruObj, aerr, aerr.Code(), "instanceID", instanceID)
-				return err
+				return false
 			}
 		}
+		return false
+	}, func() error {
+		_, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
+		return err
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			r.info(ruObj, "Instance not found. Moving on", "instanceID", instanceID)
+			return nil
+		}
+		return err
 	}
 
 	r.info(ruObj, "Instance terminated.", "instanceID", instanceID)
