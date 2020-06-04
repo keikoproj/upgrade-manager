@@ -18,8 +18,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/retry"
 	"os"
 	"os/exec"
 	"strconv"
@@ -392,38 +390,32 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 		InstanceId:                     aws.String(instanceID),
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
-	err := retry.OnError(wait.Backoff{
-		Steps:    int(WaiterMaxAttempts),
-		Duration: WaiterMinDelay,
-		Factor:   WaiterFactor,
-		Jitter:   0.1,
-	}, func(e error) bool {
-		if aerr, ok := e.(awserr.Error); ok {
+	var err error
+	var ieb *iebackoff.IEBackoff
+	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
+		_, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
+		if err == nil {
+			break
+		}
+		if aerr, ok := err.(awserr.Error); ok {
+			if strings.Contains(aerr.Message(), "not found") {
+				r.info(ruObj, "Instance not found. Moving on", "instanceID", instanceID)
+				return nil
+			}
 			switch aerr.Code() {
 			case autoscaling.ErrCodeScalingActivityInProgressFault:
 				r.error(ruObj, aerr, autoscaling.ErrCodeScalingActivityInProgressFault, "instanceID", instanceID)
-				return true
 			case autoscaling.ErrCodeResourceContentionFault:
 				r.error(ruObj, aerr, autoscaling.ErrCodeResourceContentionFault, "instanceID", instanceID)
-				return true
 			default:
 				r.error(ruObj, aerr, aerr.Code(), "instanceID", instanceID)
-				return false
+				return err
 			}
 		}
-		return false
-	}, func() error {
-		_, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
-		return err
-	})
+	}
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			r.info(ruObj, "Instance not found. Moving on", "instanceID", instanceID)
-			return nil
-		}
 		return err
 	}
-
 	r.info(ruObj, "Instance terminated.", "instanceID", instanceID)
 	r.info(ruObj, "starting post termination sleep", "instanceID", instanceID, "nodeIntervalSeconds", ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
