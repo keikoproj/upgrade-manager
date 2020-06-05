@@ -463,6 +463,74 @@ func TestTerminateNodeErrorNotFound(t *testing.T) {
 	g.Expect(err).To(gomega.BeNil())
 }
 
+func init() {
+	WaiterMaxDelay = time.Second * 2
+	WaiterMinDelay = time.Second * 1
+	WaiterMaxAttempts = uint32(2)
+}
+
+func TestTerminateNodeErrorScalingActivityInProgressWithRetry(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	mockNode := "some-node-id"
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New(autoscaling.ErrCodeScalingActivityInProgressFault,
+		"Scaling activities in progress",
+		nil)}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
+		ASGClient:    mockAutoscalingGroup,
+		EC2Client:    MockEC2{},
+	}
+	go func() {
+		time.Sleep(WaiterMaxDelay)
+		rcRollingUpgrade.ASGClient = MockAutoscalingGroup{
+			errorFlag: false,
+			awsErr:    nil,
+		}
+	}()
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode)
+	g.Expect(err).To(gomega.BeNil())
+}
+
+func TestTerminateNodeErrorScalingActivityInProgress(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	mockNode := "some-node-id"
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New(autoscaling.ErrCodeScalingActivityInProgressFault,
+		"Scaling activities in progress",
+		nil)}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
+		ASGClient:    mockAutoscalingGroup,
+		EC2Client:    MockEC2{},
+	}
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode)
+	g.Expect(err.Error()).To(gomega.ContainSubstring("No more retries left"))
+}
+
+func TestTerminateNodeErrorResourceContention(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	mockNode := "some-node-id"
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New(autoscaling.ErrCodeResourceContentionFault,
+		"Have a pending update on resource",
+		nil)}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
+		ASGClient:    mockAutoscalingGroup,
+		EC2Client:    MockEC2{},
+	}
+
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode)
+	g.Expect(err.Error()).To(gomega.ContainSubstring("No more retries left"))
+}
+
 func TestTerminateNodeErrorOtherError(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	mockNode := "some-node-id"

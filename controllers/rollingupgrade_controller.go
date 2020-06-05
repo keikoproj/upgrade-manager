@@ -32,7 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
-	iebackoff "github.com/keikoproj/inverse-exp-backoff"
+	"github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,7 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/kubernetes/typed/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -390,9 +390,13 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 		InstanceId:                     aws.String(instanceID),
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
-
-	_, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
-	if err != nil {
+	var err error
+	var ieb *iebackoff.IEBackoff
+	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
+		_, err := r.ASGClient.TerminateInstanceInAutoScalingGroup(input)
+		if err == nil {
+			break
+		}
 		if aerr, ok := err.(awserr.Error); ok {
 			if strings.Contains(aerr.Message(), "not found") {
 				r.info(ruObj, "Instance not found. Moving on", "instanceID", instanceID)
@@ -403,14 +407,15 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 				r.error(ruObj, aerr, autoscaling.ErrCodeScalingActivityInProgressFault, "instanceID", instanceID)
 			case autoscaling.ErrCodeResourceContentionFault:
 				r.error(ruObj, aerr, autoscaling.ErrCodeResourceContentionFault, "instanceID", instanceID)
-				return nil
 			default:
 				r.error(ruObj, aerr, aerr.Code(), "instanceID", instanceID)
 				return err
 			}
 		}
 	}
-
+	if err != nil {
+		return err
+	}
 	r.info(ruObj, "Instance terminated.", "instanceID", instanceID)
 	r.info(ruObj, "starting post termination sleep", "instanceID", instanceID, "nodeIntervalSeconds", ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
