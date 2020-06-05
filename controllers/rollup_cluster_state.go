@@ -17,8 +17,10 @@ limitations under the License.
 package controllers
 
 import (
-	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"log"
 	"sync"
+
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 )
 
 const (
@@ -74,7 +76,9 @@ func (c *ClusterStateImpl) markUpdateInProgress(instanceId string) {
 
 // markUpdateCompleted updates the instance state to completed
 func (c *ClusterStateImpl) markUpdateCompleted(instanceId string) {
-	c.updateInstanceState(instanceId, updateCompleted)
+	if c.getInstanceState(instanceId) == updateInProgress {
+		c.updateInstanceState(instanceId, updateCompleted)
+	}
 }
 
 // instanceUpdateInProgress returns true if the instance update is in progress
@@ -114,6 +118,7 @@ func (c *ClusterStateImpl) instanceUpdateInitialized(instanceId string) bool {
 
 // initializeAsg adds an entry for all the instances in an ASG with updateInitialized state
 func (c *ClusterStateImpl) initializeAsg(asgName string, instances []*autoscaling.Instance) {
+	var allInstanceIds []string
 	for _, instance := range instances {
 		instanceData := &InstanceData{
 			Id:            *instance.InstanceId,
@@ -122,7 +127,10 @@ func (c *ClusterStateImpl) initializeAsg(asgName string, instances []*autoscalin
 			InstanceState: updateInitialized,
 		}
 		c.addInstanceState(instanceData)
+		allInstanceIds = append(allInstanceIds, *instance.InstanceId)
 	}
+
+	log.Printf("Added %+v instances to clusterState for asg: %s", allInstanceIds, asgName)
 }
 
 // getNextAvailableInstanceId returns the id of the next instance available for update in an ASG
@@ -143,6 +151,7 @@ func (c *ClusterStateImpl) getNextAvailableInstanceIdInAz(asgName string, azName
 		}
 		return true
 	})
+	log.Printf("ClusterState returning %s as next instance for upgrade", instanceId)
 	return instanceId
 }
 

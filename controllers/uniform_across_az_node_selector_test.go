@@ -102,6 +102,6 @@ func TestUniformAcrossAzNodeSelectorSelectNodesOneAzComplete(t *testing.T) {
 	nodeSelector := NewUniformAcrossAzNodeSelector(&mockAsg, ruObj)
 	instances := nodeSelector.SelectNodesForRestack(clusterState)
 
-	g.Expect(1).To(gomega.Equal(len(instances)))
-	g.Expect(&az2).To(gomega.Equal(instances[0].AvailabilityZone))
+	g.Expect(2).To(gomega.Equal(len(instances)))
+	g.Expect(&az).To(gomega.Equal(instances[0].AvailabilityZone))
 }
