@@ -32,15 +32,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
-	"github.com/keikoproj/inverse-exp-backoff"
+	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/typed/core/v1"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -997,15 +998,21 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 
 // UpdateInstance runs the rolling upgrade on one instance from an autoscaling group
 func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
-	ruObj *upgrademgrv1alpha1.RollingUpgrade,
-	i *autoscaling.Instance,
-	launchDefinition *launchDefinition,
-	KubeCtlCall string,
-	ch chan error) {
-
+	ruObj *upgrademgrv1alpha1.RollingUpgrade, i *autoscaling.Instance,
+	launchDefinition *launchDefinition, KubeCtlCall string, ch chan error) {
+	targetInstanceID := aws.StringValue(i.InstanceId)
+	// Check if the rollingupgrade object still exists
+	tmpObj := &upgrademgrv1alpha1.RollingUpgrade{}
+	err := r.Get(context.Background(), types.NamespacedName{Name: ruObj.Name, Namespace: ruObj.Namespace}, tmpObj)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			r.info(ruObj, "Object not found. Ignoring node update for ", targetInstanceID)
+			ch <- err
+			return
+		}
+	}
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
-	targetInstanceID := aws.StringValue(i.InstanceId)
 	if !r.requiresRefresh(ruObj, i, launchDefinition) {
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
 		if err := r.Status().Update(*ctx, ruObj); err != nil {
@@ -1022,7 +1029,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	}
 
 	// Load the environment variables for scripts to run
-	err := loadEnvironmentVariables(ruObj, r.getNodeFromAsg(i, r.NodeList, ruObj))
+	err = loadEnvironmentVariables(ruObj, r.getNodeFromAsg(i, r.NodeList, ruObj))
 	if err != nil {
 		ch <- err
 		return
