@@ -769,12 +769,12 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			r.info(ruObj, "Sync map with invalid entry for ", "name", ruObj.Name)
 		}
 	} else {
+		r.info(ruObj, "Adding obj to map: ", "name", ruObj.Name)
+		r.admissionMap.Store(ruObj.Name, "processing")
 		_, err := r.Process(&ctx, ruObj)
 		if err != nil {
 			r.error(ruObj, err, "Processing failed")
 		}
-		r.info(ruObj, "Adding obj to map: ", "name", ruObj.Name)
-		r.admissionMap.Store(ruObj.Name, "processing")
 	}
 
 	if err = r.Update(ctx, ruObj); err != nil {
