@@ -974,6 +974,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1025,6 +1026,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1064,6 +1066,7 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1126,6 +1129,7 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1174,6 +1178,7 @@ func TestRunRestackNoNodeName(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1239,6 +1244,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1300,6 +1306,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1393,6 +1400,7 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1451,6 +1459,7 @@ func TestUpdateInstances(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1516,6 +1525,7 @@ func TestUpdateInstancesError(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -1588,6 +1598,7 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()
@@ -2237,6 +2248,7 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
 
 	ctx := context.TODO()

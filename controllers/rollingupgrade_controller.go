@@ -1000,13 +1000,22 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	launchDefinition *launchDefinition,
 	KubeCtlCall string,
 	ch chan error) {
+	targetInstanceID := aws.StringValue(i.InstanceId)
 	// If an instance was marked as "in-progress" in ClusterState, it has to be marked
 	// completed so that it can get considered again in a subsequent rollup CR.
-	defer r.ClusterState.markUpdateCompleted(*i.InstanceId)
+	defer r.ClusterState.markUpdateCompleted(targetInstanceID)
+
+	// Check if the rollingupgrade object still exists
+	_, ok := r.admissionMap.Load(ruObj.Name)
+	if !ok {
+		r.info(ruObj, "Object either force completed or deleted. Ignoring node update")
+		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
+		ch <- nil
+		return
+	}
 
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
-	targetInstanceID := aws.StringValue(i.InstanceId)
 	if !r.requiresRefresh(ruObj, i, launchDefinition) {
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
 		if err := r.Status().Update(*ctx, ruObj); err != nil {
