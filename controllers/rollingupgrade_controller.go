@@ -640,14 +640,6 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 
-	// If the object is being deleted, nothing to do.
-	if !ruObj.DeletionTimestamp.IsZero() {
-		r.info(ruObj, "Object is being deleted. No more processing")
-		r.admissionMap.Delete(ruObj.Name)
-		r.info(ruObj, "Deleted object from admission map")
-		return
-	}
-
 	if ruObj.Status.CurrentStatus == StatusComplete ||
 		ruObj.Status.CurrentStatus == StatusError {
 		r.info(ruObj, "No more processing", "currentStatus", ruObj.Status.CurrentStatus)
@@ -751,6 +743,15 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		}
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
+	}
+
+	// If the resource is being deleted, remove it from the admissionMap
+	if !ruObj.DeletionTimestamp.IsZero() {
+		r.info(ruObj, "Object is being deleted. No more processing")
+		r.admissionMap.Delete(ruObj.Name)
+		r.ruObjNameToASG.Delete(ruObj.Name)
+		r.info(ruObj, "Deleted object from admission map")
+		return reconcile.Result{}, nil
 	}
 
 	// Setting default values for the Strategy in rollup object
