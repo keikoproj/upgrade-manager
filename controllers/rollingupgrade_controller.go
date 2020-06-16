@@ -774,12 +774,9 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	} else {
 		r.info(ruObj, "Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
-		r.Process(&ctx, ruObj)
+		go r.Process(&ctx, ruObj)
 	}
 
-	if err = r.Update(ctx, ruObj); err != nil {
-		r.error(ruObj, err, "failed to update custom resource")
-	}
 	return ctrl.Result{}, nil
 }
 
