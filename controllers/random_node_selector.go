@@ -28,6 +28,8 @@ func NewRandomNodeSelector(
 func (selector *RandomNodeSelector) SelectNodesForRestack(
 	state ClusterState,
 ) []*autoscaling.Instance {
-	return getNextAvailableInstances(selector.ruObj.Spec.AsgName,
+	instancesToRestack := getNextAvailableInstances(selector.ruObj.Spec.AsgName,
 		selector.maxUnavailable, selector.asg.Instances, state)
+	log.Printf("Selected nodes for restack: %+v", instancesToRestack)
+	return instancesToRestack
 }

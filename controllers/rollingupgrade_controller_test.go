@@ -99,8 +99,7 @@ func TestErrorStatusMarkJanitor(t *testing.T) {
 	}
 
 	ctx := context.TODO()
-	_, err = rcRollingUpgrade.finishExecution(StatusError, 3, &ctx, instance)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	rcRollingUpgrade.finishExecution(StatusError, 3, &ctx, instance)
 	g.Expect(instance.ObjectMeta.Annotations[JanitorAnnotation]).To(gomega.Equal(ClearErrorFrequency))
 }
 
@@ -879,10 +878,10 @@ func TestFinishExecutionCompleted(t *testing.T) {
 	}
 	ctx := context.TODO()
 	mockNodesProcessed := 3
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, "some-asg")
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 
-	result, err := rcRollingUpgrade.finishExecution(StatusComplete, mockNodesProcessed, &ctx, ruObj)
-	g.Expect(err).To(gomega.BeNil())
-	g.Expect(result).To(gomega.Not(gomega.BeNil()))
+	rcRollingUpgrade.finishExecution(StatusComplete, mockNodesProcessed, &ctx, ruObj)
 
 	g.Expect(ruObj.Status.CurrentStatus).To(gomega.Equal(StatusComplete))
 	g.Expect(ruObj.Status.NodesProcessed).To(gomega.Equal(mockNodesProcessed))
@@ -896,6 +895,11 @@ func TestFinishExecutionCompleted(t *testing.T) {
 			},
 		},
 	))
+	_, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)
+	g.Expect(ok).To(gomega.Equal(false))
+	_, ok = rcRollingUpgrade.admissionMap.Load(ruObj.Name)
+	g.Expect(ok).To(gomega.Equal(false))
+
 }
 
 func TestFinishExecutionError(t *testing.T) {
@@ -918,10 +922,10 @@ func TestFinishExecutionError(t *testing.T) {
 	ruObj.Status.StartTime = startTime.Format(time.RFC3339)
 	ctx := context.TODO()
 	mockNodesProcessed := 3
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, "some-asg")
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 
-	result, err := rcRollingUpgrade.finishExecution(StatusError, mockNodesProcessed, &ctx, ruObj)
-	g.Expect(err).To(gomega.BeNil())
-	g.Expect(result).To(gomega.Not(gomega.BeNil()))
+	rcRollingUpgrade.finishExecution(StatusError, mockNodesProcessed, &ctx, ruObj)
 
 	g.Expect(ruObj.Status.CurrentStatus).To(gomega.Equal(StatusError))
 	g.Expect(ruObj.Status.NodesProcessed).To(gomega.Equal(mockNodesProcessed))
@@ -935,6 +939,43 @@ func TestFinishExecutionError(t *testing.T) {
 			},
 		},
 	))
+
+	_, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)
+	g.Expect(ok).To(gomega.Equal(false))
+	_, ok = rcRollingUpgrade.admissionMap.Load(ruObj.Name)
+	g.Expect(ok).To(gomega.Equal(false))
+}
+
+func TestProcessStatusComplete(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+	}
+
+	ctx := context.TODO()
+
+	statuses := []string{StatusComplete, StatusError}
+	for _, status := range statuses {
+		rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, "some-asg")
+		rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
+		ruObj.Status.CurrentStatus = status
+		rcRollingUpgrade.Process(&ctx, ruObj)
+		_, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)
+		g.Expect(ok).To(gomega.Equal(false))
+		_, ok = rcRollingUpgrade.admissionMap.Load(ruObj.Name)
+		g.Expect(ok).To(gomega.Equal(false))
+	}
 }
 
 // RunRestack() goes through the entire process without errors
@@ -1245,6 +1286,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 
 	ctx := context.TODO()
 
@@ -1306,7 +1348,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
-
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	ctx := context.TODO()
 
 	// This execution gets past the different launch config check, but fails to terminate node
@@ -1399,12 +1441,75 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 
 	ctx := context.TODO()
 
 	nodesProcessed, err := rcRollingUpgrade.runRestack(&ctx, ruObj, "exit 0;")
 	g.Expect(nodesProcessed).To(gomega.Equal(9))
 	g.Expect(err).To(gomega.BeNil())
+}
+
+func TestUpdateInstancesNotExists(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	someAsg := "some-asg"
+	mockID := "some-id"
+	someLaunchConfig := "some-launch-config"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
+	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances:               []*autoscaling.Instance{&mockInstance}}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "lazy",
+			},
+		},
+	}
+
+	mgr, _ := buildManager()
+	client := mgr.GetClient()
+	fooNode := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/9213851"}}
+
+	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode}}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          client,
+		Log:             log2.NullLogger{},
+		ASGClient:       MockAutoscalingGroup{},
+		EC2Client:       MockEC2{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		NodeList:        &nodeList,
+		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+	}
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	// Intentionally do not populate the admissionMap with the ruObj
+
+	ctx := context.TODO()
+	lcName := "A"
+	instChan := make(chan error)
+	mockInstanceName1 := "foo1"
+	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
+	go rcRollingUpgrade.UpdateInstance(&ctx, ruObj, &instance1, &launchDefinition{launchConfigurationName: &lcName}, "date", instChan)
+	processCount := 0
+	select {
+	case <-ctx.Done():
+		break
+	case err := <-instChan:
+		if err == nil {
+			processCount++
+		}
+		break
+	}
+
+	g.Expect(processCount).To(gomega.Equal(1))
 }
 
 func TestUpdateInstances(t *testing.T) {
@@ -1457,7 +1562,7 @@ func TestUpdateInstances(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
-
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	ctx := context.TODO()
 
 	lcName := "A"
@@ -1522,7 +1627,7 @@ func TestUpdateInstancesError(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
-
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	ctx := context.TODO()
 
 	lcName := "A"
@@ -1594,7 +1699,7 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
-
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	ctx := context.TODO()
 
 	lcName := "A"
@@ -2243,7 +2348,7 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
-
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
 	ctx := context.TODO()
 
 	// This execution gets past the different launch config check, but since there is no node name, it is skipped
