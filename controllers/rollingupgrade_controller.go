@@ -32,7 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
-	"github.com/keikoproj/inverse-exp-backoff"
+	iebackoff "github.com/keikoproj/inverse-exp-backoff"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,7 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/typed/core/v1"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -1002,6 +1002,9 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	launchDefinition *launchDefinition,
 	KubeCtlCall string,
 	ch chan error) {
+	// If an instance was marked as "in-progress" in ClusterState, it has to be marked
+	// completed so that it can get considered again in a subsequent rollup CR.
+	defer r.ClusterState.markUpdateCompleted(*i.InstanceId)
 
 	// If the running node has the same launchconfig as the asg,
 	// there is no need to refresh it.
@@ -1066,8 +1069,6 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 		r.error(ruObj, err, "failed to update status")
 	}
 
-	// TODO(shri): Run validate. How?
-	r.ClusterState.markUpdateCompleted(*i.InstanceId)
 	ch <- nil
 }
 

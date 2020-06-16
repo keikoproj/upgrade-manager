@@ -96,6 +96,8 @@ func TestUniformAcrossAzNodeSelectorSelectNodesOneAzComplete(t *testing.T) {
 
 	clusterState := NewClusterState()
 	clusterState.initializeAsg(*mockAsg.AutoScalingGroupName, mockAsg.Instances)
+	clusterState.markUpdateInProgress(mockID + "1-" + az)
+	clusterState.markUpdateInProgress(mockID + "1-" + az2)
 	clusterState.markUpdateCompleted(mockID + "1-" + az)
 	clusterState.markUpdateCompleted(mockID + "1-" + az2)
 
