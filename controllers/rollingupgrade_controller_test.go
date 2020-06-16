@@ -99,8 +99,7 @@ func TestErrorStatusMarkJanitor(t *testing.T) {
 	}
 
 	ctx := context.TODO()
-	_, err = rcRollingUpgrade.finishExecution(StatusError, 3, &ctx, instance)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	rcRollingUpgrade.finishExecution(StatusError, 3, &ctx, instance)
 	g.Expect(instance.ObjectMeta.Annotations[JanitorAnnotation]).To(gomega.Equal(ClearErrorFrequency))
 }
 
@@ -880,9 +879,7 @@ func TestFinishExecutionCompleted(t *testing.T) {
 	ctx := context.TODO()
 	mockNodesProcessed := 3
 
-	result, err := rcRollingUpgrade.finishExecution(StatusComplete, mockNodesProcessed, &ctx, ruObj)
-	g.Expect(err).To(gomega.BeNil())
-	g.Expect(result).To(gomega.Not(gomega.BeNil()))
+	rcRollingUpgrade.finishExecution(StatusComplete, mockNodesProcessed, &ctx, ruObj)
 
 	g.Expect(ruObj.Status.CurrentStatus).To(gomega.Equal(StatusComplete))
 	g.Expect(ruObj.Status.NodesProcessed).To(gomega.Equal(mockNodesProcessed))
@@ -919,9 +916,7 @@ func TestFinishExecutionError(t *testing.T) {
 	ctx := context.TODO()
 	mockNodesProcessed := 3
 
-	result, err := rcRollingUpgrade.finishExecution(StatusError, mockNodesProcessed, &ctx, ruObj)
-	g.Expect(err).To(gomega.BeNil())
-	g.Expect(result).To(gomega.Not(gomega.BeNil()))
+	rcRollingUpgrade.finishExecution(StatusError, mockNodesProcessed, &ctx, ruObj)
 
 	g.Expect(ruObj.Status.CurrentStatus).To(gomega.Equal(StatusError))
 	g.Expect(ruObj.Status.NodesProcessed).To(gomega.Equal(mockNodesProcessed))

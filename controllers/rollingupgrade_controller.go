@@ -591,7 +591,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 	return processedInstances, nil
 }
 
-func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProcessed int, ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) (reconcile.Result, error) {
+func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProcessed int, ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 	// delete the entry instances of the ASG
 	r.ClusterState.deleteEntryOfAsg(ruObj.Spec.AsgName)
 	r.info(ruObj, "Deleted the entries of ASG in the cluster store", "asgName", ruObj.Spec.AsgName)
@@ -634,19 +634,18 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	}
 	r.admissionMap.Delete(ruObj.Name)
 	r.info(ruObj, "Deleted from admission map ", "admissionMap", &r.admissionMap)
-	return reconcile.Result{}, nil
 }
 
 // Process actually performs the ec2-instance restacking.
 func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
-	ruObj *upgrademgrv1alpha1.RollingUpgrade) (reconcile.Result, error) {
+	ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 
 	// If the object is being deleted, nothing to do.
 	if !ruObj.DeletionTimestamp.IsZero() {
 		r.info(ruObj, "Object is being deleted. No more processing")
 		r.admissionMap.Delete(ruObj.Name)
 		r.info(ruObj, "Deleted object from admission map")
-		return reconcile.Result{}, nil
+		return
 	}
 
 	if ruObj.Status.CurrentStatus == StatusComplete ||
@@ -660,7 +659,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 
 		r.admissionMap.Delete(ruObj.Name)
 		r.info(ruObj, "Deleted object from admission map")
-		return reconcile.Result{}, nil
+		return
 	}
 	// start event
 	r.createK8sV1Event(ruObj, EventReasonRUStarted, EventLevelNormal, map[string]string{
@@ -672,19 +671,22 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	r.CacheConfig.FlushCache("autoscaling")
 	err := r.populateAsg(ruObj)
 	if err != nil {
-		return r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(StatusError, 0, ctx, ruObj)
+		return
 	}
 
 	//TODO(shri): Ensure that no node is Unschedulable at this time.
 	err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
-		return r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(StatusError, 0, ctx, ruObj)
+		return
 	}
 
 	asg, err := r.GetAutoScalingGroup(ruObj.Name)
 	if err != nil {
 		r.error(ruObj, err, "Unable to load ASG for rolling upgrade")
-		return r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(StatusError, 0, ctx, ruObj)
+		return
 	}
 
 	// Update the CR with some basic info before staring the restack.
@@ -701,10 +703,11 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	nodesProcessed, err := r.runRestack(ctx, ruObj, KubeCtlBinary)
 	if err != nil {
 		r.error(ruObj, err, "Failed to runRestack")
-		return r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
+		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
+		return
 	}
 
-	return r.finishExecution(StatusComplete, nodesProcessed, ctx, ruObj)
+	r.finishExecution(StatusComplete, nodesProcessed, ctx, ruObj)
 }
 
 // MarkObjForCleanup sets the annotation on the given object for deletion.
@@ -771,10 +774,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	} else {
 		r.info(ruObj, "Adding obj to map: ", "name", ruObj.Name)
 		r.admissionMap.Store(ruObj.Name, "processing")
-		_, err := r.Process(&ctx, ruObj)
-		if err != nil {
-			r.error(ruObj, err, "Processing failed")
-		}
+		r.Process(&ctx, ruObj)
 	}
 
 	if err = r.Update(ctx, ruObj); err != nil {
