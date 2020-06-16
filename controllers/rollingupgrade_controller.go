@@ -546,6 +546,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 
 	// set the state of instances in the ASG to new in the cluster store
 	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
+	defer r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
 
 	launchDefinition := NewLaunchDefinition(asg)
 
@@ -587,7 +588,6 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 			return processedInstances, err
 		}
 	}
-	r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
 	return processedInstances, nil
 }
 
@@ -630,6 +630,11 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 
 	MarkObjForCleanup(ruObj)
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
+		// Check if the err is "StorageError: invalid object". If so, the object was deleted...
+		if strings.Contains(err.Error(), "StorageError: invalid object") {
+			r.info(ruObj, "Object most likely deleted")
+			return
+		}
 		r.error(ruObj, err, "failed to update status")
 	}
 	r.admissionMap.Delete(ruObj.Name)
@@ -1073,7 +1078,12 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 
 	ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
-		r.error(ruObj, err, "failed to update status")
+		// Check if the err is "StorageError: invalid object". If so, the object was deleted...
+		if strings.Contains(err.Error(), "StorageError: invalid object") {
+			r.info(ruObj, "Object mostly deleted")
+		} else {
+			r.error(ruObj, err, "failed to update status")
+		}
 	}
 
 	ch <- nil
