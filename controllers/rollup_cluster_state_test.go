@@ -40,6 +40,7 @@ func TestMarkUpdateCompleted(t *testing.T) {
 
 	populateClusterState()
 	mockNodeName := "instance-1"
+	clusterState.markUpdateInProgress(mockNodeName)
 	clusterState.markUpdateCompleted(mockNodeName)
 
 	g.Expect(clusterState.instanceUpdateCompleted(mockNodeName)).To(gomega.BeTrue())
