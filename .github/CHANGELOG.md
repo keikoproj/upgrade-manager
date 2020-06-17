@@ -1,6 +1,15 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.11] - 2020-06-17
+
+* Add missing RBAC docs (#89)
+* Enable forceRefresh of nodes. (#92)
+* set firsttimestamp and count (#93)
+* add retry for TerminateInstanceInAutoScalingGroup (#94)
+* Check for CR before updating each instance. (#97)
+* upgrade aws sdk to latest & reduce retries (#101)
+
 ## [v0.10] - 2020-03-30
 
 * support for v1.Event (#87)
