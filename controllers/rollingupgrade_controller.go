@@ -1077,6 +1077,10 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 		r.info(ruObj, "termination waiter completed but node is still joined, will proceed with upgrade", "nodeName", nodeName)
 	}
 
+	err = r.setStateTag(ruObj, targetInstanceID, "completed")
+	if err != nil {
+		r.info(ruObj, "Setting tag on the instance post termination failed.", "nodeName", nodeName)
+	}
 	ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
 		// Check if the err is "StorageError: invalid object". If so, the object was deleted...
