@@ -56,9 +56,9 @@ var (
 )
 
 var DefaultRetryer = client.DefaultRetryer{
-	NumMaxRetries:    250,
+	NumMaxRetries:    12,
 	MinThrottleDelay: time.Second * 5,
-	MaxThrottleDelay: time.Second * 20,
+	MaxThrottleDelay: time.Second * 60,
 	MinRetryDelay:    time.Second * 1,
 	MaxRetryDelay:    time.Second * 5,
 }
@@ -77,6 +77,7 @@ func main() {
 	var enableLeaderElection bool
 	var namespace string
 	var maxParallel int
+	var maxAPIRetries int
 	var debugMode bool
 	var logMode string
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
@@ -86,6 +87,7 @@ func main() {
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&namespace, "namespace", "", "The namespace in which to watch objects")
 	flag.IntVar(&maxParallel, "max-parallel", 10, "The max number of parallel rolling upgrades")
+	flag.IntVar(&maxAPIRetries, "max-api-retries", 12, "The number of maximum retries for failed/rate limited AWS API calls")
 	flag.Parse()
 
 	ctrl.SetLogger(newLogger(logMode))
@@ -117,9 +119,12 @@ func main() {
 		log.SetLevel("debug")
 	}
 
+	retryer := DefaultRetryer
+	retryer.NumMaxRetries = maxAPIRetries
+
 	config := aws.NewConfig().WithRegion(region)
 	config = config.WithCredentialsChainVerboseErrors(true)
-	config = request.WithRetryer(config, log.NewRetryLogger(DefaultRetryer))
+	config = request.WithRetryer(config, log.NewRetryLogger(retryer))
 	sess, err := session.NewSession(config)
 	if err != nil {
 		log.Fatalf("failed to AWS session, %v", err)
