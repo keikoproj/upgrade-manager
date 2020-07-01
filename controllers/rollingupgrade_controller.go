@@ -120,7 +120,7 @@ func (r *RollingUpgradeReconciler) runScript(script string, background bool, ruO
 		r.info(ruObj, "Running script in background. Logs not available.")
 		err := exec.Command(ShellBinary, "-c", script).Run()
 		if err != nil {
-			r.info(ruObj, "Script finished with error: %s", err)
+			r.info(ruObj, fmt.Sprintf("Script finished with error: %s", err))
 		}
 
 		return "", nil
@@ -535,11 +535,10 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 
 	r.info(ruObj, "Nodes in ASG that *might* need to be updated", "asgName", *asg.AutoScalingGroupName, "asgSize", len(asg.Instances))
 
-	// No further processing is required if ASG doesn't have an instance running
 	totalNodes := len(asg.Instances)
 	// No further processing is required if ASG doesn't have an instance running
 	if totalNodes == 0 {
-		r.info(ruObj, "Total nodes found for %s is 0", ruObj.Name)
+		r.info(ruObj, fmt.Sprintf("Total nodes needing update for %s is 0. Restack complete.", *asg.AutoScalingGroupName))
 		return 0, nil
 	}
 
