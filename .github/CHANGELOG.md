@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
++## [v0.12] - 2020-07-01
+
+* Fix log arguments for 0 node ASGs (#105)
+
 ## [v0.11] - 2020-06-17
 
 * Add missing RBAC docs (#89)
