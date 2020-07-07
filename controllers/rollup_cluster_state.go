@@ -17,8 +17,9 @@ limitations under the License.
 package controllers
 
 import (
-	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"sync"
+
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 )
 
 const (
@@ -72,9 +73,14 @@ func (c *ClusterStateImpl) markUpdateInProgress(instanceId string) {
 	c.updateInstanceState(instanceId, updateInProgress)
 }
 
-// markUpdateCompleted updates the instance state to completed
+// markUpdateCompleted updates the instance state to completed iff it is in-progress
 func (c *ClusterStateImpl) markUpdateCompleted(instanceId string) {
-	c.updateInstanceState(instanceId, updateCompleted)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.instanceUpdateInProgress(instanceId) {
+		c.updateInstanceState(instanceId, updateCompleted)
+	}
 }
 
 // instanceUpdateInProgress returns true if the instance update is in progress
