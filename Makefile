@@ -11,6 +11,7 @@ all: manager
 # Run tests
 test: generate fmt vet manifests
 	go test -v ./api/... ./controllers/... -coverprofile coverage.txt
+	go tool cover -html=./coverage.txt -o cover.html
 
 # Run golangci lint tests
 lint:
