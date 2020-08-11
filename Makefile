@@ -10,8 +10,7 @@ all: manager
 
 # Run tests
 test: generate fmt vet manifests
-	go test ./api/... ./controllers/... -coverprofile cover.out -v
-	go tool cover -html=./cover.out -o cover.html
+	go test -v ./api/... ./controllers/... -coverprofile coverage.txt
 
 # Run golangci lint tests
 lint:
@@ -52,7 +51,7 @@ generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile=./hack/boilerplate.go.txt paths=./api/...
 
 # Build the docker image
-docker-build: test
+docker-build:
 	docker build . -t ${IMG}
 	docker tag ${IMG} keikoproj/rolling-upgrade-controller:latest
 	@echo "updating kustomize image patch file for manager resource"

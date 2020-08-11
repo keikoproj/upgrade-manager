@@ -1,4 +1,4 @@
-name: CI
+name: Build-Test
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Lint, Test and Docker Build
+    name: Lint, Test, Codecov and Docker build
     runs-on: ubuntu-latest
     steps:
 
@@ -38,6 +38,17 @@ jobs:
 
         # update your PATH to include /usr/local/kubebuilder/bin
         export PATH=$PATH:/usr/local/kubebuilder/bin
-    
-    - name: Test and Docker build
+
+    - name: Test
+      run: make test
+
+    - name: Codecov
+      uses: codecov/codecov-action@v1
+      with:
+        file: ./coverage.txt # optional
+        flags: unittests # optional
+        name: codecov-umbrella # optional
+        fail_ci_if_error: true # optional (default = false)
+
+    - name: Docker build
       run: make docker-build
