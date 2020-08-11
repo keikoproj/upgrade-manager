@@ -1,0 +1,54 @@
+name: Build-Test
+
+on:
+  push:
+    branches: 
+      - master
+  pull_request:
+    branches: 
+      - master
+
+jobs:
+  build:
+    name: Lint, Test, Codecov and Docker build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Golangci-lint
+      uses: golangci/golangci-lint-action@v1
+      with:
+        # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
+        version: v1.29
+        args: --timeout 2m
+
+    - name: Getting kubebuilder
+      env:
+        version: 1.0.8 # latest stable version
+        arch: amd64
+      run: |
+        # download the release
+        curl -L -O "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${version}/kubebuilder_${version}_linux_${arch}.tar.gz"
+
+        # extract the archive
+        tar -zxvf kubebuilder_${version}_linux_${arch}.tar.gz
+        mv kubebuilder_${version}_linux_${arch} kubebuilder && sudo mv kubebuilder /usr/local/
+
+        # update your PATH to include /usr/local/kubebuilder/bin
+        export PATH=$PATH:/usr/local/kubebuilder/bin
+
+    - name: Test
+      run: make test
+
+    - name: Codecov
+      uses: codecov/codecov-action@v1
+      with:
+        file: ./coverage.txt # optional
+        flags: unittests # optional
+        name: codecov-umbrella # optional
+        fail_ci_if_error: true # optional (default = false)
+
+    - name: Docker build
+      run: make docker-build
