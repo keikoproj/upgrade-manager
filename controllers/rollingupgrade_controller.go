@@ -444,6 +444,7 @@ func (r *RollingUpgradeReconciler) getNodeName(i *autoscaling.Instance, nodeList
 	return node.Name
 }
 
+//TODO(sbadiger): Why are we listing all the nodes here and not just the nodes from ASG? Use asg.Instances instead of nodeList
 func (r *RollingUpgradeReconciler) getNodeFromAsg(i *autoscaling.Instance, nodeList *corev1.NodeList, ruObj *upgrademgrv1alpha1.RollingUpgrade) *corev1.Node {
 	for _, n := range nodeList.Items {
 		tokens := strings.Split(n.Spec.ProviderID, "/")
@@ -704,7 +705,41 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		return
 	}
 
+	//Validation step: check if all the nodes have the latest launchconfig.
+	r.info(ruObj, "Validating the launch config of nodes and ASG")
+	if err := r.validateNodesLaunchConfig(ruObj); err != nil {
+		r.error(ruObj, err, "Launch config validation failed")
+		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
+		return
+	}
+	r.info(ruObj, "Launch config validation succeeded")
+
 	r.finishExecution(StatusComplete, nodesProcessed, ctx, ruObj)
+}
+
+//Check if ec2Instances and the ASG have same launch config.
+func (r *RollingUpgradeReconciler) validateNodesLaunchConfig(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	//Get ASG launch config
+	err := r.populateAsg(ruObj)
+	if err != nil {
+		return errors.New("Unable to populate the ASG object")
+	}
+	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	if err != nil {
+		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+	}
+	launchDefinition := NewLaunchDefinition(asg)
+	launchConfigASG := *(launchDefinition.launchConfigurationName)
+
+	//Get ec2 instances and their launch configs.
+	ec2instances := asg.Instances
+	for _, ec2Instance := range ec2instances {
+		if launchConfigASG != aws.StringValue(ec2Instance.LaunchConfigurationName) {
+			r.info(ruObj, "Launch config doesn't match with ASG", "Instance ID", aws.StringValue(ec2Instance.InstanceId), "Instance LaunchConfig", aws.StringValue(ec2Instance.LaunchConfigurationName))
+			err = errors.New("RollingUpgrade didn't rotate all the nodes successfully")
+		}
+	}
+	return err
 }
 
 // MarkObjForCleanup sets the annotation on the given object for deletion.
