@@ -444,7 +444,6 @@ func (r *RollingUpgradeReconciler) getNodeName(i *autoscaling.Instance, nodeList
 	return node.Name
 }
 
-//TODO(sbadiger): Why are we listing all the nodes here and not just the nodes from ASG? Use asg.Instances instead of nodeList
 func (r *RollingUpgradeReconciler) getNodeFromAsg(i *autoscaling.Instance, nodeList *corev1.NodeList, ruObj *upgrademgrv1alpha1.RollingUpgrade) *corev1.Node {
 	for _, n := range nodeList.Items {
 		tokens := strings.Split(n.Spec.ProviderID, "/")
@@ -706,21 +705,22 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	}
 
 	//Validation step: check if all the nodes have the latest launchconfig.
-	r.info(ruObj, "Validating the launch config of nodes and ASG")
-	if err := r.validateNodesLaunchConfig(ruObj); err != nil {
-		r.error(ruObj, err, "Launch config validation failed")
+	r.info(ruObj, "Validating the launch definition of nodes and ASG")
+	if err := r.validateNodesLaunchDefinition(ruObj); err != nil {
+		r.error(ruObj, err, "Launch definition validation failed")
 		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
 		return
 	}
-	r.info(ruObj, "Launch config validation succeeded")
+	r.info(ruObj, "Launch definition validation succeeded")
 
 	r.finishExecution(StatusComplete, nodesProcessed, ctx, ruObj)
 }
 
 //Check if ec2Instances and the ASG have same launch config.
-func (r *RollingUpgradeReconciler) validateNodesLaunchConfig(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
 	//Get ASG launch config
-	err := r.populateAsg(ruObj)
+	var err error
+	err = r.populateAsg(ruObj)
 	if err != nil {
 		return errors.New("Unable to populate the ASG object")
 	}
@@ -729,14 +729,20 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchConfig(ruObj *upgrademgrv1
 		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 	}
 	launchDefinition := NewLaunchDefinition(asg)
-	launchConfigASG := *(launchDefinition.launchConfigurationName)
+	launchConfigASG, launchTemplateASG := launchDefinition.launchConfigurationName, launchDefinition.launchTemplate
 
 	//Get ec2 instances and their launch configs.
 	ec2instances := asg.Instances
 	for _, ec2Instance := range ec2instances {
-		if launchConfigASG != aws.StringValue(ec2Instance.LaunchConfigurationName) {
-			r.info(ruObj, "Launch config doesn't match with ASG", "Instance ID", aws.StringValue(ec2Instance.InstanceId), "Instance LaunchConfig", aws.StringValue(ec2Instance.LaunchConfigurationName))
-			err = errors.New("RollingUpgrade didn't rotate all the nodes successfully")
+		ec2InstanceID, ec2InstanceLaunchConfig, ec2InstanceLaunchTemplate := ec2Instance.InstanceId, ec2Instance.LaunchConfigurationName, ec2Instance.LaunchTemplate
+		if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
+			r.info(ruObj, "Launch config doesn't match with ASG", "Instance ID", aws.StringValue(ec2InstanceID), "Instance LaunchConfig", aws.StringValue(ec2InstanceLaunchConfig))
+			err = errors.New("Launch config mismatch")
+		} else if launchTemplateASG != nil && ec2InstanceLaunchTemplate != nil {
+			if aws.StringValue(launchTemplateASG.LaunchTemplateId) != aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId) {
+				r.info(ruObj, "Launch template doesn't match with ASG", "Instance ID", aws.StringValue(ec2InstanceID), "Instance LaunchTemplate ID", aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId))
+				err = errors.New("Launch template mismatch")
+			}
 		}
 	}
 	return err

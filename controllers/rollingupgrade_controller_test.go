@@ -319,9 +319,10 @@ type MockEC2 struct {
 
 type MockAutoscalingGroup struct {
 	autoscalingiface.AutoScalingAPI
-	errorFlag       bool
-	awsErr          awserr.Error
-	errorInstanceId string
+	errorFlag         bool
+	awsErr            awserr.Error
+	errorInstanceId   string
+	autoScalingGroups []*autoscaling.Group
 }
 
 func (m MockEC2) CreateTags(input *ec2.CreateTagsInput) (*ec2.CreateTagsOutput, error) {
@@ -347,25 +348,17 @@ func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(input *autoscaling
 }
 
 func (mockAutoscalingGroup MockAutoscalingGroup) DescribeAutoScalingGroups(input *autoscaling.DescribeAutoScalingGroupsInput) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
+	var err error
 	output := autoscaling.DescribeAutoScalingGroupsOutput{
 		AutoScalingGroups: []*autoscaling.Group{},
 	}
+	//To support parallel ASG tracking.
+	asgA, asgB := "asg-a", "asg-b"
 
-	correctAsg := "correct-asg"
-	tooMany := "too-many"
-	asgA := "asg-a"
-	asgB := "asg-b"
-
+	if mockAutoscalingGroup.errorFlag {
+		err = mockAutoscalingGroup.awsErr
+	}
 	switch *input.AutoScalingGroupNames[0] {
-	case correctAsg:
-		output.AutoScalingGroups = []*autoscaling.Group{
-			{AutoScalingGroupName: &correctAsg},
-		}
-	case tooMany:
-		output.AutoScalingGroups = []*autoscaling.Group{
-			{AutoScalingGroupName: &tooMany},
-			{AutoScalingGroupName: &tooMany},
-		}
 	case asgA:
 		output.AutoScalingGroups = []*autoscaling.Group{
 			{AutoScalingGroupName: &asgA},
@@ -375,10 +368,9 @@ func (mockAutoscalingGroup MockAutoscalingGroup) DescribeAutoScalingGroups(input
 			{AutoScalingGroupName: &asgB},
 		}
 	default:
-		output.AutoScalingGroups = []*autoscaling.Group{}
+		output.AutoScalingGroups = mockAutoscalingGroup.autoScalingGroups
 	}
-
-	return &output, nil
+	return &output, err
 }
 
 func (mockAutoscalingGroup MockAutoscalingGroup) TerminateInstanceInAutoScalingGroup(input *autoscaling.TerminateInstanceInAutoScalingGroupInput) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
@@ -710,6 +702,14 @@ func TestGetNodeFromAsgMissingNode(t *testing.T) {
 func TestPopulateAsgSuccess(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
+	correctAsg := "correct-asg"
+	mockAsg := &autoscaling.Group{
+		AutoScalingGroupName: &correctAsg,
+	}
+	mockAsgClient := MockAutoscalingGroup{
+		autoScalingGroups: []*autoscaling.Group{mockAsg},
+	}
+
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		TypeMeta: metav1.TypeMeta{Kind: "RollingUpgrade", APIVersion: "v1alpha1"},
 		Spec:     upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "correct-asg"}}
@@ -717,14 +717,13 @@ func TestPopulateAsgSuccess(t *testing.T) {
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
-		ASGClient:    &MockAutoscalingGroup{},
+		ASGClient:    mockAsgClient,
 		EC2Client:    MockEC2{},
 	}
 	err := rcRollingUpgrade.populateAsg(ruObj)
 
 	g.Expect(err).To(gomega.BeNil())
 
-	correctAsg := "correct-asg"
 	expectedAsg := autoscaling.Group{AutoScalingGroupName: &correctAsg}
 
 	requestedAsg, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)
@@ -735,6 +734,15 @@ func TestPopulateAsgSuccess(t *testing.T) {
 func TestPopulateAsgTooMany(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
+	mockAsg1 := &autoscaling.Group{
+		AutoScalingGroupName: aws.String("too-many"),
+	}
+	mockAsg2 := &autoscaling.Group{
+		AutoScalingGroupName: aws.String("too-many"),
+	}
+	mockAsgClient := MockAutoscalingGroup{
+		autoScalingGroups: []*autoscaling.Group{mockAsg1, mockAsg2},
+	}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		TypeMeta: metav1.TypeMeta{Kind: "RollingUpgrade", APIVersion: "v1alpha1"},
 		Spec:     upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "too-many"}}
@@ -742,7 +750,7 @@ func TestPopulateAsgTooMany(t *testing.T) {
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
-		ASGClient:    &MockAutoscalingGroup{},
+		ASGClient:    mockAsgClient,
 		EC2Client:    MockEC2{},
 	}
 	err := rcRollingUpgrade.populateAsg(ruObj)
@@ -2692,4 +2700,169 @@ func TestUpdateInstancesNotExists(t *testing.T) {
 	}
 
 	g.Expect(processCount).To(gomega.Equal(1))
+}
+
+func TestValidateNodesLaunchDefinitionSameLaunchConfig(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	someLaunchConfig := "some-launch-config"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
+	mockAsg := &autoscaling.Group{
+		AutoScalingGroupName:    aws.String("my-asg"),
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances:               []*autoscaling.Instance{&mockInstance},
+	}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "my-asg"}}
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	mockAsgClient := MockAutoscalingGroup{
+		autoScalingGroups: []*autoscaling.Group{mockAsg},
+	}
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
+		ASGClient:       mockAsgClient,
+		EC2Client:       MockEC2{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	// This execution should not perform drain or termination, but should pass
+	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
+	g.Expect(err).To(gomega.BeNil())
+}
+
+func TestValidateNodesLaunchDefinitionDifferentLaunchConfig(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	someLaunchConfig := "some-launch-config"
+	someOtherLaunchConfig := "some-other-launch-config"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
+	mockAsg := &autoscaling.Group{
+		AutoScalingGroupName:    aws.String("my-asg"),
+		LaunchConfigurationName: &someOtherLaunchConfig,
+		Instances:               []*autoscaling.Instance{&mockInstance}}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "my-asg"}}
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	mockAsgClient := MockAutoscalingGroup{
+		autoScalingGroups: []*autoscaling.Group{mockAsg},
+	}
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
+		ASGClient:       mockAsgClient,
+		EC2Client:       MockEC2{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	// This execution should not perform drain or termination, but should pass
+	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
+	g.Expect(err).To(gomega.Not(gomega.BeNil()))
+}
+
+func TestValidateNodesLaunchDefinitionSameLaunchTemplate(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	someLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v1")}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
+	mockAsg := &autoscaling.Group{
+		AutoScalingGroupName: aws.String("my-asg"),
+		LaunchTemplate:       someLaunchTemplate,
+		Instances:            []*autoscaling.Instance{&mockInstance}}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "my-asg"}}
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	mockAsgClient := MockAutoscalingGroup{
+		autoScalingGroups: []*autoscaling.Group{mockAsg},
+	}
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
+		ASGClient:       mockAsgClient,
+		EC2Client:       MockEC2{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	// This execution should not perform drain or termination, but should pass
+	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
+	g.Expect(err).To(gomega.BeNil())
+}
+
+func TestValidateNodesLaunchDefinitionDifferentLaunchTemplate(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	someLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v1")}
+	someOtherLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v2")}
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
+	mockAsg := &autoscaling.Group{
+		AutoScalingGroupName: aws.String("my-asg"),
+		LaunchTemplate:       someOtherLaunchTemplate,
+		Instances:            []*autoscaling.Instance{&mockInstance}}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "my-asg"}}
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	mockAsgClient := MockAutoscalingGroup{
+		autoScalingGroups: []*autoscaling.Group{mockAsg},
+	}
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
+		ASGClient:       mockAsgClient,
+		EC2Client:       MockEC2{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+
+	// This execution should not perform drain or termination, but should pass
+	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
+	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 }
