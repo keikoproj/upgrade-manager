@@ -738,9 +738,6 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	ec2instances := asg.Instances
 	for _, ec2Instance := range ec2instances {
 		ec2InstanceID, ec2InstanceLaunchConfig, ec2InstanceLaunchTemplate := ec2Instance.InstanceId, ec2Instance.LaunchConfigurationName, ec2Instance.LaunchTemplate
-		if aws.StringValue(ec2Instance.LifecycleState) == InService {
-			continue
-		}
 		if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
 			return fmt.Errorf("launch config mismatch, %s instance config - %s, does not match the asg config", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchConfig))
 		} else if launchTemplateASG != nil && ec2InstanceLaunchTemplate != nil {
