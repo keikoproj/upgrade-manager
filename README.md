@@ -1,6 +1,6 @@
 # RollingUpgrade
 
-![Build Status](https://github.com/keikoproj/upgrade-manager/workflows/Build-Test/badge.svg) [![codecov](https://codecov.io/gh/keikoproj/upgrade-manager/branch/master/graph/badge.svg)](https://codecov.io/gh/keikoproj/upgrade-manager)
+![Build Status](https://github.com/keikoproj/upgrade-manager/workflows/Build-Test/badge.svg) ![Build Status](https://github.com/keikoproj/upgrade-manager/workflows/BDD/badge.svg) [![codecov](https://codecov.io/gh/keikoproj/upgrade-manager/branch/master/graph/badge.svg)](https://codecov.io/gh/keikoproj/upgrade-manager)
 
 > Reliable, extensible rolling-upgrades of Autoscaling groups in Kubernetes
 
