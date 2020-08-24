@@ -52,32 +52,14 @@ jobs:
         fail_ci_if_error: true # optional (default = false)
 
     - name: Docker build
-      if: github.event_name == 'pull_request' || (github.repository != 'keikoproj/upgrade-manager' && github.event_name == 'push')
+      if: github.event_name == 'pull_request'
       run: make docker-build
     
-    - name: Build and push Docker image with tag master # only on pushes to keikoproj/upgrade-manager
-      if: github.event_name == 'push' && github.repository == 'keikoproj/upgrade-manager'
+    - name: Build and push Docker images
       uses: docker/build-push-action@v1
+      if: github.event_name == 'push'
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
         repository: keikoproj/rolling-upgrade-controller
         tags: master
-    
-    - name: Build and push Docker image with tag latest # only on releases of keikoproj/upgrade-manager
-      if: github.event_name == 'release' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v1
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-        repository: keikoproj/rolling-upgrade-controller
-        tags: latest
-
-    - name: Build and push Docker image with tag git-tag # only on releases of keikoproj/upgrade-manager
-      if: github.event_name == 'release' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v1
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-        repository: keikoproj/rolling-upgrade-controller
-        tag_with_ref: true
