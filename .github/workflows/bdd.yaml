@@ -25,6 +25,7 @@ jobs:
         # Getting kustomize
          sudo snap install kustomize
         # Generating resources files
+         make manifests
          kustomize build config/default -o test-bdd/bases/base_crd-rbac-deployment.yaml
          kustomize build test-bdd/bases -o test-bdd/crd-rbac-deployment.yaml
         # Setting kubeconfig
