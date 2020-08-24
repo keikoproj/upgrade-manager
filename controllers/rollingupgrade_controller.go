@@ -711,7 +711,6 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
 		return
 	}
-	r.info(ruObj, "Launch definition validation succeeded")
 
 	r.finishExecution(StatusComplete, nodesProcessed, ctx, ruObj)
 }
@@ -736,16 +735,14 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	for _, ec2Instance := range ec2instances {
 		ec2InstanceID, ec2InstanceLaunchConfig, ec2InstanceLaunchTemplate := ec2Instance.InstanceId, ec2Instance.LaunchConfigurationName, ec2Instance.LaunchTemplate
 		if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
-			r.info(ruObj, "Launch config doesn't match with ASG", "Instance ID", aws.StringValue(ec2InstanceID), "Instance LaunchConfig", aws.StringValue(ec2InstanceLaunchConfig))
-			err = errors.New("Launch config mismatch")
+			return fmt.Errorf("launch config mismatch, %s instance config - %s, does not match the asg config", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchConfig))
 		} else if launchTemplateASG != nil && ec2InstanceLaunchTemplate != nil {
 			if aws.StringValue(launchTemplateASG.LaunchTemplateId) != aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId) {
-				r.info(ruObj, "Launch template doesn't match with ASG", "Instance ID", aws.StringValue(ec2InstanceID), "Instance LaunchTemplate ID", aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId))
-				err = errors.New("Launch template mismatch")
+				return fmt.Errorf("launch template mismatch, %s instance template - %s, does not match the asg template", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId))
 			}
 		}
 	}
-	return err
+	return nil
 }
 
 // MarkObjForCleanup sets the annotation on the given object for deletion.
