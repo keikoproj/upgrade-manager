@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Lint, Test, Codecov, Docker build & Push
+    name: CI # Lint, Test, Codecov, Docker build & Push
     runs-on: ubuntu-latest
     steps:
 
