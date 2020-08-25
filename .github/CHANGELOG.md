@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [v0.13] - 2020-07-01
+## [v0.13] - 2020-08-25
 
 * Post upgrade validation step (#112)
 
