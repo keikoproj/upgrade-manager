@@ -2,8 +2,7 @@ name: BDD
 
 on:
   schedule:
-    #- cron: '0 7 * * *' # UTC is being used, 07:00 am would be 12:00am in PT
-    - cron: '5 20 * * *'
+    - cron: '0 7 * * *' # UTC is being used, 07:00 am would be 12:00am in PT
 
 jobs:
   build:
