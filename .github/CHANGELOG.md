@@ -1,7 +1,11 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-+## [v0.12] - 2020-07-01
+## [v0.13] - 2020-08-25
+
+* Post upgrade validation step (#112)
+
+## [v0.12] - 2020-07-01
 
 * Fix log arguments for 0 node ASGs (#105)
 
