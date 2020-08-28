@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     name: Setup & Run
+    if: github.repository == 'keikoproj/upgrade-manager'
     runs-on: ubuntu-latest
     steps:
     
@@ -20,7 +21,7 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
     
-    - name: Setup
+    - name: Prerequisites
       run: |
         # Getting kustomize
          sudo snap install kustomize
@@ -39,5 +40,5 @@ jobs:
         cd test-bdd
         $HOME/go/bin/godog
 
-    - name: Deleting Controller
+    - name: Cleanup
       run: kubectl delete deployment upgrade-manager-controller-manager -n upgrade-manager-system
