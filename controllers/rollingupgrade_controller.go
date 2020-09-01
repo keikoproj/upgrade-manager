@@ -918,8 +918,8 @@ func (r *RollingUpgradeReconciler) setDefaultsForRollingUpdateStrategy(ruObj *up
 		if ruObj.Spec.Strategy.MaxUnavailable.Type == 0 && ruObj.Spec.Strategy.MaxUnavailable.IntVal == 0 {
 			ruObj.Spec.Strategy.MaxUnavailable = intstr.IntOrString{Type: 0, IntVal: 1}
 		}
-		if ruObj.Spec.Strategy.DrainTimeout <= 0 { //Set the default drain timeout to 10 mins
-			ruObj.Spec.Strategy.DrainTimeout = 600
+		if ruObj.Spec.Strategy.DrainTimeout == 0 {
+			ruObj.Spec.Strategy.DrainTimeout = -1
 		}
 	}
 }
