@@ -1703,7 +1703,10 @@ func TestTestCallKubectlDrainWithDrainTimeout(t *testing.T) {
 
 	mockAsgName := "some-asg"
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: mockAsgName}}
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: mockAsgName,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				DrainTimeout: 600,
+			}}}
 
 	errChan := make(chan error)
 	ctx := context.TODO()
