@@ -128,7 +128,7 @@ func (r *RollingUpgradeReconciler) runScript(script string, background bool, ruO
 
 	out, err := exec.Command(ShellBinary, "-c", script).CombinedOutput()
 	if err != nil {
-		r.error(ruObj, err, "Script finished", "output", string(out))
+		r.error(ruObj, err, "Script finished with error", "output", string(out))
 	} else {
 		r.info(ruObj, "Script finished", "output", string(out))
 	}
