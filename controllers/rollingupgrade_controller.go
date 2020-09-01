@@ -128,7 +128,7 @@ func (r *RollingUpgradeReconciler) runScript(script string, background bool, ruO
 
 	out, err := exec.Command(ShellBinary, "-c", script).CombinedOutput()
 	if err != nil {
-		r.error(ruObj, err, "Script finished", "output", string(out))
+		r.error(ruObj, err, "Script finished with error", "output", string(out))
 	} else {
 		r.info(ruObj, "Script finished", "output", string(out))
 	}
@@ -238,7 +238,12 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeNam
 
 	// kops behavior implements the same behavior by using these flags when draining nodes
 	// https://github.com/kubernetes/kops/blob/7a629c77431dda02d02aadf00beb0bed87518cbf/pkg/instancegroups/instancegroups.go lines 337-340
-	script := fmt.Sprintf("%s drain %s --ignore-daemonsets=true --delete-local-data=true --force --grace-period=-1", kubeCtlCall, nodeName)
+	var timeout = 0
+	if ruObj.Spec.Strategy.DrainTimeout > 0 {
+		timeout = ruObj.Spec.Strategy.DrainTimeout
+	}
+
+	script := fmt.Sprintf("%s drain %s --ignore-daemonsets=true --delete-local-data=true --force --grace-period=-1 --timeout=%ds", kubeCtlCall, nodeName, timeout)
 	out, err := r.runScript(script, false, ruObj)
 	if err != nil {
 		if strings.HasPrefix(out, "Error from server (NotFound)") {
