@@ -608,13 +608,10 @@ func TestLoadEnvironmentVariables(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "asg-foo"}}
 
-	mockID := "aws:///us-west-2a/fake-id-foo"
+	mockID := "fake-id-foo"
 	mockName := "instance-name-foo"
-	node := corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: mockName},
-		Spec:       corev1.NodeSpec{ProviderID: mockID}}
 
-	err := loadEnvironmentVariables(ruInstance, &node)
+	err := loadEnvironmentVariables(ruInstance, mockID, mockName)
 	g.Expect(err).To(gomega.BeNil())
 
 	g.Expect(os.Getenv(asgNameKey)).To(gomega.Equal("asg-foo"))
