@@ -321,6 +321,9 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 }
 
 func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
+	if nodeName == "" {
+		return true, nil
+	}
 
 	started := time.Now()
 	for {
@@ -497,16 +500,14 @@ func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.Ro
 
 // Loads specific environment variables for scripts to use
 // on a given rollingUpgrade and autoscaling instance
-func loadEnvironmentVariables(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInstance *corev1.Node) error {
+func loadEnvironmentVariables(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, nodeName string) error {
 	if err := os.Setenv(asgNameKey, ruObj.Spec.AsgName); err != nil {
 		return errors.New(ruObj.Name + ": Could not load " + asgNameKey + ": " + err.Error())
 	}
-	tokens := strings.Split(nodeInstance.Spec.ProviderID, "/")
-	justID := tokens[len(tokens)-1]
-	if err := os.Setenv(instanceIDKey, justID); err != nil {
+	if err := os.Setenv(instanceIDKey, instanceID); err != nil {
 		return errors.New(ruObj.Name + ": Could not load " + instanceIDKey + ": " + err.Error())
 	}
-	if err := os.Setenv(instanceNameKey, nodeInstance.GetName()); err != nil {
+	if err := os.Setenv(instanceNameKey, nodeName); err != nil {
 		return errors.New(ruObj.Name + ": Could not load " + instanceNameKey + ": " + err.Error())
 	}
 	return nil
@@ -734,11 +735,13 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	ec2instances := asg.Instances
 	for _, ec2Instance := range ec2instances {
 		ec2InstanceID, ec2InstanceLaunchConfig, ec2InstanceLaunchTemplate := ec2Instance.InstanceId, ec2Instance.LaunchConfigurationName, ec2Instance.LaunchTemplate
-		if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
-			return fmt.Errorf("launch config mismatch, %s instance config - %s, does not match the asg config", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchConfig))
-		} else if launchTemplateASG != nil && ec2InstanceLaunchTemplate != nil {
-			if aws.StringValue(launchTemplateASG.LaunchTemplateId) != aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId) {
-				return fmt.Errorf("launch template mismatch, %s instance template - %s, does not match the asg template", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId))
+		if aws.StringValue(ec2Instance.LifecycleState) == "InService" {
+			if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
+				return fmt.Errorf("launch config mismatch, %s instance config - %s, does not match the asg config", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchConfig))
+			} else if launchTemplateASG != nil && ec2InstanceLaunchTemplate != nil {
+				if aws.StringValue(launchTemplateASG.LaunchTemplateId) != aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId) {
+					return fmt.Errorf("launch template mismatch, %s instance template - %s, does not match the asg template", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId))
+				}
 			}
 		}
 	}
@@ -1028,14 +1031,16 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 	ch chan error) {
 
 	// Drain and wait for draining node.
-	err := r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
-	if err != nil && !ruObj.Spec.IgnoreDrainFailures {
-		ch <- err
-		return
+	if nodeName != "" {
+		err := r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
+		if err != nil && !ruObj.Spec.IgnoreDrainFailures {
+			ch <- err
+			return
+		}
 	}
 
 	// Terminate instance.
-	err = r.TerminateNode(ruObj, targetInstanceID)
+	err := r.TerminateNode(ruObj, targetInstanceID)
 	if err != nil {
 		ch <- err
 		return
@@ -1076,13 +1081,9 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	}
 
 	nodeName := r.getNodeName(i, r.NodeList, ruObj)
-	if nodeName == "" {
-		ch <- nil
-		return
-	}
 
 	// Load the environment variables for scripts to run
-	err := loadEnvironmentVariables(ruObj, r.getNodeFromAsg(i, r.NodeList, ruObj))
+	err := loadEnvironmentVariables(ruObj, targetInstanceID, nodeName)
 	if err != nil {
 		ch <- err
 		return
