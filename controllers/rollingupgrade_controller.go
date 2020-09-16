@@ -74,6 +74,9 @@ const (
 	KubeCtlBinary = "/usr/local/bin/kubectl"
 	// ShellBinary is the path to the shell executable
 	ShellBinary = "/bin/sh"
+
+	// InService is a state of an instance
+	InService = "InService"
 )
 
 var (
@@ -735,13 +738,14 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	ec2instances := asg.Instances
 	for _, ec2Instance := range ec2instances {
 		ec2InstanceID, ec2InstanceLaunchConfig, ec2InstanceLaunchTemplate := ec2Instance.InstanceId, ec2Instance.LaunchConfigurationName, ec2Instance.LaunchTemplate
-		if aws.StringValue(ec2Instance.LifecycleState) == "InService" {
-			if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
-				return fmt.Errorf("launch config mismatch, %s instance config - %s, does not match the asg config", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchConfig))
-			} else if launchTemplateASG != nil && ec2InstanceLaunchTemplate != nil {
-				if aws.StringValue(launchTemplateASG.LaunchTemplateId) != aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId) {
-					return fmt.Errorf("launch template mismatch, %s instance template - %s, does not match the asg template", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId))
-				}
+		if aws.StringValue(ec2Instance.LifecycleState) == InService {
+			continue
+		}
+		if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
+			return fmt.Errorf("launch config mismatch, %s instance config - %s, does not match the asg config", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchConfig))
+		} else if launchTemplateASG != nil && ec2InstanceLaunchTemplate != nil {
+			if aws.StringValue(launchTemplateASG.LaunchTemplateId) != aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId) {
+				return fmt.Errorf("launch template mismatch, %s instance template - %s, does not match the asg template", aws.StringValue(ec2InstanceID), aws.StringValue(ec2InstanceLaunchTemplate.LaunchTemplateId))
 			}
 		}
 	}
