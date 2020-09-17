@@ -608,13 +608,10 @@ func TestLoadEnvironmentVariables(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "asg-foo"}}
 
-	mockID := "aws:///us-west-2a/fake-id-foo"
+	mockID := "fake-id-foo"
 	mockName := "instance-name-foo"
-	node := corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: mockName},
-		Spec:       corev1.NodeSpec{ProviderID: mockID}}
 
-	err := loadEnvironmentVariables(ruInstance, &node)
+	err := loadEnvironmentVariables(ruInstance, mockID, mockName)
 	g.Expect(err).To(gomega.BeNil())
 
 	g.Expect(os.Getenv(asgNameKey)).To(gomega.Equal("asg-foo"))
@@ -2325,6 +2322,47 @@ func TestWaitForTermination(t *testing.T) {
 	g.Expect(unjoined).To(gomega.BeTrue())
 }
 
+func TestWaitForTerminationWhenNodeIsNotFound(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	TerminationTimeoutSeconds = 1
+	TerminationSleepIntervalSeconds = 1
+
+	// nodeName is empty when a node is not found.
+	mockNodeName := ""
+	mockNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: mockNodeName,
+		},
+	}
+	kuberenetesClient := fake.NewSimpleClientset()
+	nodeInterface := kuberenetesClient.CoreV1().Nodes()
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		admissionMap:    sync.Map{},
+		ruObjNameToASG:  sync.Map{},
+		ClusterState:    NewClusterState(),
+	}
+	_, err = nodeInterface.Create(mockNode)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foo",
+			Namespace: "default",
+		},
+	}
+
+	unjoined, err := rcRollingUpgrade.WaitForTermination(ruObj, mockNodeName, nodeInterface)
+	g.Expect(unjoined).To(gomega.BeTrue())
+	g.Expect(err).To(gomega.BeNil())
+}
+
 func buildManager() (manager.Manager, error) {
 	err := upgrademgrv1alpha1.AddToScheme(scheme.Scheme)
 	if err != nil {
@@ -2633,6 +2671,19 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 	case err, ok := <-ch:
 		fmt.Println(err)
 		g.Expect(ok).To(gomega.BeFalse()) // don't expect errors.
+	default:
+
+		// done.
+	}
+
+	// nodeName is empty when node isn't part of the cluster. It must skip drain and terminate.
+	ch = make(chan error, 1)
+	rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode, KubeCtlBinary, ch)
+
+	select {
+	case err, ok := <-ch:
+		fmt.Println(err)
+		g.Expect(ok).To(gomega.BeFalse()) //don't expect errors.
 	default:
 
 		// done.
