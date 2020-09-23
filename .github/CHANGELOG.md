@@ -1,6 +1,11 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.14] - 2020-09-23
+
+* Terminate unjoined nodes (#120)
+* Repo selection for CI and BDD workflows & CI step for releases (#117)
+
 ## [v0.13] - 2020-08-25
 
 * Post upgrade validation step (#112)
