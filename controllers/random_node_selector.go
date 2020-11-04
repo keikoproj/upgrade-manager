@@ -12,10 +12,7 @@ type RandomNodeSelector struct {
 	asg            *autoscaling.Group
 }
 
-func NewRandomNodeSelector(
-	asg *autoscaling.Group,
-	ruObj *upgrademgrv1alpha1.RollingUpgrade,
-) *RandomNodeSelector {
+func NewRandomNodeSelector(asg *autoscaling.Group, ruObj *upgrademgrv1alpha1.RollingUpgrade) *RandomNodeSelector {
 	maxUnavailable := getMaxUnavailable(ruObj.Spec.Strategy, len(asg.Instances))
 	log.Printf("Max unavailable calculated for %s is %d", ruObj.Name, maxUnavailable)
 	return &RandomNodeSelector{
@@ -25,9 +22,6 @@ func NewRandomNodeSelector(
 	}
 }
 
-func (selector *RandomNodeSelector) SelectNodesForRestack(
-	state ClusterState,
-) []*autoscaling.Instance {
-	return getNextAvailableInstances(selector.ruObj.Spec.AsgName,
-		selector.maxUnavailable, selector.asg.Instances, state)
+func (selector *RandomNodeSelector) SelectNodesForRestack(state ClusterState) []*autoscaling.Instance {
+	return getNextAvailableInstances(selector.ruObj.Spec.AsgName, selector.maxUnavailable, selector.asg.Instances, state)
 }

@@ -49,10 +49,10 @@ var (
 )
 
 var (
-	CacheDefaultTTL              time.Duration = time.Second * 0
-	DescribeAutoScalingGroupsTTL time.Duration = 60 * time.Second
-	CacheMaxItems                int64         = 5000
-	CacheItemsToPrune            uint32        = 500
+	CacheDefaultTTL                     = time.Second * 0
+	DescribeAutoScalingGroupsTTL        = 60 * time.Second
+	CacheMaxItems                int64  = 5000
+	CacheItemsToPrune            uint32 = 500
 )
 
 var DefaultRetryer = client.DefaultRetryer{

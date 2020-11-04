@@ -17,10 +17,7 @@ type UniformAcrossAzNodeSelector struct {
 	asg          *autoscaling.Group
 }
 
-func NewUniformAcrossAzNodeSelector(
-	asg *autoscaling.Group,
-	ruObj *upgrademgrv1alpha1.RollingUpgrade,
-) *UniformAcrossAzNodeSelector {
+func NewUniformAcrossAzNodeSelector(asg *autoscaling.Group, ruObj *upgrademgrv1alpha1.RollingUpgrade) *UniformAcrossAzNodeSelector {
 
 	// find total number of nodes in each AZ
 	azNodeCounts := make(map[string]*azNodesCountState)
@@ -45,9 +42,7 @@ func NewUniformAcrossAzNodeSelector(
 	}
 }
 
-func (selector *UniformAcrossAzNodeSelector) SelectNodesForRestack(
-	state ClusterState,
-) []*autoscaling.Instance {
+func (selector *UniformAcrossAzNodeSelector) SelectNodesForRestack(state ClusterState) []*autoscaling.Instance {
 	var instances []*autoscaling.Instance
 
 	// Fetch instances to update from each instance group
