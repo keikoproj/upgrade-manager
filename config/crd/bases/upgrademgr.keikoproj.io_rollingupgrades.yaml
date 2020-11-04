@@ -92,6 +92,17 @@ spec:
                 script:
                   type: string
               type: object
+            readinessGates:
+              description: ReadinessGates allow to specify label selectors that node
+                must match to be considered ready.
+              items:
+                properties:
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
+              type: array
             strategy:
               description: UpdateStrategy holds the information needed to perform
                 update based on different update strategies
