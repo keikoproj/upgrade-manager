@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -43,6 +44,105 @@ func TestIsNodeReady(t *testing.T) {
 		}
 		g.Expect(isNodeReady(node)).To(gomega.Equal(val))
 	}
+}
+
+func TestIsNodePassesReadinessGates(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	type test struct {
+		gate   []map[string]string
+		labels map[string]string
+		want   bool
+	}
+	tests := []test{
+		{
+			gate: []map[string]string{
+				{
+					"healthy": "true",
+				},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+			},
+			want: true,
+		},
+
+		{
+			gate: []map[string]string{},
+			labels: map[string]string{
+				"healthy": "true",
+			},
+			want: true,
+		},
+
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "false",
+			},
+			want: false,
+		},
+
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+			},
+			labels: map[string]string{
+
+			},
+			want: false,
+		},
+
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+				{"second-check": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+			},
+			want: false,
+		},
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+				{"second-check": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+				"second-check": "true",
+			},
+			want: true,
+		},
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+				{"second-check": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+				"second-check": "false",
+			},
+			want: false,
+		},	}
+
+	for _, tt := range tests {
+		readinessGates := make([]upgrademgrv1alpha1.NodeReadinessGate, len(tt.gate))
+		for i, g := range tt.gate {
+			readinessGates[i] = upgrademgrv1alpha1.NodeReadinessGate{
+				MatchLabels: g,
+			}
+		}
+		node := corev1.Node{
+			ObjectMeta: v1.ObjectMeta{
+				Labels: tt.labels,
+			},
+		}
+		g.Expect(IsNodePassesReadinessGates(node, readinessGates)).To(gomega.Equal(tt.want))
+	}
+
 }
 
 func TestGetInServiceCount(t *testing.T) {
