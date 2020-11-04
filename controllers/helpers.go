@@ -50,6 +50,21 @@ func isNodeReady(node corev1.Node) bool {
 	return false
 }
 
+func IsNodePassesReadinessGates(node corev1.Node, requiredReadinessGates []upgrademgrv1alpha1.NodeReadinessGate) bool {
+
+	if len(requiredReadinessGates) == 0 {
+		return true
+	}
+	for _, gate := range requiredReadinessGates {
+		for key, value := range gate.MatchLabels {
+			if node.Labels[key] != value {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func getInServiceCount(instances []*autoscaling.Instance) int64 {
 	var count int64
 	for _, instance := range instances {
