@@ -900,7 +900,7 @@ func TestFinishExecutionCompleted(t *testing.T) {
 	g.Expect(ruObj.Status.TotalProcessingTime).To(gomega.Not(gomega.BeNil()))
 	g.Expect(ruObj.Status.Conditions).To(gomega.Equal(
 		[]upgrademgrv1alpha1.RollingUpgradeCondition{
-			upgrademgrv1alpha1.RollingUpgradeCondition{
+			{
 				Type:   upgrademgrv1alpha1.UpgradeComplete,
 				Status: corev1.ConditionTrue,
 			},
@@ -937,7 +937,7 @@ func TestFinishExecutionError(t *testing.T) {
 	g.Expect(ruObj.Status.TotalProcessingTime).To(gomega.Not(gomega.BeNil()))
 	g.Expect(ruObj.Status.Conditions).To(gomega.Equal(
 		[]upgrademgrv1alpha1.RollingUpgradeCondition{
-			upgrademgrv1alpha1.RollingUpgradeCondition{
+			{
 				Type:   upgrademgrv1alpha1.UpgradeComplete,
 				Status: corev1.ConditionTrue,
 			},
@@ -2229,7 +2229,7 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyMaxUnavailable(t *test
 	rcRollingUpgrade.setDefaultsForRollingUpdateStrategy(ruObj)
 	error := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 
-	g.Expect(error).To((gomega.BeNil()))
+	g.Expect(error).To(gomega.BeNil())
 }
 
 func TestRunRestackNoNodeInAsg(t *testing.T) {
