@@ -1024,7 +1024,6 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 
 	// Drain and wait for draining node.
 	r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
-
 }
 
 func (r *RollingUpgradeReconciler) DrainTerminate(
@@ -1049,7 +1048,6 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 		ch <- err
 		return
 	}
-
 }
 
 // UpdateInstance runs the rolling upgrade on one instance from an autoscaling group
