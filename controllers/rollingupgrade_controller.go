@@ -18,8 +18,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,11 +68,6 @@ const (
 	instanceIDKey   = "INSTANCE_ID"
 	instanceNameKey = "INSTANCE_NAME"
 
-	// KubeCtlBinary is the path to the kubectl executable
-	KubeCtlBinary = "/usr/local/bin/kubectl"
-	// ShellBinary is the path to the shell executable
-	ShellBinary = "/bin/sh"
-
 	// InService is a state of an instance
 	InService = "InService"
 )
@@ -108,6 +101,7 @@ type RollingUpgradeReconciler struct {
 	ClusterState    ClusterState
 	maxParallel     int
 	CacheConfig     *cache.Config
+	ScriptRunner    ScriptRunner
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
@@ -117,87 +111,33 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
 	}
 }
 
-func (r *RollingUpgradeReconciler) runScript(script string, background bool, ruObj *upgrademgrv1alpha1.RollingUpgrade) (string, error) {
-	r.info(ruObj, "Running script", "script", script)
-	if background {
-		r.info(ruObj, "Running script in background. Logs not available.")
-		err := exec.Command(ShellBinary, "-c", script).Run()
-		if err != nil {
-			r.info(ruObj, fmt.Sprintf("Script finished with error: %s", err))
-		}
-
-		return "", nil
-	}
-
-	out, err := exec.Command(ShellBinary, "-c", script).CombinedOutput()
-	if err != nil {
-		r.error(ruObj, err, "Script finished", "output", string(out))
-	} else {
-		r.info(ruObj, "Script finished", "output", string(out))
-	}
-	return string(out), err
-}
-
-func (r *RollingUpgradeReconciler) preDrainHelper(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
-	if ruObj.Spec.PreDrain.Script != "" {
-		script := ruObj.Spec.PreDrain.Script
-		_, err := r.runScript(script, false, ruObj)
-		if err != nil {
-			msg := "Failed to run preDrain script"
-			r.error(ruObj, err, msg)
-			return errors.Wrap(err, msg)
-		}
-	}
-	return nil
+func (r *RollingUpgradeReconciler) preDrainHelper(instanceID, nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	return r.ScriptRunner.PreDrain(instanceID, nodeName, ruObj)
 }
 
 // Operates on any scripts that were provided after the draining of the node.
 // kubeCtlCall is provided as an argument to decouple the method from the actual kubectl call
-func (r *RollingUpgradeReconciler) postDrainHelper(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, kubeCtlCall string) error {
-	if ruObj.Spec.PostDrain.Script != "" {
-		_, err := r.runScript(ruObj.Spec.PostDrain.Script, false, ruObj)
-		if err != nil {
-			msg := "Failed to run postDrain script: "
-			r.error(ruObj, err, msg)
-			result := errors.Wrap(err, msg)
-
-			r.info(ruObj, "Uncordoning the node %s since it failed to run postDrain Script", "nodeName", nodeName)
-			_, err = r.runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj)
-			if err != nil {
-				r.error(ruObj, err, "Failed to uncordon", "nodeName", nodeName)
-			}
-			return result
-		}
+func (r *RollingUpgradeReconciler) postDrainHelper(instanceID, nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	err := r.ScriptRunner.PostDrain(instanceID, nodeName, ruObj)
+	if err != nil {
+		return err
 	}
+
 	r.info(ruObj, "Waiting for postDrainDelay", "postDrainDelay", ruObj.Spec.PostDrainDelaySeconds)
 	time.Sleep(time.Duration(ruObj.Spec.PostDrainDelaySeconds) * time.Second)
 
-	if ruObj.Spec.PostDrain.PostWaitScript != "" {
-		_, err := r.runScript(ruObj.Spec.PostDrain.PostWaitScript, false, ruObj)
-		if err != nil {
-			msg := "Failed to run postDrainWait script: " + err.Error()
-			r.error(ruObj, err, msg)
-			result := errors.Wrap(err, msg)
+	return r.ScriptRunner.PostWait(instanceID, nodeName, ruObj)
 
-			r.info(ruObj, "Uncordoning the node %s since it failed to run postDrain Script", "nodeName", nodeName)
-			_, err = r.runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj)
-			if err != nil {
-				r.error(ruObj, err, "Failed to uncordon", "nodeName", nodeName)
-			}
-			return result
-		}
-	}
-	return nil
 }
 
 // DrainNode runs "kubectl drain" on the given node
 // kubeCtlCall is provided as an argument to decouple the method from the actual kubectl call
 func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName string,
-	kubeCtlCall string,
+	instanceID string,
 	drainTimeout int) error {
 	// Running kubectl drain node.
-	err := r.preDrainHelper(ruObj)
+	err := r.preDrainHelper(instanceID, nodeName, ruObj)
 	if err != nil {
 		return errors.New(ruObj.Name + ": Predrain script failed: " + err.Error())
 	}
@@ -218,7 +158,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	}
 
 	r.info(ruObj, "Invoking kubectl drain for the node", "nodeName", nodeName)
-	go r.CallKubectlDrain(ctx, nodeName, kubeCtlCall, ruObj, errChan)
+	go r.CallKubectlDrain(nodeName, ruObj, errChan)
 
 	// Listening to signals from the CallKubectlDrain go routine
 	select {
@@ -232,24 +172,21 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 		r.info(ruObj, "Kubectl drain completed for node", "nodeName", nodeName)
 	}
 
-	return r.postDrainHelper(ruObj, nodeName, kubeCtlCall)
+	return r.postDrainHelper(instanceID, nodeName, ruObj)
 }
 
 // CallKubectlDrain runs the "kubectl drain" for a given node
 // Node will be terminated even if pod eviction is not completed when the drain timeout is exceeded
-func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeName, kubeCtlCall string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
+func (r *RollingUpgradeReconciler) CallKubectlDrain(nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
 
-	// kops behavior implements the same behavior by using these flags when draining nodes
-	// https://github.com/kubernetes/kops/blob/7a629c77431dda02d02aadf00beb0bed87518cbf/pkg/instancegroups/instancegroups.go lines 337-340
-	script := fmt.Sprintf("%s drain %s --ignore-daemonsets=true --delete-local-data=true --force --grace-period=-1", kubeCtlCall, nodeName)
-	out, err := r.runScript(script, false, ruObj)
+	out, err := r.ScriptRunner.drainNode(nodeName, ruObj)
 	if err != nil {
 		if strings.HasPrefix(out, "Error from server (NotFound)") {
 			r.error(ruObj, err, "Not executing postDrainHelper. Node not found.", "output", out)
 			errChan <- nil
 			return
 		}
-		errChan <- errors.New(ruObj.Name + " :Failed to drain: " + err.Error())
+		errChan <- errors.New(ruObj.Name + ": Failed to drain: " + err.Error())
 		return
 	}
 	errChan <- nil
@@ -391,7 +328,7 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 }
 
 // TerminateNode actually terminates the given node.
-func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string) error {
+func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, nodeName string) error {
 
 	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 		InstanceId:                     aws.String(instanceID),
@@ -426,19 +363,7 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	r.info(ruObj, "Instance terminated.", "instanceID", instanceID)
 	r.info(ruObj, "starting post termination sleep", "instanceID", instanceID, "nodeIntervalSeconds", ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
-	if ruObj.Spec.PostTerminate.Script != "" {
-		out, err := r.runScript(ruObj.Spec.PostTerminate.Script, false, ruObj)
-		if err != nil {
-			if strings.HasPrefix(out, "Error from server (NotFound)") {
-				r.error(ruObj, err, "Node not found when running postTerminate. Ignoring ...", "output", out, "instanceID", instanceID)
-				return nil
-			}
-			msg := "Failed to run postTerminate script"
-			r.error(ruObj, err, msg, "instanceID", instanceID)
-			return errors.Wrap(err, msg)
-		}
-	}
-	return nil
+	return r.ScriptRunner.PostTerminate(instanceID, nodeName, ruObj)
 }
 
 func (r *RollingUpgradeReconciler) getNodeName(i *autoscaling.Instance, nodeList *corev1.NodeList, ruObj *upgrademgrv1alpha1.RollingUpgrade) string {
@@ -501,21 +426,6 @@ func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.Ro
 	return nil
 }
 
-// Loads specific environment variables for scripts to use
-// on a given rollingUpgrade and autoscaling instance
-func loadEnvironmentVariables(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, nodeName string) error {
-	if err := os.Setenv(asgNameKey, ruObj.Spec.AsgName); err != nil {
-		return errors.New(ruObj.Name + ": Could not load " + asgNameKey + ": " + err.Error())
-	}
-	if err := os.Setenv(instanceIDKey, instanceID); err != nil {
-		return errors.New(ruObj.Name + ": Could not load " + instanceIDKey + ": " + err.Error())
-	}
-	if err := os.Setenv(instanceNameKey, nodeName); err != nil {
-		return errors.New(ruObj.Name + ": Could not load " + instanceNameKey + ": " + err.Error())
-	}
-	return nil
-}
-
 func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscaling.Instance) ([]*autoscaling.Instance, error) {
 	var inProgressInstances []*autoscaling.Instance
 	taggedInstances, err := getTaggedInstances(EC2StateTagKey, "in-progress", r.EC2Client)
@@ -530,7 +440,7 @@ func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscali
 	return inProgressInstances, nil
 }
 
-func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, KubeCtlCall string) (int, error) {
+func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) (int, error) {
 
 	asg, err := r.GetAutoScalingGroup(ruObj.Name)
 	if err != nil {
@@ -586,7 +496,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 		}
 
 		// update the instances
-		err := r.UpdateInstances(ctx, ruObj, instances, launchDefinition, KubeCtlCall)
+		err := r.UpdateInstances(ctx, ruObj, instances, launchDefinition)
 		processedInstances += len(instances)
 		if err != nil {
 			return processedInstances, err
@@ -701,7 +611,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	}
 
 	// Run the restack that actually performs the rolling update.
-	nodesProcessed, err := r.runRestack(ctx, ruObj, KubeCtlBinary)
+	nodesProcessed, err := r.runRestack(ctx, ruObj)
 	if err != nil {
 		r.error(ruObj, err, "Failed to runRestack")
 		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
@@ -942,8 +852,7 @@ func NewUpdateInstancesError(instanceUpdateErrors []error) *UpdateInstancesError
 func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	instances []*autoscaling.Instance,
-	launchDefinition *launchDefinition,
-	KubeCtlCall string) error {
+	launchDefinition *launchDefinition) error {
 
 	totalNodes := len(instances)
 	if totalNodes == 0 {
@@ -960,7 +869,7 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 			"strategy": string(ruObj.Spec.Strategy.Type),
 			"msg":      fmt.Sprintf("Started Updating Instance %s, in AZ: %s", *instance.InstanceId, *instance.AvailabilityZone),
 		})
-		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, KubeCtlCall, ch)
+		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, ch)
 	}
 
 	// wait for upgrades to complete
@@ -997,8 +906,7 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
-	targetInstanceID,
-	KubeCtlCall string,
+	targetInstanceID string,
 	ch chan error) {
 
 	// Set instance to standby
@@ -1023,19 +931,19 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	}
 
 	// Drain and wait for draining node.
-	r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+	r.DrainTerminate(ruObj, nodeName, targetInstanceID, ch)
+
 }
 
 func (r *RollingUpgradeReconciler) DrainTerminate(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
-	targetInstanceID,
-	KubeCtlCall string,
+	targetInstanceID string,
 	ch chan error) {
 
 	// Drain and wait for draining node.
 	if nodeName != "" {
-		err := r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
+		err := r.DrainNode(ruObj, nodeName, targetInstanceID, ruObj.Spec.Strategy.DrainTimeout)
 		if err != nil && !ruObj.Spec.IgnoreDrainFailures {
 			ch <- err
 			return
@@ -1043,7 +951,7 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 	}
 
 	// Terminate instance.
-	err := r.TerminateNode(ruObj, targetInstanceID)
+	err := r.TerminateNode(ruObj, targetInstanceID, nodeName)
 	if err != nil {
 		ch <- err
 		return
@@ -1055,7 +963,6 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	i *autoscaling.Instance,
 	launchDefinition *launchDefinition,
-	KubeCtlCall string,
 	ch chan error) {
 	targetInstanceID := aws.StringValue(i.InstanceId)
 	// If an instance was marked as "in-progress" in ClusterState, it has to be marked
@@ -1084,15 +991,8 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 
 	nodeName := r.getNodeName(i, r.NodeList, ruObj)
 
-	// Load the environment variables for scripts to run
-	err := loadEnvironmentVariables(ruObj, targetInstanceID, nodeName)
-	if err != nil {
-		ch <- err
-		return
-	}
-
 	// set the EC2 tag indicating the state to in-progress
-	err = r.setStateTag(ruObj, targetInstanceID, "in-progress")
+	err := r.setStateTag(ruObj, targetInstanceID, "in-progress")
 	if err != nil {
 		ch <- err
 		return
@@ -1101,10 +1001,10 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	mode := ruObj.Spec.Strategy.Mode.String()
 	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
 		r.info(ruObj, "starting replacement with eager mode", "mode", mode)
-		r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+		r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, ch)
 	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
 		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
-		r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+		r.DrainTerminate(ruObj, nodeName, targetInstanceID, ch)
 	}
 
 	unjoined, err := r.WaitForTermination(ruObj, nodeName, r.generatedClient.CoreV1().Nodes())
