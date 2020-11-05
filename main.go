@@ -142,13 +142,15 @@ func main() {
 		)
 	})
 
+	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
 	reconciler := &controllers.RollingUpgradeReconciler{
 		Client:       mgr.GetClient(),
-		Log:          ctrl.Log.WithName("controllers").WithName("RollingUpgrade"),
+		Log:          logger,
 		ClusterState: controllers.NewClusterState(),
 		ASGClient:    autoscaling.New(sess),
 		EC2Client:    ec2.New(sess),
 		CacheConfig:  cacheCfg,
+		ScriptRunner: controllers.NewScriptRunner(logger),
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
