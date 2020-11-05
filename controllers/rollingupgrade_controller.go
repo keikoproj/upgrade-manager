@@ -375,7 +375,8 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 
 	instanceState, err := getGroupInstanceState(asg, instanceID)
 	if err != nil {
-		return err
+		r.info(ruObj, "Cannot get instance state ", "instanceID", instanceID)
+		return nil
 	}
 
 	if !isInServiceLifecycleState(instanceState) {
@@ -531,7 +532,6 @@ func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscali
 }
 
 func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, KubeCtlCall string) (int, error) {
-
 	asg, err := r.GetAutoScalingGroup(ruObj.Name)
 	if err != nil {
 		return 0, fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
