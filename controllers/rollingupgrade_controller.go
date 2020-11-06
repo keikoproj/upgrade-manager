@@ -308,7 +308,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 		for _, node := range r.NodeList.Items {
 			tokens := strings.Split(node.Spec.ProviderID, "/")
 			instanceID := tokens[len(tokens)-1]
-			if contains(inServiceInstances, instanceID) && isNodeReady(node) {
+			if contains(inServiceInstances, instanceID) && isNodeReady(node) && IsNodePassesReadinessGates(node, ruObj.Spec.ReadinessGates) {
 				foundCount++
 			}
 		}

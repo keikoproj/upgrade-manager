@@ -52,6 +52,12 @@ type RollingUpgradeSpec struct {
 	IgnoreDrainFailures bool `json:"ignoreDrainFailures,omitempty"`
 	// ForceRefresh enables draining and terminating the node even if the launch config/template hasn't changed.
 	ForceRefresh bool `json:"forceRefresh,omitempty"`
+	// ReadinessGates allow to specify label selectors that node must match to be considered ready.
+	ReadinessGates []NodeReadinessGate `json:"readinessGates,omitempty"`
+}
+
+type NodeReadinessGate struct {
+	MatchLabels map[string]string `json:"matchLabels,omitempty" protobuf:"bytes,1,rep,name=matchLabels"`
 }
 
 // RollingUpgradeStatus defines the observed state of RollingUpgrade
