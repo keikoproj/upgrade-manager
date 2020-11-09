@@ -20,9 +20,8 @@ func NewLaunchDefinition(asg *autoscaling.Group) *launchDefinition {
 	if template == nil && asg.MixedInstancesPolicy != nil {
 		template = asg.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification
 	}
-	l := &launchDefinition{
+	return &launchDefinition{
 		launchConfigurationName: asg.LaunchConfigurationName,
 		launchTemplate:          template,
 	}
-	return l
 }

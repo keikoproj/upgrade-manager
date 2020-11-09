@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -45,6 +46,105 @@ func TestIsNodeReady(t *testing.T) {
 	}
 }
 
+func TestIsNodePassesReadinessGates(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	type test struct {
+		gate   []map[string]string
+		labels map[string]string
+		want   bool
+	}
+	tests := []test{
+		{
+			gate: []map[string]string{
+				{
+					"healthy": "true",
+				},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+			},
+			want: true,
+		},
+
+		{
+			gate: []map[string]string{},
+			labels: map[string]string{
+				"healthy": "true",
+			},
+			want: true,
+		},
+
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "false",
+			},
+			want: false,
+		},
+
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+			},
+			labels: map[string]string{
+
+			},
+			want: false,
+		},
+
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+				{"second-check": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+			},
+			want: false,
+		},
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+				{"second-check": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+				"second-check": "true",
+			},
+			want: true,
+		},
+		{
+			gate: []map[string]string{
+				{"healthy": "true"},
+				{"second-check": "true"},
+			},
+			labels: map[string]string{
+				"healthy": "true",
+				"second-check": "false",
+			},
+			want: false,
+		},	}
+
+	for _, tt := range tests {
+		readinessGates := make([]upgrademgrv1alpha1.NodeReadinessGate, len(tt.gate))
+		for i, g := range tt.gate {
+			readinessGates[i] = upgrademgrv1alpha1.NodeReadinessGate{
+				MatchLabels: g,
+			}
+		}
+		node := corev1.Node{
+			ObjectMeta: v1.ObjectMeta{
+				Labels: tt.labels,
+			},
+		}
+		g.Expect(IsNodePassesReadinessGates(node, readinessGates)).To(gomega.Equal(tt.want))
+	}
+
+}
+
 func TestGetInServiceCount(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	tt := map[*autoscaling.Instance]int64{
@@ -82,19 +182,19 @@ func TestGetInServiceCount(t *testing.T) {
 func TestGetInServiceIds(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	tt := map[*autoscaling.Instance][]string{
-		&autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}:           []string{"i-1"},
-		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:            []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:           []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}:     []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:             []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:      []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:         []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:         []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:             []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:         []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:        []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-12"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingProceed)}: []string{},
-		&autoscaling.Instance{InstanceId: aws.String("i-13"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingWait)}:    []string{},
+		&autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}: {"i-1"},
+		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:        {},
+		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:       {},
+		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}: {},
+		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:  {},
+		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:     {},
+		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:     {},
+		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:     {},
+		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:    {},
+		&autoscaling.Instance{InstanceId: aws.String("i-12"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingProceed)}: {},
+		&autoscaling.Instance{InstanceId: aws.String("i-13"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingWait)}:    {},
 	}
 
 	// test every condition

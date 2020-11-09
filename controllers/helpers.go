@@ -24,8 +24,8 @@ func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes in
 	if strategy.MaxUnavailable.Type == 0 {
 		maxUnavailable = int(strategy.MaxUnavailable.IntVal)
 	} else if strategy.MaxUnavailable.Type == 1 {
-		strVallue := strategy.MaxUnavailable.StrVal
-		intValue, _ := strconv.Atoi(strings.Trim(strVallue, "%"))
+		strValue := strategy.MaxUnavailable.StrVal
+		intValue, _ := strconv.Atoi(strings.Trim(strValue, "%"))
 		maxUnavailable = int(float32(intValue) / float32(100) * float32(totalNodes))
 	}
 	// setting maxUnavailable to total number of nodes when maxUnavailable is greater than total node count
@@ -34,7 +34,7 @@ func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes in
 			maxUnavailable, totalNodes, totalNodes)
 		maxUnavailable = totalNodes
 	}
-	// maxUnavailable has to be atleast 1 when there are nodes in the ASG
+	// maxUnavailable has to be at least 1 when there are nodes in the ASG
 	if totalNodes > 0 && maxUnavailable < 1 {
 		maxUnavailable = 1
 	}
@@ -43,13 +43,26 @@ func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes in
 
 func isNodeReady(node corev1.Node) bool {
 	for _, condition := range node.Status.Conditions {
-		if condition.Type == corev1.NodeReady {
-			if condition.Status == corev1.ConditionTrue {
-				return true
-			}
+		if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+			return true
 		}
 	}
 	return false
+}
+
+func IsNodePassesReadinessGates(node corev1.Node, requiredReadinessGates []upgrademgrv1alpha1.NodeReadinessGate) bool {
+
+	if len(requiredReadinessGates) == 0 {
+		return true
+	}
+	for _, gate := range requiredReadinessGates {
+		for key, value := range gate.MatchLabels {
+			if node.Labels[key] != value {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func getInServiceCount(instances []*autoscaling.Instance) int64 {
@@ -72,14 +85,13 @@ func getInServiceIds(instances []*autoscaling.Instance) []string {
 	return list
 }
 
-func getGroupInstanceState(group *autoscaling.Group, id string) (string, error) {
+func getGroupInstanceState(group *autoscaling.Group, instanceID string) (string, error) {
 	for _, instance := range group.Instances {
-		if aws.StringValue(instance.InstanceId) != id {
-			continue
+		if aws.StringValue(instance.InstanceId) == instanceID {
+			return aws.StringValue(instance.LifecycleState), nil
 		}
-		return aws.StringValue(instance.LifecycleState), nil
 	}
-	return "", errors.Errorf("could not get instance group state, instance %v not found", id)
+	return "", errors.Errorf("could not get instance group state, instance %v not found", instanceID)
 }
 
 func isInServiceLifecycleState(state string) bool {
@@ -97,10 +109,7 @@ func tagEC2instance(instanceID, tagKey, tagValue string, client ec2iface.EC2API)
 		},
 	}
 	_, err := client.CreateTags(input)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func getTaggedInstances(tagKey, tagValue string, client ec2iface.EC2API) ([]string, error) {
@@ -123,10 +132,7 @@ func getTaggedInstances(tagKey, tagValue string, client ec2iface.EC2API) ([]stri
 		}
 		return page.NextToken != nil
 	})
-	if err != nil {
-		return instances, err
-	}
-	return instances, nil
+	return instances, err
 }
 
 func contains(s []string, e string) bool {
