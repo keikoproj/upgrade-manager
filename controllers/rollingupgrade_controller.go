@@ -375,7 +375,7 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 
 	instanceState, err := getGroupInstanceState(asg, instanceID)
 	if err != nil {
-		r.info(ruObj, "WARNING:", "message", err)
+		r.info(ruObj, fmt.sprintf("WARNING: %v", err))
 		return nil
 	}
 
