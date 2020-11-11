@@ -1164,9 +1164,14 @@ func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.Rol
 			r.info(ruObj, "launch configuration name differs")
 			return true
 		}
-	} else if definition.launchTemplate != nil && ec2Instance.LaunchTemplate != nil {
+	} else if definition.launchTemplate != nil {
 		instanceLaunchTemplate := ec2Instance.LaunchTemplate
 		targetLaunchTemplate := definition.launchTemplate
+
+		if instanceLaunchTemplate == nil {
+			r.info(ruObj, "instance switching to launch template")
+			return true
+		}
 		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateId) != aws.StringValue(targetLaunchTemplate.LaunchTemplateId) {
 			r.info(ruObj, "launch template id differs")
 			return true

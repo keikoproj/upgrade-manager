@@ -89,10 +89,8 @@ func TestIsNodePassesReadinessGates(t *testing.T) {
 			gate: []map[string]string{
 				{"healthy": "true"},
 			},
-			labels: map[string]string{
-
-			},
-			want: false,
+			labels: map[string]string{},
+			want:   false,
 		},
 
 		{
@@ -111,7 +109,7 @@ func TestIsNodePassesReadinessGates(t *testing.T) {
 				{"second-check": "true"},
 			},
 			labels: map[string]string{
-				"healthy": "true",
+				"healthy":      "true",
 				"second-check": "true",
 			},
 			want: true,
@@ -122,11 +120,11 @@ func TestIsNodePassesReadinessGates(t *testing.T) {
 				{"second-check": "true"},
 			},
 			labels: map[string]string{
-				"healthy": "true",
+				"healthy":      "true",
 				"second-check": "false",
 			},
 			want: false,
-		},	}
+		}}
 
 	for _, tt := range tests {
 		readinessGates := make([]upgrademgrv1alpha1.NodeReadinessGate, len(tt.gate))
@@ -182,17 +180,17 @@ func TestGetInServiceCount(t *testing.T) {
 func TestGetInServiceIds(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	tt := map[*autoscaling.Instance][]string{
-		&autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}: {"i-1"},
-		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:        {},
-		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:       {},
-		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}: {},
-		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:         {},
-		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:  {},
-		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:     {},
-		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:     {},
-		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:         {},
-		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:     {},
-		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:    {},
+		&autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}:           {"i-1"},
+		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:            {},
+		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:           {},
+		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}:     {},
+		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:             {},
+		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:      {},
+		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:             {},
+		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:        {},
 		&autoscaling.Instance{InstanceId: aws.String("i-12"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingProceed)}: {},
 		&autoscaling.Instance{InstanceId: aws.String("i-13"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingWait)}:    {},
 	}
