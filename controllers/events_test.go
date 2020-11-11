@@ -19,7 +19,6 @@ func Test_createK8sV1Event(t *testing.T) {
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	c = mgr.GetClient()
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
@@ -31,6 +30,7 @@ func Test_createK8sV1Event(t *testing.T) {
 		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
 
 	event := rcRollingUpgrade.createK8sV1Event(ruObj, EventReasonRUStarted, EventLevelNormal, map[string]string{})
