@@ -1,6 +1,16 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.15] - 2020-11-12
+
+* Extract script runner to a separate type; fix work with env. variables (#132)
+* Fix bug when switching to launch templates (#136)
+* During upgrade, ignore terminated instance. (#134)
+* Readiness gates implementation for eager mode (#130)
+* Fix few typos and simplify error returns, remove redundant types (#131)
+* Upgrade to Go 1.15 (#128)
+* Fix typo in README.md. (#125)
+
 ## [v0.14] - 2020-09-23
 
 * Terminate unjoined nodes (#120)
