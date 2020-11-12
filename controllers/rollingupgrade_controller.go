@@ -299,26 +299,31 @@ func (r *RollingUpgradeReconciler) GetAutoScalingGroup(rollupName string) (*auto
 // SetStandby sets the autoscaling instance to standby mode.
 func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string) error {
 	r.info(ruObj, "Setting to stand-by", ruObj.Name, instanceID)
-	input := &autoscaling.EnterStandbyInput{
-		AutoScalingGroupName:           aws.String(ruObj.Spec.AsgName),
-		InstanceIds:                    aws.StringSlice([]string{instanceID}),
-		ShouldDecrementDesiredCapacity: aws.Bool(false),
-	}
 
 	asg, err := r.GetAutoScalingGroup(ruObj.Name)
 	if err != nil {
 		return err
 	}
 
-	instanceState, err := getGroupInstanceState(asg, instanceID)
+	instanceState, err := getInstanceStateInASG(asg, instanceID)
 	if err != nil {
 		r.info(ruObj, fmt.Sprintf("WARNING: %v", err))
+		return nil
+	}
+
+	if instanceState == autoscaling.LifecycleStateStandby {
 		return nil
 	}
 
 	if !isInServiceLifecycleState(instanceState) {
 		r.info(ruObj, "Cannot set instance to stand-by, instance is in state", "instanceState", instanceState, "instanceID", instanceID)
 		return nil
+	}
+
+	input := &autoscaling.EnterStandbyInput{
+		AutoScalingGroupName:           aws.String(ruObj.Spec.AsgName),
+		InstanceIds:                    aws.StringSlice([]string{instanceID}),
+		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
 	_, err = r.ASGClient.EnterStandby(input)
