@@ -62,9 +62,6 @@ func TestErrorStatusMarkJanitor(t *testing.T) {
 	rcRollingUpgrade := &RollingUpgradeReconciler{Client: mgr.GetClient(),
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
 		Log:             log2.NullLogger{},
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
-		inProcessASGs:   sync.Map{},
 		ClusterState:    NewClusterState(),
 		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
@@ -712,7 +709,7 @@ func TestPopulateAsgSuccess(t *testing.T) {
 
 	requestedAsg, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)
 	g.Expect(ok).To(gomega.BeTrue())
-	g.Expect(requestedAsg.(*autoscaling.Group).AutoScalingGroupName).To(gomega.Equal(expectedAsg.AutoScalingGroupName))
+	g.Expect(requestedAsg.AutoScalingGroupName).To(gomega.Equal(expectedAsg.AutoScalingGroupName))
 }
 
 func TestPopulateAsgTooMany(t *testing.T) {
@@ -799,8 +796,8 @@ func TestParallelAsgTracking(t *testing.T) {
 	requestedAsgB, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObjB.Name)
 	g.Expect(ok).To(gomega.BeTrue())
 
-	g.Expect(requestedAsgA.(*autoscaling.Group).AutoScalingGroupName).To(gomega.Equal(expectedAsgA.AutoScalingGroupName))
-	g.Expect(requestedAsgB.(*autoscaling.Group).AutoScalingGroupName).To(gomega.Equal(expectedAsgB.AutoScalingGroupName))
+	g.Expect(requestedAsgA.AutoScalingGroupName).To(gomega.Equal(expectedAsgA.AutoScalingGroupName))
+	g.Expect(requestedAsgB.AutoScalingGroupName).To(gomega.Equal(expectedAsgB.AutoScalingGroupName))
 }
 
 type MockNodeList struct {
@@ -872,8 +869,6 @@ func TestFinishExecutionCompleted(t *testing.T) {
 	rcRollingUpgrade := &RollingUpgradeReconciler{Client: mgr.GetClient(),
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
 		Log:             log2.NullLogger{},
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 	}
 	ctx := context.TODO()
@@ -907,8 +902,6 @@ func TestFinishExecutionError(t *testing.T) {
 		Client:          mgr.GetClient(),
 		Log:             log2.NullLogger{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 	}
 	startTime := time.Now()
@@ -967,9 +960,6 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
-		inProcessASGs:   sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1021,8 +1011,6 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1061,8 +1049,6 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
@@ -1122,8 +1108,6 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &emptyNodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1170,8 +1154,6 @@ func TestRunRestackNoNodeName(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1235,8 +1217,7 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
+		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1296,8 +1277,6 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 		ASGClient:       mockAutoscalingGroup,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1390,8 +1369,6 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1448,8 +1425,6 @@ func TestUpdateInstances(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1516,8 +1491,6 @@ func TestUpdateInstancesError(t *testing.T) {
 		ASGClient:       mockAutoScalingGroup,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1590,8 +1563,6 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 		ASGClient:       mockAutoScalingGroup,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1623,8 +1594,6 @@ func TestUpdateInstancesWithZeroInstances(t *testing.T) {
 		Client:          mgr.GetClient(),
 		Log:             log2.NullLogger{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
@@ -2285,8 +2254,6 @@ func TestWaitForTermination(t *testing.T) {
 		Client:          mgr.GetClient(),
 		Log:             log2.NullLogger{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 	}
 	_, err = nodeInterface.Create(mockNode)
@@ -2333,8 +2300,6 @@ func TestWaitForTerminationWhenNodeIsNotFound(t *testing.T) {
 		Client:          mgr.GetClient(),
 		Log:             log2.NullLogger{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 	}
 	_, err = nodeInterface.Create(mockNode)
@@ -2390,8 +2355,6 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
@@ -2712,8 +2675,6 @@ func TestUpdateInstancesNotExists(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -2771,13 +2732,11 @@ func TestValidateNodesLaunchDefinitionSameLaunchConfig(t *testing.T) {
 		ASGClient:       mockAsgClient,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
@@ -2812,13 +2771,11 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchConfig(t *testing.T) {
 		ASGClient:       mockAsgClient,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
@@ -2851,13 +2808,11 @@ func TestValidateNodesLaunchDefinitionSameLaunchTemplate(t *testing.T) {
 		ASGClient:       mockAsgClient,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
@@ -2891,13 +2846,11 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchTemplate(t *testing.T) {
 		ASGClient:       mockAsgClient,
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
