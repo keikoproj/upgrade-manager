@@ -60,9 +60,7 @@ func (r *ScriptRunner) drainNode(nodeName string, ruObj *upgrademgrv1alpha1.Roll
 func (r *ScriptRunner) runScriptWithEnv(script string, background bool, ruObj *upgrademgrv1alpha1.RollingUpgrade, env []string) (string, error) {
 	r.info(ruObj, "Running script", "script", script)
 	command := exec.Command(ShellBinary, "-c", script)
-	if env != nil {
-		command.Env = append(os.Environ(), env...)
-	}
+	command.Env = append(os.Environ(), env...)
 
 	if background {
 		r.info(ruObj, "Running script in background. Logs not available.")
