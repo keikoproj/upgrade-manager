@@ -21,6 +21,7 @@ import (
 	"github.com/go-logr/logr"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/pkg/errors"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -60,7 +61,7 @@ func (r *ScriptRunner) runScriptWithEnv(script string, background bool, ruObj *u
 	r.info(ruObj, "Running script", "script", script)
 	command := exec.Command(ShellBinary, "-c", script)
 	if env != nil {
-		command.Env = env
+		command.Env = append(os.Environ(), env...)
 	}
 
 	if background {
