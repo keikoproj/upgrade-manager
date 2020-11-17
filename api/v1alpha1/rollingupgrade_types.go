@@ -108,7 +108,7 @@ func init() {
 }
 
 // UpdateStrategyType indicates how the update has to be rolled out
-// whether to roll the update Az wise or all Azs at once
+// whether to roll the update AZ wise or all Azs at once
 type UpdateStrategyType string
 
 type UpdateStrategyMode string
@@ -116,15 +116,16 @@ type UpdateStrategyMode string
 type UpgradeConditionType string
 
 const (
-	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
+	// RandomUpdate strategy treats all the availability zones as a single unit and picks random nodes for update.
 	RandomUpdateStrategy UpdateStrategyType = "randomUpdate"
 
-	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
+	// UniformAcrossAzUpdateStrategy Picks same number of nodes or same percentage of nodes from each AZ for update.
 	UniformAcrossAzUpdateStrategy UpdateStrategyType = "uniformAcrossAzUpdate"
 
 	UpdateStrategyModeLazy  UpdateStrategyMode = "lazy"
 	UpdateStrategyModeEager UpdateStrategyMode = "eager"
-	// Other update strategies such as rolling update by Az or rolling update with a predifined instance list
+
+	// Other update strategies such as rolling update by AZ or rolling update with a pre-defined instance list
 	// can be implemented in future by adding more update strategy types
 
 	UpgradeComplete UpgradeConditionType = "Complete"
