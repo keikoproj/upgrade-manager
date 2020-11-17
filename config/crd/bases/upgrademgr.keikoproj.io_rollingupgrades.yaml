@@ -123,7 +123,7 @@ spec:
                   type: string
                 type:
                   description: UpdateStrategyType indicates how the update has to
-                    be rolled out whether to roll the update Az wise or all Azs at
+                    be rolled out whether to roll the update AZ wise or all Azs at
                     once
                   type: string
               required:
