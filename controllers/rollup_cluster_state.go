@@ -39,7 +39,7 @@ type ClusterState interface {
 	instanceUpdateInitialized(instanceId string) bool
 	instanceUpdateInProgress(instanceId string) bool
 	instanceUpdateCompleted(instanceId string) bool
-	deleteEntryOfAsg(asgName string) bool
+	deleteAllInstancesInAsg(asgName string) bool
 	getNextAvailableInstanceIdInAz(asgName string, azName string) string
 	initializeAsg(asgName string, instances []*autoscaling.Instance)
 	addInstanceState(instanceData *InstanceData)
@@ -58,17 +58,17 @@ type InstanceData struct {
 // ClusterStateImpl implements the ClusterState interface
 type ClusterStateImpl struct {
 	mu sync.RWMutex
-}
 
-// ClusterStateStore stores the state of the instances running in different Azs for multiple ASGs
-var ClusterStateStore sync.Map
+	// store stores the state of the instances running in different Azs for multiple ASGs
+	store sync.Map
+}
 
 // newClusterState returns the object the struct implementing the ClusterState interface
 func NewClusterState() ClusterState {
 	return &ClusterStateImpl{}
 }
 
-// markUpdateInProgress updates the instance state to in-progresss
+// markUpdateInProgress updates the instance state to in-progress
 func (c *ClusterStateImpl) markUpdateInProgress(instanceId string) {
 	c.updateInstanceState(instanceId, updateInProgress)
 }
@@ -94,13 +94,13 @@ func (c *ClusterStateImpl) instanceUpdateCompleted(instanceId string) bool {
 }
 
 // deleteEntryOfAsg deletes the entry for an ASG in the cluster state map
-func (c *ClusterStateImpl) deleteEntryOfAsg(asgName string) bool {
+func (c *ClusterStateImpl) deleteAllInstancesInAsg(asgName string) bool {
 	deleted := false
-	ClusterStateStore.Range(func(key interface{}, value interface{}) bool {
-		keyName, _ := key.(string)
+	c.store.Range(func(key interface{}, value interface{}) bool {
+		instanceID, _ := key.(string)
 		instanceData, _ := value.(*InstanceData)
 		if instanceData.AsgName == asgName {
-			ClusterStateStore.Delete(keyName)
+			c.store.Delete(instanceID)
 			deleted = true
 		}
 		return true
@@ -138,7 +138,7 @@ func (c *ClusterStateImpl) getNextAvailableInstanceIdInAz(asgName string, azName
 	defer c.mu.Unlock()
 
 	instanceId := ""
-	ClusterStateStore.Range(func(key interface{}, value interface{}) bool {
+	c.store.Range(func(key interface{}, value interface{}) bool {
 		state, _ := value.(*InstanceData)
 		if state.AsgName == asgName &&
 			(azName == "" || state.AzName == azName) &&
@@ -154,23 +154,21 @@ func (c *ClusterStateImpl) getNextAvailableInstanceIdInAz(asgName string, azName
 
 // updateInstanceState updates the state of the instance in cluster store
 func (c *ClusterStateImpl) addInstanceState(instanceData *InstanceData) {
-	ClusterStateStore.Store(instanceData.Id, instanceData)
+	c.store.Store(instanceData.Id, instanceData)
 }
 
 // updateInstanceState updates the state of the instance in cluster store
 func (c *ClusterStateImpl) updateInstanceState(instanceId, instanceState string) {
-	val, ok := ClusterStateStore.Load(instanceId)
-	if ok {
+	if val, ok := c.store.Load(instanceId); ok {
 		instanceData, _ := val.(*InstanceData)
 		instanceData.InstanceState = instanceState
-		ClusterStateStore.Store(instanceId, instanceData)
+		c.store.Store(instanceId, instanceData)
 	}
 }
 
 // getInstanceState returns the state of the instance from cluster store
 func (c *ClusterStateImpl) getInstanceState(instanceId string) string {
-	val, ok := ClusterStateStore.Load(instanceId)
-	if ok {
+	if val, ok := c.store.Load(instanceId); ok {
 		state, _ := val.(*InstanceData)
 		return state.InstanceState
 	}

@@ -85,6 +85,8 @@ var (
 	WaiterFactor = 0.5
 	// WaiterMaxAttempts is the maximum number of retries for waiters
 	WaiterMaxAttempts = uint32(32)
+	// CacheTTL is ttl for ASG cache.
+	CacheTTL = 30 * time.Second
 )
 
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
@@ -97,11 +99,46 @@ type RollingUpgradeReconciler struct {
 	NodeList        *corev1.NodeList
 	inProcessASGs   sync.Map
 	admissionMap    sync.Map
-	ruObjNameToASG  sync.Map
+	ruObjNameToASG  AsgCache
 	ClusterState    ClusterState
 	maxParallel     int
 	CacheConfig     *cache.Config
 	ScriptRunner    ScriptRunner
+}
+
+type AsgCache struct {
+	cache sync.Map
+}
+
+func (c *AsgCache) IsExpired(name string) bool {
+	if val, ok := c.cache.Load(name); !ok {
+		return true
+	} else {
+		cached := val.(CachedValue)
+		return time.Now().After(cached.expiration)
+	}
+}
+
+func (c *AsgCache) Load(name string) (*autoscaling.Group, bool) {
+	if val, ok := c.cache.Load(name); !ok {
+		return nil, false
+	} else {
+		cached := val.(CachedValue)
+		return cached.val.(*autoscaling.Group), true
+	}
+}
+
+func (c *AsgCache) Store(name string, asg *autoscaling.Group) {
+	c.cache.Store(name, CachedValue{asg, time.Now().Add(CacheTTL)})
+}
+
+func (c *AsgCache) Delete(name string) {
+	c.cache.Delete(name)
+}
+
+type CachedValue struct {
+	val        interface{}
+	expiration time.Time
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
@@ -287,13 +324,11 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 }
 
 func (r *RollingUpgradeReconciler) GetAutoScalingGroup(rollupName string) (*autoscaling.Group, error) {
-	asg := &autoscaling.Group{}
 	val, ok := r.ruObjNameToASG.Load(rollupName)
 	if !ok {
-		return asg, fmt.Errorf("Unable to load ASG with name: %s", rollupName)
+		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG with name: %s", rollupName)
 	}
-	asg = val.(*autoscaling.Group)
-	return asg, nil
+	return val, nil
 }
 
 // SetStandby sets the autoscaling instance to standby mode.
@@ -396,6 +431,11 @@ func (r *RollingUpgradeReconciler) getNodeFromAsg(i *autoscaling.Instance, nodeL
 }
 
 func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	// if value is still in cache, do nothing.
+	if !r.ruObjNameToASG.IsExpired(ruObj.Name) {
+		return nil
+	}
+
 	input := &autoscaling.DescribeAutoScalingGroupsInput{
 		AutoScalingGroupNames: []*string{
 			aws.String(ruObj.Spec.AsgName),
@@ -466,7 +506,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 
 	r.inProcessASGs.Store(*asg.AutoScalingGroupName, "running")
 	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
-	defer r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
+	defer r.ClusterState.deleteAllInstancesInAsg(*asg.AutoScalingGroupName)
 
 	launchDefinition := NewLaunchDefinition(asg)
 
@@ -554,7 +594,7 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 		}
 	}
 
-	r.ClusterState.deleteEntryOfAsg(ruObj.Spec.AsgName)
+	r.ClusterState.deleteAllInstancesInAsg(ruObj.Spec.AsgName)
 	r.info(ruObj, "Deleted the entries of ASG in the cluster store", "asgName", ruObj.Spec.AsgName)
 	r.inProcessASGs.Delete(ruObj.Spec.AsgName)
 	r.admissionMap.Delete(ruObj.Name)
