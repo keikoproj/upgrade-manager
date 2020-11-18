@@ -281,7 +281,7 @@ func TestGetNextAvailableInstance(t *testing.T) {
 	available := getNextAvailableInstances(mockAsgName, 1, instancesList, rcRollingUpgrade.ClusterState)
 
 	g.Expect(1).Should(gomega.Equal(len(available)))
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 
 }
 
@@ -302,7 +302,7 @@ func TestGetNextAvailableInstanceNoInstanceFound(t *testing.T) {
 	available := getNextAvailableInstances("asg2", 1, instancesList, rcRollingUpgrade.ClusterState)
 
 	g.Expect(0).Should(gomega.Equal(len(available)))
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 
 }
 
@@ -333,7 +333,7 @@ func TestGetNextAvailableInstanceInAz(t *testing.T) {
 	instances = getNextSetOfAvailableInstancesInAz(mockAsgName, "az3", 1, instancesList, rcRollingUpgrade.ClusterState)
 	g.Expect(0).Should(gomega.Equal(len(instances)))
 
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 
 }
 
@@ -359,5 +359,5 @@ func TestGetNextAvailableInstanceInAzGetMultipleInstances(t *testing.T) {
 	instanceIds := []string{*instances[0].InstanceId, *instances[1].InstanceId}
 	g.Expect(instanceIds).Should(gomega.ConsistOf(mockInstanceName1, mockInstanceName2))
 
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 }
