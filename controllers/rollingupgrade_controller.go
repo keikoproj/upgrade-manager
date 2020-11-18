@@ -501,7 +501,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 
 	r.inProcessASGs.Store(*asg.AutoScalingGroupName, "running")
 	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
-	defer r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
+	defer r.ClusterState.deleteAllInstancesInAsg(*asg.AutoScalingGroupName)
 
 	launchDefinition := NewLaunchDefinition(asg)
 
@@ -589,7 +589,7 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 		}
 	}
 
-	r.ClusterState.deleteEntryOfAsg(ruObj.Spec.AsgName)
+	r.ClusterState.deleteAllInstancesInAsg(ruObj.Spec.AsgName)
 	r.info(ruObj, "Deleted the entries of ASG in the cluster store", "asgName", ruObj.Spec.AsgName)
 	r.inProcessASGs.Delete(ruObj.Spec.AsgName)
 	r.admissionMap.Delete(ruObj.Name)

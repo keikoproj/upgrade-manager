@@ -2359,7 +2359,7 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
-	rcRollingUpgrade.ClusterState.deleteEntryOfAsg(someAsg)
+	rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(someAsg)
 	ctx := context.TODO()
 
 	// This execution should not perform drain or termination, but should pass
