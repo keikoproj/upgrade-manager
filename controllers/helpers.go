@@ -76,7 +76,7 @@ func getInServiceIds(instances []*autoscaling.Instance) []string {
 	return list
 }
 
-func getGroupInstanceState(group *autoscaling.Group, instanceID string) (string, error) {
+func getInstanceStateInASG(group *autoscaling.Group, instanceID string) (string, error) {
 	for _, instance := range group.Instances {
 		if aws.StringValue(instance.InstanceId) == instanceID {
 			return aws.StringValue(instance.LifecycleState), nil
