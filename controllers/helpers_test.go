@@ -1,9 +1,8 @@
 package controllers
 
 import (
-	"encoding/json"
-	"fmt"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -17,13 +16,9 @@ import (
 func TestGetMaxUnavailableWithPercentageValue(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"75%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("75%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 200)).To(gomega.Equal(150))
 }
 
@@ -214,13 +209,9 @@ func TestGetInServiceIds(t *testing.T) {
 func TestGetMaxUnavailableWithPercentageValue33(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"67%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("67%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 3)).To(gomega.Equal(2))
 }
 
@@ -228,39 +219,27 @@ func TestGetMaxUnavailableWithPercentageAndSingleInstance(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	totalNodes := 1
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"67%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("67%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, totalNodes)).To(gomega.Equal(1))
 }
 
 func TestGetMaxUnavailableWithPercentageNonIntResult(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"37%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("37%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 50)).To(gomega.Equal(18))
 }
 
 func TestGetMaxUnavailableWithIntValue(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 75, \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("75"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 200)).To(gomega.Equal(75))
 }
 
@@ -274,8 +253,7 @@ func TestGetNextAvailableInstance(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 	available := getNextAvailableInstances(mockAsgName, 1, instancesList, rcRollingUpgrade.ClusterState)
@@ -295,8 +273,7 @@ func TestGetNextAvailableInstanceNoInstanceFound(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 	available := getNextAvailableInstances("asg2", 1, instancesList, rcRollingUpgrade.ClusterState)
@@ -317,8 +294,7 @@ func TestGetNextAvailableInstanceInAz(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az2}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 
@@ -347,8 +323,7 @@ func TestGetNextAvailableInstanceInAzGetMultipleInstances(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 
