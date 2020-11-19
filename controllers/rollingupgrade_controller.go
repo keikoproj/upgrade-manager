@@ -821,16 +821,16 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 		return nil
 	}
 	// validating the maxUnavailable value
-	if strategy.MaxUnavailable.Type == 0 {
+	if strategy.MaxUnavailable.Type == intstr.Int {
 		if strategy.MaxUnavailable.IntVal <= 0 {
 			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %d",
 				ruObj.Name, strategy.MaxUnavailable.IntVal))
 			r.error(ruObj, err, "Invalid value for maxUnavailable", "value", strategy.MaxUnavailable.IntVal)
 			return err
 		}
-	} else if strategy.MaxUnavailable.Type == 1 {
-		strVallue := strategy.MaxUnavailable.StrVal
-		intValue, _ := strconv.Atoi(strings.Trim(strVallue, "%"))
+	} else if strategy.MaxUnavailable.Type == intstr.String {
+		strVal := strategy.MaxUnavailable.StrVal
+		intValue, _ := strconv.Atoi(strings.Trim(strVal, "%"))
 		if intValue <= 0 || intValue > 100 {
 			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %s",
 				ruObj.Name, strategy.MaxUnavailable.StrVal))
@@ -851,34 +851,19 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 
 // setDefaultsForRollingUpdateStrategy sets the default values for type, maxUnavailable and drainTimeout
 func (r *RollingUpgradeReconciler) setDefaultsForRollingUpdateStrategy(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
-
-	// Setting the default values for the update strategy when strategy is not set
-	// Default behaviour should be to update one node at a time and should wait for kubectl drain completion
-	var nilStrategy = upgrademgrv1alpha1.UpdateStrategy{}
-	if ruObj.Spec.Strategy == nilStrategy {
-		r.info(ruObj, "Update strategy not set on the rollup object, setting the default strategy.")
-		strategy := upgrademgrv1alpha1.UpdateStrategy{
-			Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
-			Mode:           upgrademgrv1alpha1.UpdateStrategyModeLazy,
-			MaxUnavailable: intstr.IntOrString{IntVal: 1},
-			DrainTimeout:   -1,
-		}
-		ruObj.Spec.Strategy = strategy
-	} else {
-		if ruObj.Spec.Strategy.Type == "" {
-			ruObj.Spec.Strategy.Type = upgrademgrv1alpha1.RandomUpdateStrategy
-		}
-		if ruObj.Spec.Strategy.Mode == "" {
-			// default to lazy mode
-			ruObj.Spec.Strategy.Mode = upgrademgrv1alpha1.UpdateStrategyModeLazy
-		}
-		// intstr.IntOrString has the default value 0 with int types
-		if ruObj.Spec.Strategy.MaxUnavailable.Type == 0 && ruObj.Spec.Strategy.MaxUnavailable.IntVal == 0 {
-			ruObj.Spec.Strategy.MaxUnavailable = intstr.IntOrString{Type: 0, IntVal: 1}
-		}
-		if ruObj.Spec.Strategy.DrainTimeout == 0 {
-			ruObj.Spec.Strategy.DrainTimeout = -1
-		}
+	if ruObj.Spec.Strategy.Type == "" {
+		ruObj.Spec.Strategy.Type = upgrademgrv1alpha1.RandomUpdateStrategy
+	}
+	if ruObj.Spec.Strategy.Mode == "" {
+		// default to lazy mode
+		ruObj.Spec.Strategy.Mode = upgrademgrv1alpha1.UpdateStrategyModeLazy
+	}
+	// Set default max unavailable to 1.
+	if ruObj.Spec.Strategy.MaxUnavailable.Type == intstr.Int && ruObj.Spec.Strategy.MaxUnavailable.IntVal == 0 {
+		ruObj.Spec.Strategy.MaxUnavailable.IntVal = 1
+	}
+	if ruObj.Spec.Strategy.DrainTimeout == 0 {
+		ruObj.Spec.Strategy.DrainTimeout = -1
 	}
 }
 
