@@ -287,6 +287,7 @@ func createReconciler() *RollingUpgradeReconciler {
 
 type MockEC2 struct {
 	ec2iface.EC2API
+	awsErr       awserr.Error
 	reservations []*ec2.Reservation
 }
 
@@ -298,11 +299,14 @@ type MockAutoscalingGroup struct {
 	autoScalingGroups []*autoscaling.Group
 }
 
-func (m MockEC2) CreateTags(input *ec2.CreateTagsInput) (*ec2.CreateTagsOutput, error) {
+func (m MockEC2) CreateTags(_ *ec2.CreateTagsInput) (*ec2.CreateTagsOutput, error) {
+	if m.awsErr != nil {
+		return nil, m.awsErr
+	}
 	return &ec2.CreateTagsOutput{}, nil
 }
 
-func (m MockEC2) DescribeInstances(input *ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
+func (m MockEC2) DescribeInstances(_ *ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
 	return &ec2.DescribeInstancesOutput{Reservations: m.reservations}, nil
 }
 
@@ -315,7 +319,7 @@ func (m MockEC2) DescribeInstancesPages(input *ec2.DescribeInstancesInput, callb
 	return nil
 }
 
-func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(input *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
+func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(_ *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
 	output := &autoscaling.EnterStandbyOutput{}
 	return output, nil
 }
@@ -1510,6 +1514,62 @@ func TestUpdateInstancesError(t *testing.T) {
 		g.Expect(len(updateInstancesError.InstanceUpdateErrors)).Should(gomega.Equal(2))
 		g.Expect(updateInstancesError.Error()).Should(gomega.ContainSubstring("Error updating instances, ErrorCount: 2"))
 	}
+}
+
+func TestUpdateInstancesHandlesDeletedInstances(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	someAsg := "some-asg"
+	mockID := "some-id"
+	someLaunchConfig := "some-launch-config"
+	diffLaunchConfig := "different-launch-config"
+	az := "az-1"
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
+	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
+		LaunchConfigurationName: &someLaunchConfig,
+		Instances:               []*autoscaling.Instance{&mockInstance}}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			AsgName: someAsg,
+			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "lazy",
+			},
+		},
+	}
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	fooNode1 := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "foo-bar/9213851"}}
+	correctNode := corev1.Node{Spec: corev1.NodeSpec{ProviderID: "fake-separator/" + mockID},
+		ObjectMeta: metav1.ObjectMeta{Name: "correct-node"}}
+
+	nodeList := corev1.NodeList{Items: []corev1.Node{fooNode1, correctNode}}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:    mgr.GetClient(),
+		Log:       log2.NullLogger{},
+		ASGClient: MockAutoscalingGroup{},
+		EC2Client: MockEC2{
+			awsErr: awserr.New("InvalidInstanceID.NotFound", "Instance not found", nil),
+		},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		NodeList:        &nodeList,
+		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
+	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.ScriptRunner.KubectlCall = "exit 0;"
+
+	ctx := context.TODO()
+
+	lcName := "A"
+	err = rcRollingUpgrade.UpdateInstances(&ctx,
+		ruObj, mockAsg.Instances, &launchDefinition{launchConfigurationName: &lcName})
+	g.Expect(err).Should(gomega.BeNil())
 }
 
 func TestUpdateInstancesPartialError(t *testing.T) {
