@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1806,12 +1805,10 @@ func TestTestCallKubectlDrainWithTimeoutOccurring(t *testing.T) {
 func TestValidateRuObj(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 75, \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("75"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -1823,19 +1820,17 @@ func TestValidateRuObj(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err).To(gomega.BeNil())
 }
 
 func TestValidateruObjInvalidMaxUnavailable(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"150%\", \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("150%"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -1847,19 +1842,17 @@ func TestValidateruObjInvalidMaxUnavailable(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Invalid value for maxUnavailable"))
 }
 
 func TestValidateruObjMaxUnavailableZeroPercent(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"0%\", \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("0%"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -1871,19 +1864,17 @@ func TestValidateruObjMaxUnavailableZeroPercent(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Invalid value for maxUnavailable"))
 }
 
 func TestValidateruObjMaxUnavailableInt(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 10, \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("10"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -1895,19 +1886,17 @@ func TestValidateruObjMaxUnavailableInt(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err).To(gomega.BeNil())
 }
 
 func TestValidateruObjMaxUnavailableIntZero(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 0, \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("0"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -1919,19 +1908,17 @@ func TestValidateruObjMaxUnavailableIntZero(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Invalid value for maxUnavailable"))
 }
 
 func TestValidateruObjMaxUnavailableIntNegativeValue(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": -1, \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("-1"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -1943,19 +1930,16 @@ func TestValidateruObjMaxUnavailableIntNegativeValue(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Invalid value for maxUnavailable"))
 }
 
 func TestValidateruObjWithStrategyAndDrainTimeoutOnly(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type: upgrademgrv1alpha1.RandomUpdateStrategy,
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -1967,21 +1951,17 @@ func TestValidateruObjWithStrategyAndDrainTimeoutOnly(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Invalid value for maxUnavailable"))
 }
 
 func TestValidateruObjWithoutStrategyOnly(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	RollingUpgradeJsonString := "{}"
 	ruObj := upgrademgrv1alpha1.RollingUpgrade{}
-	err := json.Unmarshal([]byte(RollingUpgradeJsonString), &ruObj)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling RollingUpgrade object, error: %s", err.Error())
-	}
+
 	rcRollingUpgrade := createReconciler()
-	err = rcRollingUpgrade.validateRollingUpgradeObj(&ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(&ruObj)
 
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -1989,12 +1969,10 @@ func TestValidateruObjWithoutStrategyOnly(t *testing.T) {
 func TestValidateruObjStrategyType(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 10, \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("10"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -2006,19 +1984,17 @@ func TestValidateruObjStrategyType(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err).To(gomega.BeNil())
 }
 
 func TestValidateruObjInvalidStrategyType(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"xyz\", \"maxUnavailable\": 10, \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           "xyx",
+		MaxUnavailable: intstr.Parse("10"),
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -2030,7 +2006,7 @@ func TestValidateruObjInvalidStrategyType(t *testing.T) {
 		},
 	}
 
-	err = rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Invalid value for strategy type"))
 }
 
@@ -2067,13 +2043,8 @@ func TestSetDefaultsForRollingUpdateStrategy(t *testing.T) {
 
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ }"
 	mockAsgName := "some-asg"
 	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
-	}
 
 	rcRollingUpgrade := createReconciler()
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
@@ -2093,12 +2064,9 @@ func TestSetDefaultsForRollingUpdateStrategy(t *testing.T) {
 func TestValidateruObjStrategyAfterSettingDefaults(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\" }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type: upgrademgrv1alpha1.RandomUpdateStrategy,
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -2110,20 +2078,17 @@ func TestValidateruObjStrategyAfterSettingDefaults(t *testing.T) {
 		},
 	}
 	rcRollingUpgrade.setDefaultsForRollingUpdateStrategy(ruObj)
-	error := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
+	err := rcRollingUpgrade.validateRollingUpgradeObj(ruObj)
 
-	g.Expect(error).To(gomega.BeNil())
+	g.Expect(err).To(gomega.BeNil())
 }
 
 func TestValidateruObjStrategyAfterSettingDefaultsWithInvalidStrategyType(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"xyz\" }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type: "xyz",
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -2143,12 +2108,10 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithInvalidStrategyType(t *tes
 func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyDrainTimeout(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"drainTimeout\": 15 }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:         upgrademgrv1alpha1.RandomUpdateStrategy,
+		DrainTimeout: 15,
 	}
 
 	rcRollingUpgrade := createReconciler()
@@ -2168,12 +2131,10 @@ func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyDrainTimeout(t *testin
 func TestValidateruObjStrategyAfterSettingDefaultsWithOnlyMaxUnavailable(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	strategyJsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"100%\" }"
 	mockAsgName := "some-asg"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(strategyJsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
+		MaxUnavailable: intstr.Parse("100%"),
 	}
 
 	rcRollingUpgrade := createReconciler()
