@@ -805,11 +805,7 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *RollingUpgradeReconciler) setStateTag(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, state string) error {
 	r.info(ruObj, "setting instance state", "instanceID", instanceID, "instanceState", state)
-	err := tagEC2instance(instanceID, EC2StateTagKey, state, r.EC2Client)
-	if err != nil {
-		return err
-	}
-	return nil
+	return tagEC2instance(instanceID, EC2StateTagKey, state, r.EC2Client)
 }
 
 // validateRollingUpgradeObj validates rollup object for the type, maxUnavailable and drainTimeout
@@ -1025,6 +1021,12 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	// set the EC2 tag indicating the state to in-progress
 	err := r.setStateTag(ruObj, targetInstanceID, "in-progress")
 	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == "InvalidInstanceID.NotFound" {
+				ch <- nil
+				return
+			}
+		}
 		ch <- err
 		return
 	}
