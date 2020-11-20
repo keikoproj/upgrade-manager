@@ -2644,30 +2644,12 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	ch := make(chan error, 1)
-	rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, ch)
-
-	select {
-	case err, ok := <-ch:
-		fmt.Println(err)
-		g.Expect(ok).To(gomega.BeFalse()) // don't expect errors.
-	default:
-
-		// done.
-	}
+	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode)
+	g.Expect(err).To(gomega.BeNil()) // don't expect errors.
 
 	// nodeName is empty when node isn't part of the cluster. It must skip drain and terminate.
-	ch = make(chan error, 1)
-	rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode, ch)
-
-	select {
-	case err, ok := <-ch:
-		fmt.Println(err)
-		g.Expect(ok).To(gomega.BeFalse()) //don't expect errors.
-	default:
-
-		// done.
-	}
+	err = rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode)
+	g.Expect(err).To(gomega.BeNil()) // don't expect errors.
 
 }
 
