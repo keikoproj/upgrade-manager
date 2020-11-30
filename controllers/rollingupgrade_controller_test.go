@@ -997,14 +997,16 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 	someLaunchConfig := "some-launch-config"
 	diffLaunchConfig := "different-launch-config"
 	az := "az-1"
+
 	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchConfigurationName: &diffLaunchConfig, AvailabilityZone: &az}
 	mockAsg := autoscaling.Group{AutoScalingGroupName: &someAsg,
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
 
+	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg},
+		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy},
 	}
 
 	mgr, err := buildManager()
@@ -1023,6 +1025,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1054,8 +1057,9 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance, &mockInstance2}}
 
+	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy}}
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1074,6 +1078,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
@@ -1100,8 +1105,9 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
 
+	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy}}
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1129,7 +1135,10 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{Strategy: strategy},
+	}
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Log:          log2.NullLogger{},
 		ClusterState: NewClusterState(),
@@ -1158,8 +1167,9 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
 
+	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy}}
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1199,8 +1209,9 @@ func TestRunRestackNoNodeName(t *testing.T) {
 		LaunchConfigurationName: &someLaunchConfig,
 		Instances:               []*autoscaling.Instance{&mockInstance}}
 
+	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg}}
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy}}
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1391,6 +1402,7 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
 			AsgName: someAsg,
 			Strategy: upgrademgrv1alpha1.UpdateStrategy{
+				Mode: "lazy",
 				Type: upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy,
 			},
 		},
@@ -1432,6 +1444,7 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 		NodeList:        &nodeList,
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
