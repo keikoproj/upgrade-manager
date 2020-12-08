@@ -51,6 +51,7 @@ var (
 var (
 	CacheDefaultTTL                     = time.Second * 0
 	DescribeAutoScalingGroupsTTL        = 60 * time.Second
+	DescribeLaunchTemplatesTTL          = 60 * time.Second
 	CacheMaxItems                int64  = 5000
 	CacheItemsToPrune            uint32 = 500
 )
@@ -133,6 +134,7 @@ func main() {
 	cacheCfg := cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
 	cache.AddCaching(sess, cacheCfg)
 	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
+	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
 	sess.Handlers.Complete.PushFront(func(r *request.Request) {
 		ctx := r.HTTPRequest.Context()
 		log.Debugf("cache hit => %v, service => %s.%s",
