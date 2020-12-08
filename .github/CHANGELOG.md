@@ -1,6 +1,16 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.16] - 2020-12-8
+
+* Caching improvements to DescribeAutoScalinGroups (#142)
+* Various code refactoring (#138, #145, #148, #149)
+* Propagate existing environment variables (#144)
+* Documentation Fixes (#147)
+* CI Improvements (#146)
+* Fix standby node cleanup (#150)
+* Fix template version change detection (#153)
+
 ## [v0.15] - 2020-11-12
 
 * Extract script runner to a separate type; fix work with env. variables (#132)
