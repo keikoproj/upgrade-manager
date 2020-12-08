@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
@@ -97,6 +98,7 @@ type RollingUpgradeReconciler struct {
 	ASGClient       autoscalingiface.AutoScalingAPI
 	generatedClient *kubernetes.Clientset
 	NodeList        *corev1.NodeList
+	LaunchTemplates []*ec2.LaunchTemplate
 	inProcessASGs   sync.Map
 	admissionMap    sync.Map
 	ruObjNameToASG  AsgCache
@@ -461,6 +463,19 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	return nil
 }
 
+func (r *RollingUpgradeReconciler) populateLaunchTemplates() error {
+	launchTemplates := []*ec2.LaunchTemplate{}
+	err := r.EC2Client.DescribeLaunchTemplatesPages(&ec2.DescribeLaunchTemplatesInput{}, func(page *ec2.DescribeLaunchTemplatesOutput, lastPage bool) bool {
+		launchTemplates = append(launchTemplates, page.LaunchTemplates...)
+		return page.NextToken != nil
+	})
+	if err != nil {
+		return err
+	}
+	r.LaunchTemplates = launchTemplates
+	return nil
+}
+
 func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInterface v1.NodeInterface) error {
 	nodeList, err := nodeInterface.List(metav1.ListOptions{})
 	if err != nil {
@@ -635,6 +650,11 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	//TODO(shri): Ensure that no node is Unschedulable at this time.
 	err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
+		r.finishExecution(StatusError, 0, ctx, ruObj)
+		return
+	}
+
+	if err := r.populateLaunchTemplates(); err != nil {
 		r.finishExecution(StatusError, 0, ctx, ruObj)
 		return
 	}
@@ -1078,6 +1098,17 @@ func (r *RollingUpgradeReconciler) getNodeCreationTimestamp(ec2Instance *autosca
 	return false, time.Time{}
 }
 
+func (r *RollingUpgradeReconciler) getTemplateLatestVersion(templateName string) string {
+	for _, t := range r.LaunchTemplates {
+		name := aws.StringValue(t.LaunchTemplateName)
+		if name == templateName {
+			versionInt := aws.Int64Value(t.LatestVersionNumber)
+			return strconv.FormatInt(versionInt, 10)
+		}
+	}
+	return "0"
+}
+
 func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
 	definition *launchDefinition) bool {
 
@@ -1105,16 +1136,27 @@ func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.Rol
 			r.info(ruObj, "instance switching to launch template")
 			return true
 		}
-		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateId) != aws.StringValue(targetLaunchTemplate.LaunchTemplateId) {
-			r.info(ruObj, "launch template id differs")
+
+		var (
+			instanceTemplateId   = aws.StringValue(instanceLaunchTemplate.LaunchTemplateId)
+			templateId           = aws.StringValue(targetLaunchTemplate.LaunchTemplateId)
+			instanceTemplateName = aws.StringValue(instanceLaunchTemplate.LaunchTemplateName)
+			templateName         = aws.StringValue(targetLaunchTemplate.LaunchTemplateName)
+			instanceVersion      = aws.StringValue(instanceLaunchTemplate.Version)
+			templateVersion      = r.getTemplateLatestVersion(templateName)
+		)
+
+		if instanceTemplateId != templateId {
+			r.info(ruObj, "launch template id differs", "instanceTemplateId", instanceTemplateId, "templateId", templateId)
 			return true
 		}
-		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateName) != aws.StringValue(targetLaunchTemplate.LaunchTemplateName) {
-			r.info(ruObj, "launch template name differs")
+		if instanceTemplateName != templateName {
+			r.info(ruObj, "launch template name differs", "instanceTemplateName", instanceTemplateName, "templateName", templateName)
 			return true
 		}
-		if aws.StringValue(instanceLaunchTemplate.Version) != aws.StringValue(targetLaunchTemplate.Version) {
-			r.info(ruObj, "launch template version differs")
+
+		if instanceVersion != templateVersion {
+			r.info(ruObj, "launch template version differs", "instanceVersion", instanceVersion, "templateVersion", templateVersion)
 			return true
 		}
 	}
