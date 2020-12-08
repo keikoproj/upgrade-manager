@@ -2510,21 +2510,22 @@ func TestRequiresRefreshNotUpdateIfNoVersionChange(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	mockID := "some-id"
-	oldLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
+	instanceLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
 		LaunchTemplateId: aws.String("launch-template-id-v1"),
 		Version:          aws.String("1"),
 	}
 	az := "az-1"
-	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: oldLaunchTemplate, AvailabilityZone: &az}
+	mockInstance := autoscaling.Instance{InstanceId: &mockID, LaunchTemplate: instanceLaunchTemplate, AvailabilityZone: &az}
 
-	newLaunchTemplate := &autoscaling.LaunchTemplateSpecification{
-		LaunchTemplateId: aws.String("launch-template-id-v1"),
-		Version:          aws.String("1"),
+	launchTemplate := &ec2.LaunchTemplate{
+		LaunchTemplateId:    aws.String("launch-template-id-v1"),
+		LatestVersionNumber: aws.Int64(1),
 	}
 	definition := launchDefinition{
-		launchTemplate: newLaunchTemplate,
+		launchTemplate: instanceLaunchTemplate,
 	}
 	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	r.LaunchTemplates = append(r.LaunchTemplates, launchTemplate)
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	result := r.requiresRefresh(ruObj, &mockInstance, &definition)
 	g.Expect(result).To(gomega.Equal(false))
@@ -2545,7 +2546,14 @@ func TestForceRefresh(t *testing.T) {
 	definition := launchDefinition{
 		launchTemplate: launchTemplate,
 	}
+
+	ec2launchTemplate := &ec2.LaunchTemplate{
+		LaunchTemplateId:    aws.String("launch-template-id-v1"),
+		LatestVersionNumber: aws.Int64(1),
+	}
+
 	r := &RollingUpgradeReconciler{Log: log2.NullLogger{}}
+	r.LaunchTemplates = append(r.LaunchTemplates, ec2launchTemplate)
 	currentTime := metav1.NewTime(metav1.Now().Time)
 	oldTime := metav1.NewTime(currentTime.Time.AddDate(0, 0, -1))
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
