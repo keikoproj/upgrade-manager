@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -143,7 +144,8 @@ func TestPostDrainHelperPostDrainScriptSuccess(t *testing.T) {
 func TestPostDrainHelperPostDrainScriptError(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	mockNode := "some-node-name"
-	mockKubeCtlCall := "echo"
+	mockKubeCtlCall := "k() { echo $@ >> cmdlog.txt ; }; k"
+	os.Remove("cmdlog.txt")
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostDrain.Script = "exit 1"
@@ -153,6 +155,34 @@ func TestPostDrainHelperPostDrainScriptError(t *testing.T) {
 	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
+
+	// assert node was uncordoned
+	cmdlog, err := ioutil.ReadFile("cmdlog.txt")
+	g.Expect(string(cmdlog)).To(gomega.Equal(fmt.Sprintf("uncordon %s\n", mockNode)))
+	os.Remove("cmdlog.txt")
+}
+
+func TestPostDrainHelperPostDrainScriptErrorWithIgnoreDrainFailures(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	mockNode := "some-node-name"
+	mockKubeCtlCall := "k() { echo $@ >> cmdlog.txt ; }; k"
+	os.Remove("cmdlog.txt")
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true}}
+	ruObj.Spec.PostDrain.Script = "exit 1"
+
+	rcRollingUpgrade := createReconciler()
+	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj)
+
+	g.Expect(err).To(gomega.Not(gomega.BeNil()))
+
+	// assert node was not uncordoned
+	cmdlog, err := ioutil.ReadFile("cmdlog.txt")
+	g.Expect(string(cmdlog)).To(gomega.Equal(""))
+	os.Remove("cmdlog.txt")
 }
 
 func TestPostDrainHelperPostDrainWaitScriptSuccess(t *testing.T) {
@@ -174,7 +204,8 @@ func TestPostDrainHelperPostDrainWaitScriptSuccess(t *testing.T) {
 func TestPostDrainHelperPostDrainWaitScriptError(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	mockNode := "some-node-name"
-	mockKubeCtlCall := "echo"
+	mockKubeCtlCall := "k() { echo $@ >> cmdlog.txt ; }; k"
+	os.Remove("cmdlog.txt")
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	ruObj.Spec.PostDrain.PostWaitScript = "exit 1"
@@ -185,6 +216,35 @@ func TestPostDrainHelperPostDrainWaitScriptError(t *testing.T) {
 	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
+
+	// assert node was uncordoned
+	cmdlog, err := ioutil.ReadFile("cmdlog.txt")
+	g.Expect(string(cmdlog)).To(gomega.Equal(fmt.Sprintf("uncordon %s\n", mockNode)))
+	os.Remove("cmdlog.txt")
+}
+
+func TestPostDrainHelperPostDrainWaitScriptErrorWithIgnoreDrainFailures(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	mockNode := "some-node-name"
+	mockKubeCtlCall := "k() { echo $@ >> cmdlog.txt ; }; k"
+	os.Remove("cmdlog.txt")
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true}}
+	ruObj.Spec.PostDrain.PostWaitScript = "exit 1"
+	ruObj.Spec.PostDrainDelaySeconds = 0
+
+	rcRollingUpgrade := createReconciler()
+	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj)
+
+	g.Expect(err).To(gomega.Not(gomega.BeNil()))
+
+	// assert node was not uncordoned
+	cmdlog, err := ioutil.ReadFile("cmdlog.txt")
+	g.Expect(string(cmdlog)).To(gomega.Equal(""))
+	os.Remove("cmdlog.txt")
 }
 
 func TestDrainNodeSuccess(t *testing.T) {
