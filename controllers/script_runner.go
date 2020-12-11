@@ -141,7 +141,7 @@ func (r *ScriptRunner) PostWait(instanceID string, nodeName string, ruObj *upgra
 			result := errors.Wrap(err, msg)
 
 			if !ruObj.Spec.IgnoreDrainFailures {
-				r.info(ruObj, "Uncordoning the node %s since it failed to run postDrainWait Script", "nodeName", nodeName)
+				r.info(ruObj, "Uncordoning the node since it failed to run postDrainWait Script", "nodeName", nodeName)
 				_, err = r.uncordonNode(nodeName, ruObj)
 				if err != nil {
 					r.error(ruObj, err, "Failed to uncordon", "nodeName", nodeName)
@@ -163,7 +163,7 @@ func (r *ScriptRunner) PostDrain(instanceID string, nodeName string, ruObj *upgr
 			result := errors.Wrap(err, msg)
 
 			if !ruObj.Spec.IgnoreDrainFailures {
-				r.info(ruObj, "Uncordoning the node %s since it failed to run postDrain Script", "nodeName", nodeName)
+				r.info(ruObj, "Uncordoning the node since it failed to run postDrain Script", "nodeName", nodeName)
 				_, err = r.uncordonNode(nodeName, ruObj)
 				if err != nil {
 					r.error(ruObj, err, "Failed to uncordon", "nodeName", nodeName)
