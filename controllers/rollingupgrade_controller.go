@@ -240,7 +240,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 			return err
 		}
 
-		asg, err := r.GetAutoScalingGroup(ruObj.Name)
+		asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 		if err != nil {
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
@@ -270,7 +270,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 			r.error(ruObj, err, "unable to populate node list")
 		}
 
-		asg, err := r.GetAutoScalingGroup(ruObj.Name)
+		asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 		if err != nil {
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
@@ -337,7 +337,7 @@ func (r *RollingUpgradeReconciler) GetAutoScalingGroup(rollupName string) (*auto
 func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string) error {
 	r.info(ruObj, "Setting to stand-by", ruObj.Name, instanceID)
 
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		return err
 	}
@@ -434,7 +434,7 @@ func (r *RollingUpgradeReconciler) getNodeFromAsg(i *autoscaling.Instance, nodeL
 
 func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
 	// if value is still in cache, do nothing.
-	if !r.ruObjNameToASG.IsExpired(ruObj.Name) {
+	if !r.ruObjNameToASG.IsExpired(ruObj.NamespacedName()) {
 		return nil
 	}
 
@@ -458,7 +458,7 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	}
 
 	asg := result.AutoScalingGroups[0]
-	r.ruObjNameToASG.Store(ruObj.Name, asg)
+	r.ruObjNameToASG.Store(ruObj.NamespacedName(), asg)
 
 	return nil
 }
@@ -503,7 +503,7 @@ func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscali
 
 func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) (int, error) {
 
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		return 0, fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 	}
@@ -612,7 +612,7 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	r.ClusterState.deleteAllInstancesInAsg(ruObj.Spec.AsgName)
 	r.info(ruObj, "Deleted the entries of ASG in the cluster store", "asgName", ruObj.Spec.AsgName)
 	r.inProcessASGs.Delete(ruObj.Spec.AsgName)
-	r.admissionMap.Delete(ruObj.Name)
+	r.admissionMap.Delete(ruObj.NamespacedName())
 	r.info(ruObj, "Deleted from admission map ", "admissionMap", &r.admissionMap)
 }
 
@@ -629,7 +629,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 			MarkObjForCleanup(ruObj)
 		}
 
-		r.admissionMap.Delete(ruObj.Name)
+		r.admissionMap.Delete(ruObj.NamespacedName())
 		r.info(ruObj, "Deleted object from admission map")
 		return
 	}
@@ -659,7 +659,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		return
 	}
 
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		r.error(ruObj, err, "Unable to load ASG for rolling upgrade")
 		r.finishExecution(StatusError, 0, ctx, ruObj)
@@ -703,7 +703,7 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	if err != nil {
 		return errors.New("Unable to populate the ASG object")
 	}
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 	}
@@ -763,7 +763,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		if k8serrors.IsNotFound(err) {
 			// Object not found, return. Created objects are automatically garbage collected.
 			// For additional cleanup logic use finalizers.
-			r.admissionMap.Delete(req.Name)
+			r.admissionMap.Delete(req.NamespacedName)
 			r.info(ruObj, "Deleted object from map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -774,8 +774,8 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	// If the resource is being deleted, remove it from the admissionMap
 	if !ruObj.DeletionTimestamp.IsZero() {
 		r.info(ruObj, "Object is being deleted. No more processing")
-		r.admissionMap.Delete(ruObj.Name)
-		r.ruObjNameToASG.Delete(ruObj.Name)
+		r.admissionMap.Delete(ruObj.NamespacedName())
+		r.ruObjNameToASG.Delete(ruObj.NamespacedName())
 		r.info(ruObj, "Deleted object from admission map")
 		return reconcile.Result{}, nil
 	}
@@ -797,17 +797,17 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		return reconcile.Result{}, err
 	}
 
-	result, ok := r.admissionMap.Load(ruObj.Name)
+	result, ok := r.admissionMap.Load(ruObj.NamespacedName())
 	if ok {
 		if result == "processing" {
-			r.info(ruObj, "Found obj in map:", "name", ruObj.Name)
-			r.info(ruObj, "Object already being processed", "name", ruObj.Name)
+			r.info(ruObj, "Found obj in map:", "name", ruObj.NamespacedName())
+			r.info(ruObj, "Object already being processed", "name", ruObj.NamespacedName())
 		} else {
-			r.info(ruObj, "Sync map with invalid entry for ", "name", ruObj.Name)
+			r.info(ruObj, "Sync map with invalid entry for ", "name", ruObj.NamespacedName())
 		}
 	} else {
-		r.info(ruObj, "Adding obj to map: ", "name", ruObj.Name)
-		r.admissionMap.Store(ruObj.Name, "processing")
+		r.info(ruObj, "Adding obj to map: ", "name", ruObj.NamespacedName())
+		r.admissionMap.Store(ruObj.NamespacedName(), "processing")
 		go r.Process(&ctx, ruObj)
 	}
 
@@ -1011,7 +1011,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	defer r.ClusterState.markUpdateCompleted(targetInstanceID)
 
 	// Check if the rollingupgrade object still exists
-	_, ok := r.admissionMap.Load(ruObj.Name)
+	_, ok := r.admissionMap.Load(ruObj.NamespacedName())
 	if !ok {
 		r.info(ruObj, "Object either force completed or deleted. Ignoring node update")
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1

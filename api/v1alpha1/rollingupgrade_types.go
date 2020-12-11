@@ -16,6 +16,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -133,6 +135,10 @@ const (
 
 func (c UpdateStrategyMode) String() string {
 	return string(c)
+}
+
+func (r RollingUpgrade) NamespacedName() string {
+	return fmt.Sprintf("%v/%v", r.Name, r.Namespace)
 }
 
 // UpdateStrategy holds the information needed to perform update based on different update strategies
