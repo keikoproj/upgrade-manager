@@ -1,6 +1,12 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.17] - 2020-12-11
+
+* aa2b73b - use NamespacedName (#160)
+* 6f57dcf - Abort on strategy failure instead of continuing (#152)
+* f84c3a2 - Don't uncordon node on failure to run postDrain script when IgnoreDrainFailures set (#151)
+
 ## [v0.16] - 2020-12-8
 
 * Caching improvements to DescribeAutoScalinGroups (#142)
