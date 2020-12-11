@@ -170,7 +170,7 @@ func TestPostDrainHelperPostDrainScriptErrorWithIgnoreDrainFailures(t *testing.T
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true}}
+		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true}}
 	ruObj.Spec.PostDrain.Script = "exit 1"
 
 	rcRollingUpgrade := createReconciler()
@@ -231,7 +231,7 @@ func TestPostDrainHelperPostDrainWaitScriptErrorWithIgnoreDrainFailures(t *testi
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true}}
+		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true}}
 	ruObj.Spec.PostDrain.PostWaitScript = "exit 1"
 	ruObj.Spec.PostDrainDelaySeconds = 0
 
@@ -770,7 +770,7 @@ func TestPopulateAsgSuccess(t *testing.T) {
 
 	expectedAsg := autoscaling.Group{AutoScalingGroupName: &correctAsg}
 
-	requestedAsg, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)
+	requestedAsg, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObj.NamespacedName())
 	g.Expect(ok).To(gomega.BeTrue())
 	g.Expect(requestedAsg.AutoScalingGroupName).To(gomega.Equal(expectedAsg.AutoScalingGroupName))
 }
@@ -853,10 +853,10 @@ func TestParallelAsgTracking(t *testing.T) {
 	g.Expect(err).To(gomega.BeNil())
 
 	//This test ensures that we can lookup each of 2 separate ASGs after populating both
-	requestedAsgA, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObjA.Name)
+	requestedAsgA, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObjA.NamespacedName())
 	g.Expect(ok).To(gomega.BeTrue())
 
-	requestedAsgB, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObjB.Name)
+	requestedAsgB, ok := rcRollingUpgrade.ruObjNameToASG.Load(ruObjB.NamespacedName())
 	g.Expect(ok).To(gomega.BeTrue())
 
 	g.Expect(requestedAsgA.AutoScalingGroupName).To(gomega.Equal(expectedAsgA.AutoScalingGroupName))
@@ -1027,8 +1027,8 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1078,8 +1078,8 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1115,8 +1115,8 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1138,7 +1138,7 @@ func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
 	}
 	ctx := context.TODO()
 
-	g.Expect(rcRollingUpgrade.ruObjNameToASG.Load(ruObj.Name)).To(gomega.BeNil())
+	g.Expect(rcRollingUpgrade.ruObjNameToASG.Load(ruObj.NamespacedName())).To(gomega.BeNil())
 	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj)
 	g.Expect(int).To(gomega.Equal(0))
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
@@ -1175,8 +1175,8 @@ func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1221,8 +1221,8 @@ func TestRunRestackNoNodeName(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1285,8 +1285,8 @@ func TestRunRestackDrainNodeFail(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1345,8 +1345,8 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1436,8 +1436,8 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1493,8 +1493,8 @@ func TestUpdateInstances(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -1559,8 +1559,8 @@ func TestUpdateInstancesError(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 	rcRollingUpgrade.ScriptRunner.KubectlCall = "exit 0;"
 
 	ctx := context.TODO()
@@ -1620,8 +1620,8 @@ func TestUpdateInstancesHandlesDeletedInstances(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 	rcRollingUpgrade.ScriptRunner.KubectlCall = "exit 0;"
 
 	ctx := context.TODO()
@@ -1687,8 +1687,8 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 	rcRollingUpgrade.ScriptRunner.KubectlCall = "exit 0;"
 	ctx := context.TODO()
 
@@ -2302,8 +2302,8 @@ func TestRunRestackNoNodeInAsg(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 
 	ctx := context.TODO()
 
@@ -2439,7 +2439,7 @@ func TestRunRestackWithNodesLessThanMaxUnavailable(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 	rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(someAsg)
 	ctx := context.TODO()
 
@@ -2768,7 +2768,7 @@ func TestUpdateInstancesNotExists(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, &mockAsg)
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), &mockAsg)
 	rcRollingUpgrade.ScriptRunner.KubectlCall = "date"
 
 	// Intentionally do not populate the admissionMap with the ruObj
@@ -2824,8 +2824,8 @@ func TestValidateNodesLaunchDefinitionSameLaunchConfig(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
@@ -2863,8 +2863,8 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchConfig(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
@@ -2900,8 +2900,8 @@ func TestValidateNodesLaunchDefinitionSameLaunchTemplate(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
@@ -2938,8 +2938,8 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchTemplate(t *testing.T) {
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
 	}
-	rcRollingUpgrade.admissionMap.Store(ruObj.Name, "processing")
-	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.Name, mockAsg)
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
 	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
