@@ -49,10 +49,11 @@ var (
 )
 
 var (
-	CacheDefaultTTL              time.Duration = time.Second * 0
-	DescribeAutoScalingGroupsTTL time.Duration = 60 * time.Second
-	CacheMaxItems                int64         = 5000
-	CacheItemsToPrune            uint32        = 500
+	CacheDefaultTTL                     = time.Second * 0
+	DescribeAutoScalingGroupsTTL        = 60 * time.Second
+	DescribeLaunchTemplatesTTL          = 60 * time.Second
+	CacheMaxItems                int64  = 5000
+	CacheItemsToPrune            uint32 = 500
 )
 
 var DefaultRetryer = client.DefaultRetryer{
@@ -133,6 +134,7 @@ func main() {
 	cacheCfg := cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
 	cache.AddCaching(sess, cacheCfg)
 	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
+	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
 	sess.Handlers.Complete.PushFront(func(r *request.Request) {
 		ctx := r.HTTPRequest.Context()
 		log.Debugf("cache hit => %v, service => %s.%s",
@@ -142,13 +144,15 @@ func main() {
 		)
 	})
 
+	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
 	reconciler := &controllers.RollingUpgradeReconciler{
 		Client:       mgr.GetClient(),
-		Log:          ctrl.Log.WithName("controllers").WithName("RollingUpgrade"),
+		Log:          logger,
 		ClusterState: controllers.NewClusterState(),
 		ASGClient:    autoscaling.New(sess),
 		EC2Client:    ec2.New(sess),
 		CacheConfig:  cacheCfg,
+		ScriptRunner: controllers.NewScriptRunner(logger),
 	}
 
 	reconciler.SetMaxParallel(maxParallel)

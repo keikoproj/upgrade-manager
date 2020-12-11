@@ -7,7 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	log2 "sigs.k8s.io/controller-runtime/pkg/log"
-	"sync"
 	"testing"
 	"time"
 )
@@ -19,7 +18,6 @@ func Test_createK8sV1Event(t *testing.T) {
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	c = mgr.GetClient()
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		Client:          mgr.GetClient(),
@@ -27,10 +25,9 @@ func Test_createK8sV1Event(t *testing.T) {
 		ASGClient:       MockAutoscalingGroup{},
 		EC2Client:       MockEC2{},
 		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
-		admissionMap:    sync.Map{},
-		ruObjNameToASG:  sync.Map{},
 		ClusterState:    NewClusterState(),
 		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+		ScriptRunner:    NewScriptRunner(log2.NullLogger{}),
 	}
 
 	event := rcRollingUpgrade.createK8sV1Event(ruObj, EventReasonRUStarted, EventLevelNormal, map[string]string{})

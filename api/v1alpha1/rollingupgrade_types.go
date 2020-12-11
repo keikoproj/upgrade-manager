@@ -16,6 +16,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -52,6 +54,12 @@ type RollingUpgradeSpec struct {
 	IgnoreDrainFailures bool `json:"ignoreDrainFailures,omitempty"`
 	// ForceRefresh enables draining and terminating the node even if the launch config/template hasn't changed.
 	ForceRefresh bool `json:"forceRefresh,omitempty"`
+	// ReadinessGates allow to specify label selectors that node must match to be considered ready.
+	ReadinessGates []NodeReadinessGate `json:"readinessGates,omitempty"`
+}
+
+type NodeReadinessGate struct {
+	MatchLabels map[string]string `json:"matchLabels,omitempty" protobuf:"bytes,1,rep,name=matchLabels"`
 }
 
 // RollingUpgradeStatus defines the observed state of RollingUpgrade
@@ -102,7 +110,7 @@ func init() {
 }
 
 // UpdateStrategyType indicates how the update has to be rolled out
-// whether to roll the update Az wise or all Azs at once
+// whether to roll the update AZ wise or all Azs at once
 type UpdateStrategyType string
 
 type UpdateStrategyMode string
@@ -110,15 +118,16 @@ type UpdateStrategyMode string
 type UpgradeConditionType string
 
 const (
-	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
+	// RandomUpdate strategy treats all the availability zones as a single unit and picks random nodes for update.
 	RandomUpdateStrategy UpdateStrategyType = "randomUpdate"
 
-	// RandomUpdate strategy treats all the Azs as a single unit and picks random nodes for update
+	// UniformAcrossAzUpdateStrategy Picks same number of nodes or same percentage of nodes from each AZ for update.
 	UniformAcrossAzUpdateStrategy UpdateStrategyType = "uniformAcrossAzUpdate"
 
 	UpdateStrategyModeLazy  UpdateStrategyMode = "lazy"
 	UpdateStrategyModeEager UpdateStrategyMode = "eager"
-	// Other update strategies such as rolling update by Az or rolling update with a predifined instance list
+
+	// Other update strategies such as rolling update by AZ or rolling update with a pre-defined instance list
 	// can be implemented in future by adding more update strategy types
 
 	UpgradeComplete UpgradeConditionType = "Complete"
@@ -126,6 +135,10 @@ const (
 
 func (c UpdateStrategyMode) String() string {
 	return string(c)
+}
+
+func (r RollingUpgrade) NamespacedName() string {
+	return fmt.Sprintf("%v/%v", r.Name, r.Namespace)
 }
 
 // UpdateStrategy holds the information needed to perform update based on different update strategies

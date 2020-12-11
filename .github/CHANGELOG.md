@@ -1,6 +1,37 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.17] - 2020-12-11
+
+* aa2b73b - use NamespacedName (#160)
+* 6f57dcf - Abort on strategy failure instead of continuing (#152)
+* f84c3a2 - Don't uncordon node on failure to run postDrain script when IgnoreDrainFailures set (#151)
+
+## [v0.16] - 2020-12-8
+
+* Caching improvements to DescribeAutoScalinGroups (#142)
+* Various code refactoring (#138, #145, #148, #149)
+* Propagate existing environment variables (#144)
+* Documentation Fixes (#147)
+* CI Improvements (#146)
+* Fix standby node cleanup (#150)
+* Fix template version change detection (#153)
+
+## [v0.15] - 2020-11-12
+
+* Extract script runner to a separate type; fix work with env. variables (#132)
+* Fix bug when switching to launch templates (#136)
+* During upgrade, ignore terminated instance. (#134)
+* Readiness gates implementation for eager mode (#130)
+* Fix few typos and simplify error returns, remove redundant types (#131)
+* Upgrade to Go 1.15 (#128)
+* Fix typo in README.md. (#125)
+
+## [v0.14] - 2020-09-23
+
+* Terminate unjoined nodes (#120)
+* Repo selection for CI and BDD workflows & CI step for releases (#117)
+
 ## [v0.13] - 2020-08-25
 
 * Post upgrade validation step (#112)
