@@ -953,56 +953,50 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
-	targetInstanceID string,
-	ch chan error) {
+	targetInstanceID string) error {
 
 	// Set instance to standby
 	err := r.SetStandby(ruObj, targetInstanceID)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	// Wait for new instance to be created
 	err = r.WaitForDesiredInstances(ruObj)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	// Wait for in-service nodes to be ready and match desired
 	err = r.WaitForDesiredNodes(ruObj)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	// Drain and wait for draining node.
-	r.DrainTerminate(ruObj, nodeName, targetInstanceID, ch)
-
+	return r.DrainTerminate(ruObj, nodeName, targetInstanceID)
 }
 
 func (r *RollingUpgradeReconciler) DrainTerminate(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
-	targetInstanceID string,
-	ch chan error) {
+	targetInstanceID string) error {
 
 	// Drain and wait for draining node.
 	if nodeName != "" {
 		err := r.DrainNode(ruObj, nodeName, targetInstanceID, ruObj.Spec.Strategy.DrainTimeout)
 		if err != nil && !ruObj.Spec.IgnoreDrainFailures {
-			ch <- err
-			return
+			return err
 		}
 	}
 
 	// Terminate instance.
 	err := r.TerminateNode(ruObj, targetInstanceID, nodeName)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
+
+	return nil
 }
 
 // UpdateInstance runs the rolling upgrade on one instance from an autoscaling group
@@ -1054,10 +1048,17 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	mode := ruObj.Spec.Strategy.Mode.String()
 	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
 		r.info(ruObj, "starting replacement with eager mode", "mode", mode)
-		r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, ch)
+		err = r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID)
 	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
 		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
-		r.DrainTerminate(ruObj, nodeName, targetInstanceID, ch)
+		err = r.DrainTerminate(ruObj, nodeName, targetInstanceID)
+	} else {
+		err = errors.Errorf("unhandled strategy mode: %s", mode)
+	}
+
+	if err != nil {
+		ch <- err
+		return
 	}
 
 	unjoined, err := r.WaitForTermination(ruObj, nodeName, r.generatedClient.CoreV1().Nodes())
