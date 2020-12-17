@@ -455,14 +455,15 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) populateLaunchTemplates() error {
+func (r *RollingUpgradeReconciler) populateLaunchTemplates(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
 	launchTemplates := []*ec2.LaunchTemplate{}
 	err := r.EC2Client.DescribeLaunchTemplatesPages(&ec2.DescribeLaunchTemplatesInput{}, func(page *ec2.DescribeLaunchTemplatesOutput, lastPage bool) bool {
 		launchTemplates = append(launchTemplates, page.LaunchTemplates...)
 		return page.NextToken != nil
 	})
 	if err != nil {
-		return err
+		r.error(ruObj, err, "Failed to populate launch template list")
+		return fmt.Errorf("failed to populate launch template list for %s: %w", ruObj.NamespacedName(), err)
 	}
 	r.LaunchTemplates = launchTemplates
 	return nil
@@ -648,7 +649,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 		return
 	}
 
-	if err := r.populateLaunchTemplates(); err != nil {
+	if err := r.populateLaunchTemplates(ruObj); err != nil {
 		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
