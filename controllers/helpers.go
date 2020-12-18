@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
@@ -82,7 +81,7 @@ func getInstanceStateInASG(group *autoscaling.Group, instanceID string) (string,
 			return aws.StringValue(instance.LifecycleState), nil
 		}
 	}
-	return "", errors.Errorf("could not get instance group state, instance %v not found", instanceID)
+	return "", fmt.Errorf("could not get instance group state, instance %s not found", instanceID)
 }
 
 func isInServiceLifecycleState(state string) bool {

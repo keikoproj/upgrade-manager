@@ -21,12 +21,10 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/pkg/errors"
-
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/onsi/gomega"
 	"golang.org/x/net/context"
 	corev1 "k8s.io/api/core/v1"
@@ -123,7 +121,7 @@ func TestPreDrainScriptError(t *testing.T) {
 
 	rcRollingUpgrade := createReconciler()
 	err := rcRollingUpgrade.preDrainHelper("test-instance-id", "test", instance)
-	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to run preDrain script"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring("Failed to run preDrain script"))
 }
 
 func TestPostDrainHelperPostDrainScriptSuccess(t *testing.T) {
@@ -580,7 +578,7 @@ func TestTerminateNodeErrorOtherError(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New("some-other-aws-error",
 		"some message",
-		errors.New("some error"))}
+		fmt.Errorf("some error"))}
 
 	rcRollingUpgrade := &RollingUpgradeReconciler{
 		ClusterState: NewClusterState(),
@@ -645,7 +643,7 @@ func TestTerminateNodePostTerminateScriptErrorOtherError(t *testing.T) {
 	}
 	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "")
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.HavePrefix("Failed to run postTerminate script: "))
+	g.Expect(err.Error()).To(gomega.ContainSubstring("Failed to run postTerminate script: "))
 }
 
 func TestLoadEnvironmentVariables(t *testing.T) {
@@ -801,7 +799,7 @@ func TestPopulateAsgTooMany(t *testing.T) {
 	err := rcRollingUpgrade.populateAsg(ruObj)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.Equal("Too many ASGs"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring("Too many ASGs"))
 }
 
 func TestPopulateAsgNone(t *testing.T) {
@@ -820,7 +818,7 @@ func TestPopulateAsgNone(t *testing.T) {
 	err := rcRollingUpgrade.populateAsg(ruObj)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.Equal("No ASG found"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring("no ASG found"))
 }
 
 func TestParallelAsgTracking(t *testing.T) {
@@ -874,7 +872,7 @@ func (nodeInterface *MockNodeList) List(options metav1.ListOptions) (*corev1.Nod
 	list := &corev1.NodeList{}
 
 	if nodeInterface.errorFlag {
-		return list, errors.New("error flag raised")
+		return list, fmt.Errorf("error flag raised")
 	}
 
 	node1 := corev1.Node{TypeMeta: metav1.TypeMeta{Kind: "Node", APIVersion: "v1beta1"},
@@ -915,7 +913,7 @@ func TestPopulateNodeListError(t *testing.T) {
 	err := rcRollingUpgrade.populateNodeList(ruObj, mockNodeListInterface)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.HavePrefix(ruObj.Name + ": Failed to get all nodes in the cluster:"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring("Failed to get all nodes in the cluster:"))
 }
 
 func TestFinishExecutionCompleted(t *testing.T) {
@@ -1333,7 +1331,7 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	// Error flag set, should return error
 	mockAutoscalingGroup := MockAutoscalingGroup{errorFlag: true, awsErr: awserr.New("some-other-aws-error",
 		"some message",
-		errors.New("some error"))}
+		fmt.Errorf("some error"))}
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
