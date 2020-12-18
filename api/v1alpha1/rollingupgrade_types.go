@@ -74,6 +74,15 @@ type RollingUpgradeStatus struct {
 	Conditions []RollingUpgradeCondition `json:"conditions,omitempty"`
 }
 
+const (
+	// StatusRunning marks the CR to be running.
+	StatusRunning = "running"
+	// StatusComplete marks the CR as completed.
+	StatusComplete = "completed"
+	// StatusError marks the CR as errored out.
+	StatusError = "error"
+)
+
 // RollingUpgradeCondition describes the state of the RollingUpgrade
 type RollingUpgradeCondition struct {
 	Type   UpgradeConditionType   `json:"type,omitempty"`
