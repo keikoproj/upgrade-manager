@@ -49,12 +49,6 @@ import (
 )
 
 const (
-	// StatusRunning marks the CR to be running.
-	StatusRunning = "running"
-	// StatusComplete marks the CR as completed.
-	StatusComplete = "completed"
-	// StatusError marks the CR as errored out.
-	StatusError = "error"
 	// JanitorAnnotation is for completed objects.
 	JanitorAnnotation = "janitor/ttl"
 	// ClearCompletedFrequency is the time after which a completed rollingUpgrade object is deleted.
@@ -587,7 +581,7 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	}
 	// end event
 	var level string
-	if finalStatus == StatusComplete {
+	if finalStatus == upgrademgrv1alpha1.StatusComplete {
 		level = EventLevelNormal
 	} else {
 		level = EventLevelWarning
@@ -620,8 +614,8 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 
-	if ruObj.Status.CurrentStatus == StatusComplete ||
-		ruObj.Status.CurrentStatus == StatusError {
+	if ruObj.Status.CurrentStatus == upgrademgrv1alpha1.StatusComplete ||
+		ruObj.Status.CurrentStatus == upgrademgrv1alpha1.StatusError {
 		r.info(ruObj, "No more processing", "currentStatus", ruObj.Status.CurrentStatus)
 
 		if exists := ruObj.ObjectMeta.Annotations[JanitorAnnotation]; exists == "" {
@@ -643,32 +637,32 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	r.CacheConfig.FlushCache("autoscaling")
 	err := r.populateAsg(ruObj)
 	if err != nil {
-		r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
 
 	//TODO(shri): Ensure that no node is Unschedulable at this time.
 	err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
-		r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
 
 	if err := r.populateLaunchTemplates(); err != nil {
-		r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
 
 	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		r.error(ruObj, err, "Unable to load ASG for rolling upgrade")
-		r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
 
 	// Update the CR with some basic info before staring the restack.
 	ruObj.Status.StartTime = time.Now().Format(time.RFC3339)
-	ruObj.Status.CurrentStatus = StatusRunning
+	ruObj.Status.CurrentStatus = upgrademgrv1alpha1.StatusRunning
 	ruObj.Status.NodesProcessed = 0
 	ruObj.Status.TotalNodes = len(asg.Instances)
 
@@ -680,7 +674,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	nodesProcessed, err := r.runRestack(ctx, ruObj)
 	if err != nil {
 		r.error(ruObj, err, "Failed to runRestack")
-		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, nodesProcessed, ctx, ruObj)
 		return
 	}
 
@@ -688,11 +682,11 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	r.info(ruObj, "Validating the launch definition of nodes and ASG")
 	if err := r.validateNodesLaunchDefinition(ruObj); err != nil {
 		r.error(ruObj, err, "Launch definition validation failed")
-		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, nodesProcessed, ctx, ruObj)
 		return
 	}
 
-	r.finishExecution(StatusComplete, nodesProcessed, ctx, ruObj)
+	r.finishExecution(upgrademgrv1alpha1.StatusComplete, nodesProcessed, ctx, ruObj)
 }
 
 //Check if ec2Instances and the ASG have same launch config.
@@ -735,9 +729,9 @@ func MarkObjForCleanup(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 	}
 
 	switch ruObj.Status.CurrentStatus {
-	case StatusComplete:
+	case upgrademgrv1alpha1.StatusComplete:
 		ruObj.ObjectMeta.Annotations[JanitorAnnotation] = ClearCompletedFrequency
-	case StatusError:
+	case upgrademgrv1alpha1.StatusError:
 		ruObj.ObjectMeta.Annotations[JanitorAnnotation] = ClearErrorFrequency
 	}
 }
