@@ -550,7 +550,7 @@ func TestTerminateNodeErrorScalingActivityInProgress(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "")
-	g.Expect(err.Error()).To(gomega.ContainSubstring("No more retries left"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring("no more retries left"))
 }
 
 func TestTerminateNodeErrorResourceContention(t *testing.T) {
@@ -570,7 +570,7 @@ func TestTerminateNodeErrorResourceContention(t *testing.T) {
 	}
 
 	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "")
-	g.Expect(err.Error()).To(gomega.ContainSubstring("No more retries left"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring("no more retries left"))
 }
 
 func TestTerminateNodeErrorOtherError(t *testing.T) {
