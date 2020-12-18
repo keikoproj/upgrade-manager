@@ -56,14 +56,6 @@ var (
 	CacheItemsToPrune            uint32 = 500
 )
 
-var DefaultRetryer = client.DefaultRetryer{
-	NumMaxRetries:    12,
-	MinThrottleDelay: time.Second * 5,
-	MaxThrottleDelay: time.Second * 60,
-	MinRetryDelay:    time.Second * 1,
-	MaxRetryDelay:    time.Second * 5,
-}
-
 func init() {
 
 	err := upgrademgrv1alpha1.AddToScheme(scheme)
@@ -120,8 +112,13 @@ func main() {
 		log.SetLevel("debug")
 	}
 
-	retryer := DefaultRetryer
-	retryer.NumMaxRetries = maxAPIRetries
+	retryer := client.DefaultRetryer{
+		NumMaxRetries:    maxAPIRetries,
+		MinThrottleDelay: time.Second * 5,
+		MaxThrottleDelay: time.Second * 60,
+		MinRetryDelay:    time.Second * 1,
+		MaxRetryDelay:    time.Second * 5,
+	}
 
 	config := aws.NewConfig().WithRegion(region)
 	config = config.WithCredentialsChainVerboseErrors(true)
