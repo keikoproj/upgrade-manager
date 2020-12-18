@@ -146,8 +146,9 @@ func (c UpdateStrategyMode) String() string {
 	return string(c)
 }
 
+// NamespacedName returns namespaced name of the object.
 func (r RollingUpgrade) NamespacedName() string {
-	return fmt.Sprintf("%v/%v", r.Name, r.Namespace)
+	return fmt.Sprintf("%s/%s", r.Namespace, r.Name)
 }
 
 // UpdateStrategy holds the information needed to perform update based on different update strategies
