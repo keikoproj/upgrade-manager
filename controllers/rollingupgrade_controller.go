@@ -32,10 +32,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
@@ -172,7 +170,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	// Running kubectl drain node.
 	err := r.preDrainHelper(instanceID, nodeName, ruObj)
 	if err != nil {
-		return errors.New(ruObj.Name + ": Predrain script failed: " + err.Error())
+		return fmt.Errorf("%s: pre-drain script failed: %w", ruObj.NamespacedName(), err)
 	}
 
 	errChan := make(chan error)
@@ -219,7 +217,7 @@ func (r *RollingUpgradeReconciler) CallKubectlDrain(nodeName string, ruObj *upgr
 			errChan <- nil
 			return
 		}
-		errChan <- errors.New(ruObj.Name + ": Failed to drain: " + err.Error())
+		errChan <- fmt.Errorf("%s failed to drain: %w", ruObj.NamespacedName(), err)
 		return
 	}
 	errChan <- nil
@@ -247,7 +245,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 
 		r.info(ruObj, "new instance has not yet joined the scaling group")
 	}
-	return errors.Wrapf(err, "%v: WaitForDesiredInstances timed out while waiting for instance to be added", ruObj.Name)
+	return fmt.Errorf("%s: WaitForDesiredInstances timed out while waiting for instance to be added: %w", ruObj.NamespacedName(), err)
 }
 
 func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
@@ -290,7 +288,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 
 		r.info(ruObj, "new node has not yet joined the cluster")
 	}
-	return errors.Wrapf(err, "%v: WaitForDesiredNodes timed out while waiting for nodes to join", ruObj.Name)
+	return fmt.Errorf("%s: WaitForDesiredNodes timed out while waiting for nodes to join: %w", ruObj.NamespacedName(), err)
 }
 
 func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
@@ -306,7 +304,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 		}
 
 		_, err := nodeInterface.Get(nodeName, metav1.GetOptions{})
-		if v1errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			r.info(ruObj, "node is unjoined from cluster, upgrade will proceed", "nodeName", nodeName)
 			break
 		}
@@ -319,10 +317,10 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 	return true, nil
 }
 
-func (r *RollingUpgradeReconciler) GetAutoScalingGroup(rollupName string) (*autoscaling.Group, error) {
-	val, ok := r.ruObjNameToASG.Load(rollupName)
+func (r *RollingUpgradeReconciler) GetAutoScalingGroup(namespacedName string) (*autoscaling.Group, error) {
+	val, ok := r.ruObjNameToASG.Load(namespacedName)
 	if !ok {
-		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG with name: %s", rollupName)
+		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG with name: %s", namespacedName)
 	}
 	return val, nil
 }
@@ -440,15 +438,15 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	result, err := r.ASGClient.DescribeAutoScalingGroups(input)
 	if err != nil {
 		r.error(ruObj, err, "Failed to describe autoscaling group")
-		return errors.Wrap(err, ruObj.Name+": Failed to describe autoscaling group")
+		return fmt.Errorf("%s: failed to describe autoscaling group: %w", ruObj.NamespacedName(), err)
 	}
 
 	if len(result.AutoScalingGroups) == 0 {
 		r.info(ruObj, "%s: No ASG found with name %s!\n", ruObj.Name, ruObj.Spec.AsgName)
-		return errors.New("No ASG found")
+		return fmt.Errorf("%s: no ASG found", ruObj.NamespacedName())
 	} else if len(result.AutoScalingGroups) > 1 {
 		r.info(ruObj, "%s: Too many asgs found with name %d!\n", ruObj.Name, len(result.AutoScalingGroups))
-		return errors.New("Too many ASGs")
+		return fmt.Errorf("%s: Too many ASGs: %d", ruObj.NamespacedName(), len(result.AutoScalingGroups))
 	}
 
 	asg := result.AutoScalingGroups[0]
@@ -475,7 +473,7 @@ func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.Ro
 	if err != nil {
 		msg := "Failed to get all nodes in the cluster: " + err.Error()
 		r.info(ruObj, msg)
-		return errors.Wrap(err, ruObj.Name+": Failed to get all nodes in the cluster")
+		return fmt.Errorf("%s: Failed to get all nodes in the cluster: %w", ruObj.NamespacedName(), err)
 	}
 	r.NodeList = nodeList
 	return nil
@@ -547,7 +545,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 			r.info(ruObj, errorMessage)
 
 			// this should never be case, return error
-			return processedInstances, errors.New(errorMessage)
+			return processedInstances, fmt.Errorf(errorMessage)
 		}
 
 		// update the instances
@@ -695,11 +693,11 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	var err error
 	err = r.populateAsg(ruObj)
 	if err != nil {
-		return errors.New("Unable to populate the ASG object")
+		return fmt.Errorf("%s: Unable to populate the ASG object: %w", ruObj.NamespacedName(), err)
 	}
 	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
-		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		return fmt.Errorf("%s: Unable to load ASG with name: %w", ruObj.NamespacedName(), err)
 	}
 	launchDefinition := NewLaunchDefinition(asg)
 	launchConfigASG, launchTemplateASG := launchDefinition.launchConfigurationName, launchDefinition.launchTemplate
@@ -833,8 +831,8 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 	// validating the maxUnavailable value
 	if strategy.MaxUnavailable.Type == intstr.Int {
 		if strategy.MaxUnavailable.IntVal <= 0 {
-			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %d",
-				ruObj.Name, strategy.MaxUnavailable.IntVal))
+			err := fmt.Errorf("%s: Invalid value for maxUnavailable - %d",
+				ruObj.Name, strategy.MaxUnavailable.IntVal)
 			r.error(ruObj, err, "Invalid value for maxUnavailable", "value", strategy.MaxUnavailable.IntVal)
 			return err
 		}
@@ -842,8 +840,8 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 		strVal := strategy.MaxUnavailable.StrVal
 		intValue, _ := strconv.Atoi(strings.Trim(strVal, "%"))
 		if intValue <= 0 || intValue > 100 {
-			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %s",
-				ruObj.Name, strategy.MaxUnavailable.StrVal))
+			err := fmt.Errorf("%s: Invalid value for maxUnavailable - %s",
+				ruObj.Name, strategy.MaxUnavailable.StrVal)
 			r.error(ruObj, err, "Invalid value for maxUnavailable", "value", strategy.MaxUnavailable.StrVal)
 			return err
 		}
@@ -852,7 +850,7 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 	// validating the strategy type
 	if strategy.Type != upgrademgrv1alpha1.RandomUpdateStrategy &&
 		strategy.Type != upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy {
-		err := errors.New(fmt.Sprintf("%s: Invalid value for strategy type - %s", ruObj.Name, strategy.Type))
+		err := fmt.Errorf("%s: Invalid value for strategy type - %s", ruObj.NamespacedName(), strategy.Type)
 		r.error(ruObj, err, "Invalid value for strategy type", "value", strategy.Type)
 		return err
 	}
@@ -1047,7 +1045,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
 		err = r.DrainTerminate(ruObj, nodeName, targetInstanceID)
 	} else {
-		err = errors.Errorf("unhandled strategy mode: %s", mode)
+		err = fmt.Errorf("%s: unhandled strategy mode: %s", ruObj.NamespacedName(), mode)
 	}
 
 	if err != nil {

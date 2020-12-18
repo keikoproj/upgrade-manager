@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"github.com/go-logr/logr"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
-	"github.com/pkg/errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -112,7 +111,7 @@ func (r *ScriptRunner) PostTerminate(instanceID string, nodeName string, ruObj *
 			}
 			msg := "Failed to run postTerminate script"
 			r.error(ruObj, err, msg, "instanceID", instanceID)
-			return errors.Wrap(err, msg)
+			return fmt.Errorf("%s: %s: %w", ruObj.NamespacedName(), msg, err)
 		}
 	}
 	return nil
@@ -126,7 +125,7 @@ func (r *ScriptRunner) PreDrain(instanceID string, nodeName string, ruObj *upgra
 		if err != nil {
 			msg := "Failed to run preDrain script"
 			r.error(ruObj, err, msg)
-			return errors.Wrap(err, msg)
+			return fmt.Errorf("%s: %s: %w", ruObj.NamespacedName(), msg, err)
 		}
 	}
 	return nil
@@ -138,7 +137,7 @@ func (r *ScriptRunner) PostWait(instanceID string, nodeName string, ruObj *upgra
 		if err != nil {
 			msg := "Failed to run postDrainWait script: " + err.Error()
 			r.error(ruObj, err, msg)
-			result := errors.Wrap(err, msg)
+			result := fmt.Errorf("%s: %s: %w", ruObj.NamespacedName(), msg, err)
 
 			if !ruObj.Spec.IgnoreDrainFailures {
 				r.info(ruObj, "Uncordoning the node since it failed to run postDrainWait Script", "nodeName", nodeName)
@@ -160,7 +159,7 @@ func (r *ScriptRunner) PostDrain(instanceID string, nodeName string, ruObj *upgr
 		if err != nil {
 			msg := "Failed to run postDrain script: "
 			r.error(ruObj, err, msg)
-			result := errors.Wrap(err, msg)
+			result := fmt.Errorf("%s: %s: %w", ruObj.NamespacedName(), msg, err)
 
 			if !ruObj.Spec.IgnoreDrainFailures {
 				r.info(ruObj, "Uncordoning the node since it failed to run postDrain Script", "nodeName", nodeName)
