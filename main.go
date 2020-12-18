@@ -17,6 +17,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -29,7 +30,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
-	"github.com/pkg/errors"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -198,7 +198,7 @@ func deriveRegion() (string, error) {
 	c := ec2metadata.New(sess)
 	region, err := c.Region()
 	if err != nil {
-		return "", errors.Wrapf(err, "cannot reach ec2metadata, if running locally export AWS_REGION")
+		return "", fmt.Errorf("cannot reach ec2metadata, if running locally export AWS_REGION: %w", err)
 	}
 	return region, nil
 }

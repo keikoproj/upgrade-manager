@@ -11,7 +11,6 @@ require (
 	github.com/keikoproj/kubedog v0.0.1
 	github.com/onsi/ginkgo v1.14.2
 	github.com/onsi/gomega v1.10.4
-	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.6.0
 	go.uber.org/zap v1.16.0
 	golang.org/x/net v0.0.0-20201216054612-986b41b23924
