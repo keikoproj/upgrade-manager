@@ -9,10 +9,10 @@ require (
 	github.com/keikoproj/aws-sdk-go-cache v0.0.0-20200124200058-ab3c8c94044a
 	github.com/keikoproj/inverse-exp-backoff v0.0.0-20191216014651-04523236b6ca
 	github.com/keikoproj/kubedog v0.0.1
-	github.com/keikoproj/upgrade-manager/pkg/log v0.0.0
 	github.com/onsi/ginkgo v1.10.1
 	github.com/onsi/gomega v1.7.1
 	github.com/pkg/errors v0.9.1
+	github.com/sirupsen/logrus v1.6.0
 	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550 // indirect
 	golang.org/x/net v0.0.0-20200202094626-16171245cfb2
@@ -26,5 +26,3 @@ require (
 	k8s.io/utils v0.0.0-20191218082557-f07c713de883 // indirect
 	sigs.k8s.io/controller-runtime v0.4.0
 )
-
-replace github.com/keikoproj/upgrade-manager/pkg/log => ./pkg/log

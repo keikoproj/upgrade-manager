@@ -16,7 +16,7 @@ var _ request.Retryer = &RetryLogger{}
 
 func NewRetryLogger(retryer client.DefaultRetryer) *RetryLogger {
 	return &RetryLogger{
-		retryer,
+		DefaultRetryer: retryer,
 	}
 }
 
