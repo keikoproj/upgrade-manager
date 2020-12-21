@@ -1107,6 +1107,7 @@ func (r *RollingUpgradeReconciler) getTemplateLatestVersion(templateName string)
 func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
 	definition *launchDefinition) bool {
 
+	instanceID := aws.StringValue(ec2Instance.InstanceId)
 	if ruObj.Spec.ForceRefresh {
 		if ok, nodeCreationTS := r.getNodeCreationTimestamp(ec2Instance); ok {
 			if nodeCreationTS.Before(ruObj.CreationTimestamp.Time) {
@@ -1115,12 +1116,12 @@ func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.Rol
 			}
 		}
 
-		r.info(ruObj, "node", aws.StringValue(ec2Instance.InstanceId), "created after rollingupgrade object. Ignoring forceRefresh")
+		r.info(ruObj, "node", instanceID, "created after rollingupgrade object. Ignoring forceRefresh")
 		return false
 	}
 	if definition.launchConfigurationName != nil {
 		if *(definition.launchConfigurationName) != aws.StringValue(ec2Instance.LaunchConfigurationName) {
-			r.info(ruObj, "launch configuration name differs")
+			r.info(ruObj, "node", instanceID, "launch configuration name differs")
 			return true
 		}
 	} else if definition.launchTemplate != nil {
@@ -1128,7 +1129,7 @@ func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.Rol
 		targetLaunchTemplate := definition.launchTemplate
 
 		if instanceLaunchTemplate == nil {
-			r.info(ruObj, "instance switching to launch template")
+			r.info(ruObj, "node", instanceID, "instance switching to launch template")
 			return true
 		}
 
@@ -1142,21 +1143,21 @@ func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.Rol
 		)
 
 		if instanceTemplateId != templateId {
-			r.info(ruObj, "launch template id differs", "instanceTemplateId", instanceTemplateId, "templateId", templateId)
+			r.info(ruObj, "node", instanceID, "launch template id differs", "instanceTemplateId", instanceTemplateId, "templateId", templateId)
 			return true
 		}
 		if instanceTemplateName != templateName {
-			r.info(ruObj, "launch template name differs", "instanceTemplateName", instanceTemplateName, "templateName", templateName)
+			r.info(ruObj, "node", instanceID, "launch template name differs", "instanceTemplateName", instanceTemplateName, "templateName", templateName)
 			return true
 		}
 
 		if instanceVersion != templateVersion {
-			r.info(ruObj, "launch template version differs", "instanceVersion", instanceVersion, "templateVersion", templateVersion)
+			r.info(ruObj, "node", instanceID, "launch template version differs", "instanceVersion", instanceVersion, "templateVersion", templateVersion)
 			return true
 		}
 	}
 
-	r.info(ruObj, "node refresh not required")
+	r.info(ruObj, "node", instanceID, "node refresh not required")
 	return false
 }
 
