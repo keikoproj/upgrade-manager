@@ -18,8 +18,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,14 +27,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	iebackoff "github.com/keikoproj/inverse-exp-backoff"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	v1errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
@@ -50,12 +47,6 @@ import (
 )
 
 const (
-	// StatusRunning marks the CR to be running.
-	StatusRunning = "running"
-	// StatusComplete marks the CR as completed.
-	StatusComplete = "completed"
-	// StatusError marks the CR as errored out.
-	StatusError = "error"
 	// JanitorAnnotation is for completed objects.
 	JanitorAnnotation = "janitor/ttl"
 	// ClearCompletedFrequency is the time after which a completed rollingUpgrade object is deleted.
@@ -69,11 +60,6 @@ const (
 	asgNameKey      = "ASG_NAME"
 	instanceIDKey   = "INSTANCE_ID"
 	instanceNameKey = "INSTANCE_NAME"
-
-	// KubeCtlBinary is the path to the kubectl executable
-	KubeCtlBinary = "/usr/local/bin/kubectl"
-	// ShellBinary is the path to the shell executable
-	ShellBinary = "/bin/sh"
 
 	// InService is a state of an instance
 	InService = "InService"
@@ -92,6 +78,8 @@ var (
 	WaiterFactor = 0.5
 	// WaiterMaxAttempts is the maximum number of retries for waiters
 	WaiterMaxAttempts = uint32(32)
+	// CacheTTL is ttl for ASG cache.
+	CacheTTL = 30 * time.Second
 )
 
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
@@ -102,12 +90,49 @@ type RollingUpgradeReconciler struct {
 	ASGClient       autoscalingiface.AutoScalingAPI
 	generatedClient *kubernetes.Clientset
 	NodeList        *corev1.NodeList
+	LaunchTemplates []*ec2.LaunchTemplate
 	inProcessASGs   sync.Map
 	admissionMap    sync.Map
-	ruObjNameToASG  sync.Map
+	ruObjNameToASG  AsgCache
 	ClusterState    ClusterState
 	maxParallel     int
 	CacheConfig     *cache.Config
+	ScriptRunner    ScriptRunner
+}
+
+type AsgCache struct {
+	cache sync.Map
+}
+
+func (c *AsgCache) IsExpired(name string) bool {
+	if val, ok := c.cache.Load(name); !ok {
+		return true
+	} else {
+		cached := val.(CachedValue)
+		return time.Now().After(cached.expiration)
+	}
+}
+
+func (c *AsgCache) Load(name string) (*autoscaling.Group, bool) {
+	if val, ok := c.cache.Load(name); !ok {
+		return nil, false
+	} else {
+		cached := val.(CachedValue)
+		return cached.val.(*autoscaling.Group), true
+	}
+}
+
+func (c *AsgCache) Store(name string, asg *autoscaling.Group) {
+	c.cache.Store(name, CachedValue{asg, time.Now().Add(CacheTTL)})
+}
+
+func (c *AsgCache) Delete(name string) {
+	c.cache.Delete(name)
+}
+
+type CachedValue struct {
+	val        interface{}
+	expiration time.Time
 }
 
 func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
@@ -117,89 +142,35 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(max int) {
 	}
 }
 
-func (r *RollingUpgradeReconciler) runScript(script string, background bool, ruObj *upgrademgrv1alpha1.RollingUpgrade) (string, error) {
-	r.info(ruObj, "Running script", "script", script)
-	if background {
-		r.info(ruObj, "Running script in background. Logs not available.")
-		err := exec.Command(ShellBinary, "-c", script).Run()
-		if err != nil {
-			r.info(ruObj, fmt.Sprintf("Script finished with error: %s", err))
-		}
-
-		return "", nil
-	}
-
-	out, err := exec.Command(ShellBinary, "-c", script).CombinedOutput()
-	if err != nil {
-		r.error(ruObj, err, "Script finished", "output", string(out))
-	} else {
-		r.info(ruObj, "Script finished", "output", string(out))
-	}
-	return string(out), err
-}
-
-func (r *RollingUpgradeReconciler) preDrainHelper(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
-	if ruObj.Spec.PreDrain.Script != "" {
-		script := ruObj.Spec.PreDrain.Script
-		_, err := r.runScript(script, false, ruObj)
-		if err != nil {
-			msg := "Failed to run preDrain script"
-			r.error(ruObj, err, msg)
-			return errors.Wrap(err, msg)
-		}
-	}
-	return nil
+func (r *RollingUpgradeReconciler) preDrainHelper(instanceID, nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	return r.ScriptRunner.PreDrain(instanceID, nodeName, ruObj)
 }
 
 // Operates on any scripts that were provided after the draining of the node.
 // kubeCtlCall is provided as an argument to decouple the method from the actual kubectl call
-func (r *RollingUpgradeReconciler) postDrainHelper(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, kubeCtlCall string) error {
-	if ruObj.Spec.PostDrain.Script != "" {
-		_, err := r.runScript(ruObj.Spec.PostDrain.Script, false, ruObj)
-		if err != nil {
-			msg := "Failed to run postDrain script: "
-			r.error(ruObj, err, msg)
-			result := errors.Wrap(err, msg)
-
-			r.info(ruObj, "Uncordoning the node %s since it failed to run postDrain Script", "nodeName", nodeName)
-			_, err = r.runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj)
-			if err != nil {
-				r.error(ruObj, err, "Failed to uncordon", "nodeName", nodeName)
-			}
-			return result
-		}
+func (r *RollingUpgradeReconciler) postDrainHelper(instanceID, nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	err := r.ScriptRunner.PostDrain(instanceID, nodeName, ruObj)
+	if err != nil {
+		return err
 	}
+
 	r.info(ruObj, "Waiting for postDrainDelay", "postDrainDelay", ruObj.Spec.PostDrainDelaySeconds)
 	time.Sleep(time.Duration(ruObj.Spec.PostDrainDelaySeconds) * time.Second)
 
-	if ruObj.Spec.PostDrain.PostWaitScript != "" {
-		_, err := r.runScript(ruObj.Spec.PostDrain.PostWaitScript, false, ruObj)
-		if err != nil {
-			msg := "Failed to run postDrainWait script: " + err.Error()
-			r.error(ruObj, err, msg)
-			result := errors.Wrap(err, msg)
+	return r.ScriptRunner.PostWait(instanceID, nodeName, ruObj)
 
-			r.info(ruObj, "Uncordoning the node %s since it failed to run postDrain Script", "nodeName", nodeName)
-			_, err = r.runScript(kubeCtlCall+" uncordon "+nodeName, false, ruObj)
-			if err != nil {
-				r.error(ruObj, err, "Failed to uncordon", "nodeName", nodeName)
-			}
-			return result
-		}
-	}
-	return nil
 }
 
 // DrainNode runs "kubectl drain" on the given node
 // kubeCtlCall is provided as an argument to decouple the method from the actual kubectl call
 func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName string,
-	kubeCtlCall string,
+	instanceID string,
 	drainTimeout int) error {
 	// Running kubectl drain node.
-	err := r.preDrainHelper(ruObj)
+	err := r.preDrainHelper(instanceID, nodeName, ruObj)
 	if err != nil {
-		return errors.New(ruObj.Name + ": Predrain script failed: " + err.Error())
+		return fmt.Errorf("%s: pre-drain script failed: %w", ruObj.NamespacedName(), err)
 	}
 
 	errChan := make(chan error)
@@ -218,7 +189,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	}
 
 	r.info(ruObj, "Invoking kubectl drain for the node", "nodeName", nodeName)
-	go r.CallKubectlDrain(ctx, nodeName, kubeCtlCall, ruObj, errChan)
+	go r.CallKubectlDrain(nodeName, ruObj, errChan)
 
 	// Listening to signals from the CallKubectlDrain go routine
 	select {
@@ -232,24 +203,21 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 		r.info(ruObj, "Kubectl drain completed for node", "nodeName", nodeName)
 	}
 
-	return r.postDrainHelper(ruObj, nodeName, kubeCtlCall)
+	return r.postDrainHelper(instanceID, nodeName, ruObj)
 }
 
 // CallKubectlDrain runs the "kubectl drain" for a given node
 // Node will be terminated even if pod eviction is not completed when the drain timeout is exceeded
-func (r *RollingUpgradeReconciler) CallKubectlDrain(ctx context.Context, nodeName, kubeCtlCall string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
+func (r *RollingUpgradeReconciler) CallKubectlDrain(nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
 
-	// kops behavior implements the same behavior by using these flags when draining nodes
-	// https://github.com/kubernetes/kops/blob/7a629c77431dda02d02aadf00beb0bed87518cbf/pkg/instancegroups/instancegroups.go lines 337-340
-	script := fmt.Sprintf("%s drain %s --ignore-daemonsets=true --delete-local-data=true --force --grace-period=-1", kubeCtlCall, nodeName)
-	out, err := r.runScript(script, false, ruObj)
+	out, err := r.ScriptRunner.drainNode(nodeName, ruObj)
 	if err != nil {
 		if strings.HasPrefix(out, "Error from server (NotFound)") {
 			r.error(ruObj, err, "Not executing postDrainHelper. Node not found.", "output", out)
 			errChan <- nil
 			return
 		}
-		errChan <- errors.New(ruObj.Name + " :Failed to drain: " + err.Error())
+		errChan <- fmt.Errorf("%s failed to drain: %w", ruObj.NamespacedName(), err)
 		return
 	}
 	errChan <- nil
@@ -264,7 +232,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 			return err
 		}
 
-		asg, err := r.GetAutoScalingGroup(ruObj.Name)
+		asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 		if err != nil {
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
@@ -277,7 +245,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 
 		r.info(ruObj, "new instance has not yet joined the scaling group")
 	}
-	return errors.Wrapf(err, "%v: WaitForDesiredInstances timed out while waiting for instance to be added", ruObj.Name)
+	return fmt.Errorf("%s: WaitForDesiredInstances timed out while waiting for instance to be added: %w", ruObj.NamespacedName(), err)
 }
 
 func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
@@ -294,7 +262,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 			r.error(ruObj, err, "unable to populate node list")
 		}
 
-		asg, err := r.GetAutoScalingGroup(ruObj.Name)
+		asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 		if err != nil {
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
@@ -320,7 +288,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 
 		r.info(ruObj, "new node has not yet joined the cluster")
 	}
-	return errors.Wrapf(err, "%v: WaitForDesiredNodes timed out while waiting for nodes to join", ruObj.Name)
+	return fmt.Errorf("%s: WaitForDesiredNodes timed out while waiting for nodes to join: %w", ruObj.NamespacedName(), err)
 }
 
 func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
@@ -336,7 +304,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 		}
 
 		_, err := nodeInterface.Get(nodeName, metav1.GetOptions{})
-		if v1errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			r.info(ruObj, "node is unjoined from cluster, upgrade will proceed", "nodeName", nodeName)
 			break
 		}
@@ -349,39 +317,42 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 	return true, nil
 }
 
-func (r *RollingUpgradeReconciler) GetAutoScalingGroup(rollupName string) (*autoscaling.Group, error) {
-	asg := &autoscaling.Group{}
-	val, ok := r.ruObjNameToASG.Load(rollupName)
+func (r *RollingUpgradeReconciler) GetAutoScalingGroup(namespacedName string) (*autoscaling.Group, error) {
+	val, ok := r.ruObjNameToASG.Load(namespacedName)
 	if !ok {
-		return asg, fmt.Errorf("Unable to load ASG with name: %s", rollupName)
+		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG with name: %s", namespacedName)
 	}
-	asg = val.(*autoscaling.Group)
-	return asg, nil
+	return val, nil
 }
 
 // SetStandby sets the autoscaling instance to standby mode.
 func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string) error {
 	r.info(ruObj, "Setting to stand-by", ruObj.Name, instanceID)
-	input := &autoscaling.EnterStandbyInput{
-		AutoScalingGroupName:           aws.String(ruObj.Spec.AsgName),
-		InstanceIds:                    aws.StringSlice([]string{instanceID}),
-		ShouldDecrementDesiredCapacity: aws.Bool(false),
-	}
 
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		return err
 	}
 
-	instanceState, err := getGroupInstanceState(asg, instanceID)
+	instanceState, err := getInstanceStateInASG(asg, instanceID)
 	if err != nil {
 		r.info(ruObj, fmt.Sprintf("WARNING: %v", err))
+		return nil
+	}
+
+	if instanceState == autoscaling.LifecycleStateStandby {
 		return nil
 	}
 
 	if !isInServiceLifecycleState(instanceState) {
 		r.info(ruObj, "Cannot set instance to stand-by, instance is in state", "instanceState", instanceState, "instanceID", instanceID)
 		return nil
+	}
+
+	input := &autoscaling.EnterStandbyInput{
+		AutoScalingGroupName:           aws.String(ruObj.Spec.AsgName),
+		InstanceIds:                    aws.StringSlice([]string{instanceID}),
+		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
 	_, err = r.ASGClient.EnterStandby(input)
@@ -392,7 +363,7 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 }
 
 // TerminateNode actually terminates the given node.
-func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string) error {
+func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, nodeName string) error {
 
 	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 		InstanceId:                     aws.String(instanceID),
@@ -427,19 +398,7 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	r.info(ruObj, "Instance terminated.", "instanceID", instanceID)
 	r.info(ruObj, "starting post termination sleep", "instanceID", instanceID, "nodeIntervalSeconds", ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
-	if ruObj.Spec.PostTerminate.Script != "" {
-		out, err := r.runScript(ruObj.Spec.PostTerminate.Script, false, ruObj)
-		if err != nil {
-			if strings.HasPrefix(out, "Error from server (NotFound)") {
-				r.error(ruObj, err, "Node not found when running postTerminate. Ignoring ...", "output", out, "instanceID", instanceID)
-				return nil
-			}
-			msg := "Failed to run postTerminate script"
-			r.error(ruObj, err, msg, "instanceID", instanceID)
-			return errors.Wrap(err, msg)
-		}
-	}
-	return nil
+	return r.ScriptRunner.PostTerminate(instanceID, nodeName, ruObj)
 }
 
 func (r *RollingUpgradeReconciler) getNodeName(i *autoscaling.Instance, nodeList *corev1.NodeList, ruObj *upgrademgrv1alpha1.RollingUpgrade) string {
@@ -466,6 +425,11 @@ func (r *RollingUpgradeReconciler) getNodeFromAsg(i *autoscaling.Instance, nodeL
 }
 
 func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+	// if value is still in cache, do nothing.
+	if !r.ruObjNameToASG.IsExpired(ruObj.NamespacedName()) {
+		return nil
+	}
+
 	input := &autoscaling.DescribeAutoScalingGroupsInput{
 		AutoScalingGroupNames: []*string{
 			aws.String(ruObj.Spec.AsgName),
@@ -474,20 +438,33 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	result, err := r.ASGClient.DescribeAutoScalingGroups(input)
 	if err != nil {
 		r.error(ruObj, err, "Failed to describe autoscaling group")
-		return errors.Wrap(err, ruObj.Name+": Failed to describe autoscaling group")
+		return fmt.Errorf("%s: failed to describe autoscaling group: %w", ruObj.NamespacedName(), err)
 	}
 
 	if len(result.AutoScalingGroups) == 0 {
 		r.info(ruObj, "%s: No ASG found with name %s!\n", ruObj.Name, ruObj.Spec.AsgName)
-		return errors.New("No ASG found")
+		return fmt.Errorf("%s: no ASG found", ruObj.NamespacedName())
 	} else if len(result.AutoScalingGroups) > 1 {
 		r.info(ruObj, "%s: Too many asgs found with name %d!\n", ruObj.Name, len(result.AutoScalingGroups))
-		return errors.New("Too many ASGs")
+		return fmt.Errorf("%s: Too many ASGs: %d", ruObj.NamespacedName(), len(result.AutoScalingGroups))
 	}
 
 	asg := result.AutoScalingGroups[0]
-	r.ruObjNameToASG.Store(ruObj.Name, asg)
+	r.ruObjNameToASG.Store(ruObj.NamespacedName(), asg)
 
+	return nil
+}
+
+func (r *RollingUpgradeReconciler) populateLaunchTemplates() error {
+	launchTemplates := []*ec2.LaunchTemplate{}
+	err := r.EC2Client.DescribeLaunchTemplatesPages(&ec2.DescribeLaunchTemplatesInput{}, func(page *ec2.DescribeLaunchTemplatesOutput, lastPage bool) bool {
+		launchTemplates = append(launchTemplates, page.LaunchTemplates...)
+		return page.NextToken != nil
+	})
+	if err != nil {
+		return err
+	}
+	r.LaunchTemplates = launchTemplates
 	return nil
 }
 
@@ -496,24 +473,9 @@ func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.Ro
 	if err != nil {
 		msg := "Failed to get all nodes in the cluster: " + err.Error()
 		r.info(ruObj, msg)
-		return errors.Wrap(err, ruObj.Name+": Failed to get all nodes in the cluster")
+		return fmt.Errorf("%s: Failed to get all nodes in the cluster: %w", ruObj.NamespacedName(), err)
 	}
 	r.NodeList = nodeList
-	return nil
-}
-
-// Loads specific environment variables for scripts to use
-// on a given rollingUpgrade and autoscaling instance
-func loadEnvironmentVariables(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, nodeName string) error {
-	if err := os.Setenv(asgNameKey, ruObj.Spec.AsgName); err != nil {
-		return errors.New(ruObj.Name + ": Could not load " + asgNameKey + ": " + err.Error())
-	}
-	if err := os.Setenv(instanceIDKey, instanceID); err != nil {
-		return errors.New(ruObj.Name + ": Could not load " + instanceIDKey + ": " + err.Error())
-	}
-	if err := os.Setenv(instanceNameKey, nodeName); err != nil {
-		return errors.New(ruObj.Name + ": Could not load " + instanceNameKey + ": " + err.Error())
-	}
 	return nil
 }
 
@@ -531,8 +493,11 @@ func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscali
 	return inProgressInstances, nil
 }
 
-func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade, KubeCtlCall string) (int, error) {
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+// runRestack performs rollout of new nodes.
+// returns number of processed instances and optional error.
+func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) (int, error) {
+
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		return 0, fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 	}
@@ -550,7 +515,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 
 	r.inProcessASGs.Store(*asg.AutoScalingGroupName, "running")
 	r.ClusterState.initializeAsg(*asg.AutoScalingGroupName, asg.Instances)
-	defer r.ClusterState.deleteEntryOfAsg(*asg.AutoScalingGroupName)
+	defer r.ClusterState.deleteAllInstancesInAsg(*asg.AutoScalingGroupName)
 
 	launchDefinition := NewLaunchDefinition(asg)
 
@@ -582,11 +547,11 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 			r.info(ruObj, errorMessage)
 
 			// this should never be case, return error
-			return processedInstances, errors.New(errorMessage)
+			return processedInstances, fmt.Errorf(errorMessage)
 		}
 
 		// update the instances
-		err := r.UpdateInstances(ctx, ruObj, instances, launchDefinition, KubeCtlCall)
+		err := r.UpdateInstances(ctx, ruObj, instances, launchDefinition)
 		processedInstances += len(instances)
 		if err != nil {
 			return processedInstances, err
@@ -616,7 +581,7 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 	}
 	// end event
 	var level string
-	if finalStatus == StatusComplete {
+	if finalStatus == upgrademgrv1alpha1.StatusComplete {
 		level = EventLevelNormal
 	} else {
 		level = EventLevelWarning
@@ -638,10 +603,10 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 		}
 	}
 
-	r.ClusterState.deleteEntryOfAsg(ruObj.Spec.AsgName)
+	r.ClusterState.deleteAllInstancesInAsg(ruObj.Spec.AsgName)
 	r.info(ruObj, "Deleted the entries of ASG in the cluster store", "asgName", ruObj.Spec.AsgName)
 	r.inProcessASGs.Delete(ruObj.Spec.AsgName)
-	r.admissionMap.Delete(ruObj.Name)
+	r.admissionMap.Delete(ruObj.NamespacedName())
 	r.info(ruObj, "Deleted from admission map ", "admissionMap", &r.admissionMap)
 }
 
@@ -649,8 +614,8 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 
-	if ruObj.Status.CurrentStatus == StatusComplete ||
-		ruObj.Status.CurrentStatus == StatusError {
+	if ruObj.Status.CurrentStatus == upgrademgrv1alpha1.StatusComplete ||
+		ruObj.Status.CurrentStatus == upgrademgrv1alpha1.StatusError {
 		r.info(ruObj, "No more processing", "currentStatus", ruObj.Status.CurrentStatus)
 
 		if exists := ruObj.ObjectMeta.Annotations[JanitorAnnotation]; exists == "" {
@@ -658,7 +623,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 			MarkObjForCleanup(ruObj)
 		}
 
-		r.admissionMap.Delete(ruObj.Name)
+		r.admissionMap.Delete(ruObj.NamespacedName())
 		r.info(ruObj, "Deleted object from admission map")
 		return
 	}
@@ -672,27 +637,32 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	r.CacheConfig.FlushCache("autoscaling")
 	err := r.populateAsg(ruObj)
 	if err != nil {
-		r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
 
 	//TODO(shri): Ensure that no node is Unschedulable at this time.
 	err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
-		r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
 
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	if err := r.populateLaunchTemplates(); err != nil {
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
+		return
+	}
+
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		r.error(ruObj, err, "Unable to load ASG for rolling upgrade")
-		r.finishExecution(StatusError, 0, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
 		return
 	}
 
 	// Update the CR with some basic info before staring the restack.
 	ruObj.Status.StartTime = time.Now().Format(time.RFC3339)
-	ruObj.Status.CurrentStatus = StatusRunning
+	ruObj.Status.CurrentStatus = upgrademgrv1alpha1.StatusRunning
 	ruObj.Status.NodesProcessed = 0
 	ruObj.Status.TotalNodes = len(asg.Instances)
 
@@ -701,10 +671,10 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	}
 
 	// Run the restack that actually performs the rolling update.
-	nodesProcessed, err := r.runRestack(ctx, ruObj, KubeCtlBinary)
+	nodesProcessed, err := r.runRestack(ctx, ruObj)
 	if err != nil {
 		r.error(ruObj, err, "Failed to runRestack")
-		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, nodesProcessed, ctx, ruObj)
 		return
 	}
 
@@ -712,11 +682,11 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	r.info(ruObj, "Validating the launch definition of nodes and ASG")
 	if err := r.validateNodesLaunchDefinition(ruObj); err != nil {
 		r.error(ruObj, err, "Launch definition validation failed")
-		r.finishExecution(StatusError, nodesProcessed, ctx, ruObj)
+		r.finishExecution(upgrademgrv1alpha1.StatusError, nodesProcessed, ctx, ruObj)
 		return
 	}
 
-	r.finishExecution(StatusComplete, nodesProcessed, ctx, ruObj)
+	r.finishExecution(upgrademgrv1alpha1.StatusComplete, nodesProcessed, ctx, ruObj)
 }
 
 //Check if ec2Instances and the ASG have same launch config.
@@ -725,11 +695,11 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	var err error
 	err = r.populateAsg(ruObj)
 	if err != nil {
-		return errors.New("Unable to populate the ASG object")
+		return fmt.Errorf("%s: Unable to populate the ASG object: %w", ruObj.NamespacedName(), err)
 	}
-	asg, err := r.GetAutoScalingGroup(ruObj.Name)
+	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
-		return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		return fmt.Errorf("%s: Unable to load ASG with name: %w", ruObj.NamespacedName(), err)
 	}
 	launchDefinition := NewLaunchDefinition(asg)
 	launchConfigASG, launchTemplateASG := launchDefinition.launchConfigurationName, launchDefinition.launchTemplate
@@ -759,9 +729,9 @@ func MarkObjForCleanup(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
 	}
 
 	switch ruObj.Status.CurrentStatus {
-	case StatusComplete:
+	case upgrademgrv1alpha1.StatusComplete:
 		ruObj.ObjectMeta.Annotations[JanitorAnnotation] = ClearCompletedFrequency
-	case StatusError:
+	case upgrademgrv1alpha1.StatusError:
 		ruObj.ObjectMeta.Annotations[JanitorAnnotation] = ClearErrorFrequency
 	}
 }
@@ -787,7 +757,7 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		if k8serrors.IsNotFound(err) {
 			// Object not found, return. Created objects are automatically garbage collected.
 			// For additional cleanup logic use finalizers.
-			r.admissionMap.Delete(req.Name)
+			r.admissionMap.Delete(req.NamespacedName)
 			r.info(ruObj, "Deleted object from map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -798,8 +768,8 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	// If the resource is being deleted, remove it from the admissionMap
 	if !ruObj.DeletionTimestamp.IsZero() {
 		r.info(ruObj, "Object is being deleted. No more processing")
-		r.admissionMap.Delete(ruObj.Name)
-		r.ruObjNameToASG.Delete(ruObj.Name)
+		r.admissionMap.Delete(ruObj.NamespacedName())
+		r.ruObjNameToASG.Delete(ruObj.NamespacedName())
 		r.info(ruObj, "Deleted object from admission map")
 		return reconcile.Result{}, nil
 	}
@@ -821,17 +791,17 @@ func (r *RollingUpgradeReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		return reconcile.Result{}, err
 	}
 
-	result, ok := r.admissionMap.Load(ruObj.Name)
+	result, ok := r.admissionMap.Load(ruObj.NamespacedName())
 	if ok {
 		if result == "processing" {
-			r.info(ruObj, "Found obj in map:", "name", ruObj.Name)
-			r.info(ruObj, "Object already being processed", "name", ruObj.Name)
+			r.info(ruObj, "Found obj in map:", "name", ruObj.NamespacedName())
+			r.info(ruObj, "Object already being processed", "name", ruObj.NamespacedName())
 		} else {
-			r.info(ruObj, "Sync map with invalid entry for ", "name", ruObj.Name)
+			r.info(ruObj, "Sync map with invalid entry for ", "name", ruObj.NamespacedName())
 		}
 	} else {
-		r.info(ruObj, "Adding obj to map: ", "name", ruObj.Name)
-		r.admissionMap.Store(ruObj.Name, "processing")
+		r.info(ruObj, "Adding obj to map: ", "name", ruObj.NamespacedName())
+		r.admissionMap.Store(ruObj.NamespacedName(), "processing")
 		go r.Process(&ctx, ruObj)
 	}
 
@@ -849,11 +819,7 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *RollingUpgradeReconciler) setStateTag(ruObj *upgrademgrv1alpha1.RollingUpgrade, instanceID string, state string) error {
 	r.info(ruObj, "setting instance state", "instanceID", instanceID, "instanceState", state)
-	err := tagEC2instance(instanceID, EC2StateTagKey, state, r.EC2Client)
-	if err != nil {
-		return err
-	}
-	return nil
+	return tagEC2instance(instanceID, EC2StateTagKey, state, r.EC2Client)
 }
 
 // validateRollingUpgradeObj validates rollup object for the type, maxUnavailable and drainTimeout
@@ -865,19 +831,19 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 		return nil
 	}
 	// validating the maxUnavailable value
-	if strategy.MaxUnavailable.Type == 0 {
+	if strategy.MaxUnavailable.Type == intstr.Int {
 		if strategy.MaxUnavailable.IntVal <= 0 {
-			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %d",
-				ruObj.Name, strategy.MaxUnavailable.IntVal))
+			err := fmt.Errorf("%s: Invalid value for maxUnavailable - %d",
+				ruObj.Name, strategy.MaxUnavailable.IntVal)
 			r.error(ruObj, err, "Invalid value for maxUnavailable", "value", strategy.MaxUnavailable.IntVal)
 			return err
 		}
-	} else if strategy.MaxUnavailable.Type == 1 {
-		strVallue := strategy.MaxUnavailable.StrVal
-		intValue, _ := strconv.Atoi(strings.Trim(strVallue, "%"))
+	} else if strategy.MaxUnavailable.Type == intstr.String {
+		strVal := strategy.MaxUnavailable.StrVal
+		intValue, _ := strconv.Atoi(strings.Trim(strVal, "%"))
 		if intValue <= 0 || intValue > 100 {
-			err := errors.New(fmt.Sprintf("%s: Invalid value for maxUnavailable - %s",
-				ruObj.Name, strategy.MaxUnavailable.StrVal))
+			err := fmt.Errorf("%s: Invalid value for maxUnavailable - %s",
+				ruObj.Name, strategy.MaxUnavailable.StrVal)
 			r.error(ruObj, err, "Invalid value for maxUnavailable", "value", strategy.MaxUnavailable.StrVal)
 			return err
 		}
@@ -886,7 +852,7 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 	// validating the strategy type
 	if strategy.Type != upgrademgrv1alpha1.RandomUpdateStrategy &&
 		strategy.Type != upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy {
-		err := errors.New(fmt.Sprintf("%s: Invalid value for strategy type - %s", ruObj.Name, strategy.Type))
+		err := fmt.Errorf("%s: Invalid value for strategy type - %s", ruObj.NamespacedName(), strategy.Type)
 		r.error(ruObj, err, "Invalid value for strategy type", "value", strategy.Type)
 		return err
 	}
@@ -895,34 +861,19 @@ func (r *RollingUpgradeReconciler) validateRollingUpgradeObj(ruObj *upgrademgrv1
 
 // setDefaultsForRollingUpdateStrategy sets the default values for type, maxUnavailable and drainTimeout
 func (r *RollingUpgradeReconciler) setDefaultsForRollingUpdateStrategy(ruObj *upgrademgrv1alpha1.RollingUpgrade) {
-
-	// Setting the default values for the update strategy when strategy is not set
-	// Default behaviour should be to update one node at a time and should wait for kubectl drain completion
-	var nilStrategy = upgrademgrv1alpha1.UpdateStrategy{}
-	if ruObj.Spec.Strategy == nilStrategy {
-		r.info(ruObj, "Update strategy not set on the rollup object, setting the default strategy.")
-		strategy := upgrademgrv1alpha1.UpdateStrategy{
-			Type:           upgrademgrv1alpha1.RandomUpdateStrategy,
-			Mode:           upgrademgrv1alpha1.UpdateStrategyModeLazy,
-			MaxUnavailable: intstr.IntOrString{IntVal: 1},
-			DrainTimeout:   -1,
-		}
-		ruObj.Spec.Strategy = strategy
-	} else {
-		if ruObj.Spec.Strategy.Type == "" {
-			ruObj.Spec.Strategy.Type = upgrademgrv1alpha1.RandomUpdateStrategy
-		}
-		if ruObj.Spec.Strategy.Mode == "" {
-			// default to lazy mode
-			ruObj.Spec.Strategy.Mode = upgrademgrv1alpha1.UpdateStrategyModeLazy
-		}
-		// intstr.IntOrString has the default value 0 with int types
-		if ruObj.Spec.Strategy.MaxUnavailable.Type == 0 && ruObj.Spec.Strategy.MaxUnavailable.IntVal == 0 {
-			ruObj.Spec.Strategy.MaxUnavailable = intstr.IntOrString{Type: 0, IntVal: 1}
-		}
-		if ruObj.Spec.Strategy.DrainTimeout == 0 {
-			ruObj.Spec.Strategy.DrainTimeout = -1
-		}
+	if ruObj.Spec.Strategy.Type == "" {
+		ruObj.Spec.Strategy.Type = upgrademgrv1alpha1.RandomUpdateStrategy
+	}
+	if ruObj.Spec.Strategy.Mode == "" {
+		// default to lazy mode
+		ruObj.Spec.Strategy.Mode = upgrademgrv1alpha1.UpdateStrategyModeLazy
+	}
+	// Set default max unavailable to 1.
+	if ruObj.Spec.Strategy.MaxUnavailable.Type == intstr.Int && ruObj.Spec.Strategy.MaxUnavailable.IntVal == 0 {
+		ruObj.Spec.Strategy.MaxUnavailable.IntVal = 1
+	}
+	if ruObj.Spec.Strategy.DrainTimeout == 0 {
+		ruObj.Spec.Strategy.DrainTimeout = -1
 	}
 }
 
@@ -942,8 +893,7 @@ func NewUpdateInstancesError(instanceUpdateErrors []error) *UpdateInstancesError
 func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	instances []*autoscaling.Instance,
-	launchDefinition *launchDefinition,
-	KubeCtlCall string) error {
+	launchDefinition *launchDefinition) error {
 
 	totalNodes := len(instances)
 	if totalNodes == 0 {
@@ -960,7 +910,7 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 			"strategy": string(ruObj.Spec.Strategy.Type),
 			"msg":      fmt.Sprintf("Started Updating Instance %s, in AZ: %s", *instance.InstanceId, *instance.AvailabilityZone),
 		})
-		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, KubeCtlCall, ch)
+		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, ch)
 	}
 
 	// wait for upgrades to complete
@@ -997,57 +947,50 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
-	targetInstanceID,
-	KubeCtlCall string,
-	ch chan error) {
+	targetInstanceID string) error {
 
 	// Set instance to standby
 	err := r.SetStandby(ruObj, targetInstanceID)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	// Wait for new instance to be created
 	err = r.WaitForDesiredInstances(ruObj)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	// Wait for in-service nodes to be ready and match desired
 	err = r.WaitForDesiredNodes(ruObj)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	// Drain and wait for draining node.
-	r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+	return r.DrainTerminate(ruObj, nodeName, targetInstanceID)
 }
 
 func (r *RollingUpgradeReconciler) DrainTerminate(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
-	targetInstanceID,
-	KubeCtlCall string,
-	ch chan error) {
+	targetInstanceID string) error {
 
 	// Drain and wait for draining node.
 	if nodeName != "" {
-		err := r.DrainNode(ruObj, nodeName, KubeCtlCall, ruObj.Spec.Strategy.DrainTimeout)
+		err := r.DrainNode(ruObj, nodeName, targetInstanceID, ruObj.Spec.Strategy.DrainTimeout)
 		if err != nil && !ruObj.Spec.IgnoreDrainFailures {
-			ch <- err
-			return
+			return err
 		}
 	}
 
 	// Terminate instance.
-	err := r.TerminateNode(ruObj, targetInstanceID)
+	err := r.TerminateNode(ruObj, targetInstanceID, nodeName)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
+
+	return nil
 }
 
 // UpdateInstance runs the rolling upgrade on one instance from an autoscaling group
@@ -1055,7 +998,6 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	i *autoscaling.Instance,
 	launchDefinition *launchDefinition,
-	KubeCtlCall string,
 	ch chan error) {
 	targetInstanceID := aws.StringValue(i.InstanceId)
 	// If an instance was marked as "in-progress" in ClusterState, it has to be marked
@@ -1063,7 +1005,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	defer r.ClusterState.markUpdateCompleted(targetInstanceID)
 
 	// Check if the rollingupgrade object still exists
-	_, ok := r.admissionMap.Load(ruObj.Name)
+	_, ok := r.admissionMap.Load(ruObj.NamespacedName())
 	if !ok {
 		r.info(ruObj, "Object either force completed or deleted. Ignoring node update")
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
@@ -1084,16 +1026,15 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 
 	nodeName := r.getNodeName(i, r.NodeList, ruObj)
 
-	// Load the environment variables for scripts to run
-	err := loadEnvironmentVariables(ruObj, targetInstanceID, nodeName)
-	if err != nil {
-		ch <- err
-		return
-	}
-
 	// set the EC2 tag indicating the state to in-progress
-	err = r.setStateTag(ruObj, targetInstanceID, "in-progress")
+	err := r.setStateTag(ruObj, targetInstanceID, "in-progress")
 	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == "InvalidInstanceID.NotFound" {
+				ch <- nil
+				return
+			}
+		}
 		ch <- err
 		return
 	}
@@ -1101,10 +1042,17 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	mode := ruObj.Spec.Strategy.Mode.String()
 	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
 		r.info(ruObj, "starting replacement with eager mode", "mode", mode)
-		r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+		err = r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID)
 	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
 		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
-		r.DrainTerminate(ruObj, nodeName, targetInstanceID, KubeCtlCall, ch)
+		err = r.DrainTerminate(ruObj, nodeName, targetInstanceID)
+	} else {
+		err = fmt.Errorf("%s: unhandled strategy mode: %s", ruObj.NamespacedName(), mode)
+	}
+
+	if err != nil {
+		ch <- err
+		return
 	}
 
 	unjoined, err := r.WaitForTermination(ruObj, nodeName, r.generatedClient.CoreV1().Nodes())
@@ -1145,9 +1093,21 @@ func (r *RollingUpgradeReconciler) getNodeCreationTimestamp(ec2Instance *autosca
 	return false, time.Time{}
 }
 
+func (r *RollingUpgradeReconciler) getTemplateLatestVersion(templateName string) string {
+	for _, t := range r.LaunchTemplates {
+		name := aws.StringValue(t.LaunchTemplateName)
+		if name == templateName {
+			versionInt := aws.Int64Value(t.LatestVersionNumber)
+			return strconv.FormatInt(versionInt, 10)
+		}
+	}
+	return "0"
+}
+
 func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
 	definition *launchDefinition) bool {
 
+	instanceID := aws.StringValue(ec2Instance.InstanceId)
 	if ruObj.Spec.ForceRefresh {
 		if ok, nodeCreationTS := r.getNodeCreationTimestamp(ec2Instance); ok {
 			if nodeCreationTS.Before(ruObj.CreationTimestamp.Time) {
@@ -1156,38 +1116,54 @@ func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.Rol
 			}
 		}
 
-		r.info(ruObj, "node", aws.StringValue(ec2Instance.InstanceId), "created after rollingupgrade object. Ignoring forceRefresh")
+		r.info(ruObj, "node", instanceID, "created after rollingupgrade object. Ignoring forceRefresh")
 		return false
 	}
 	if definition.launchConfigurationName != nil {
 		if *(definition.launchConfigurationName) != aws.StringValue(ec2Instance.LaunchConfigurationName) {
-			r.info(ruObj, "launch configuration name differs")
+			r.info(ruObj, "node", instanceID, "launch configuration name differs")
 			return true
 		}
-	} else if definition.launchTemplate != nil && ec2Instance.LaunchTemplate != nil {
+	} else if definition.launchTemplate != nil {
 		instanceLaunchTemplate := ec2Instance.LaunchTemplate
 		targetLaunchTemplate := definition.launchTemplate
-		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateId) != aws.StringValue(targetLaunchTemplate.LaunchTemplateId) {
-			r.info(ruObj, "launch template id differs")
+
+		if instanceLaunchTemplate == nil {
+			r.info(ruObj, "node", instanceID, "instance switching to launch template")
 			return true
 		}
-		if aws.StringValue(instanceLaunchTemplate.LaunchTemplateName) != aws.StringValue(targetLaunchTemplate.LaunchTemplateName) {
-			r.info(ruObj, "launch template name differs")
+
+		var (
+			instanceTemplateId   = aws.StringValue(instanceLaunchTemplate.LaunchTemplateId)
+			templateId           = aws.StringValue(targetLaunchTemplate.LaunchTemplateId)
+			instanceTemplateName = aws.StringValue(instanceLaunchTemplate.LaunchTemplateName)
+			templateName         = aws.StringValue(targetLaunchTemplate.LaunchTemplateName)
+			instanceVersion      = aws.StringValue(instanceLaunchTemplate.Version)
+			templateVersion      = r.getTemplateLatestVersion(templateName)
+		)
+
+		if instanceTemplateId != templateId {
+			r.info(ruObj, "node", instanceID, "launch template id differs", "instanceTemplateId", instanceTemplateId, "templateId", templateId)
 			return true
 		}
-		if aws.StringValue(instanceLaunchTemplate.Version) != aws.StringValue(targetLaunchTemplate.Version) {
-			r.info(ruObj, "launch template version differs")
+		if instanceTemplateName != templateName {
+			r.info(ruObj, "node", instanceID, "launch template name differs", "instanceTemplateName", instanceTemplateName, "templateName", templateName)
+			return true
+		}
+
+		if instanceVersion != templateVersion {
+			r.info(ruObj, "node", instanceID, "launch template version differs", "instanceVersion", instanceVersion, "templateVersion", templateVersion)
 			return true
 		}
 	}
 
-	r.info(ruObj, "node refresh not required")
+	r.info(ruObj, "node", instanceID, "node refresh not required")
 	return false
 }
 
 // logger creates logger for rolling upgrade.
 func (r *RollingUpgradeReconciler) logger(ruObj *upgrademgrv1alpha1.RollingUpgrade) logr.Logger {
-	return r.Log.WithValues("rollingupgrade", ruObj.Name)
+	return r.Log.WithValues("rollingupgrade", ruObj.NamespacedName())
 }
 
 // info logs message with Info level for the specified rolling upgrade.

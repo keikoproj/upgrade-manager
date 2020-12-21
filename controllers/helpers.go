@@ -2,32 +2,22 @@ package controllers
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 
-	"log"
-	"strconv"
-	"strings"
-
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"log"
 )
 
 // getMaxUnavailable calculates and returns the maximum unavailable nodes
 // takes an update strategy and total number of nodes as input
 func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes int) int {
-	maxUnavailable := 1
-	if strategy.MaxUnavailable.Type == 0 {
-		maxUnavailable = int(strategy.MaxUnavailable.IntVal)
-	} else if strategy.MaxUnavailable.Type == 1 {
-		strValue := strategy.MaxUnavailable.StrVal
-		intValue, _ := strconv.Atoi(strings.Trim(strValue, "%"))
-		maxUnavailable = int(float32(intValue) / float32(100) * float32(totalNodes))
-	}
+	maxUnavailable, _ := intstr.GetValueFromIntOrPercent(&strategy.MaxUnavailable, totalNodes, false)
 	// setting maxUnavailable to total number of nodes when maxUnavailable is greater than total node count
 	if totalNodes < maxUnavailable {
 		log.Printf("Reducing maxUnavailable count from %d to %d as total nodes count is %d",
@@ -85,13 +75,13 @@ func getInServiceIds(instances []*autoscaling.Instance) []string {
 	return list
 }
 
-func getGroupInstanceState(group *autoscaling.Group, instanceID string) (string, error) {
+func getInstanceStateInASG(group *autoscaling.Group, instanceID string) (string, error) {
 	for _, instance := range group.Instances {
 		if aws.StringValue(instance.InstanceId) == instanceID {
 			return aws.StringValue(instance.LifecycleState), nil
 		}
 	}
-	return "", errors.Errorf("could not get instance group state, instance %v not found", instanceID)
+	return "", fmt.Errorf("could not get instance group state, instance %s not found", instanceID)
 }
 
 func isInServiceLifecycleState(state string) bool {

@@ -41,6 +41,13 @@ var _ = Describe("RollingUpgrade", func() {
 		// Add any teardown steps that needs to be executed after each test
 	})
 
+	Context("NamespacedName", func() {
+		It("generates qualified name", func() {
+			ru := &RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Namespace: "namespace-foo", Name: "object-bar"}}
+			Expect(ru.NamespacedName()).To(Equal("namespace-foo/object-bar"))
+		})
+	})
+
 	// Add Tests for OpenAPI validation (or additonal CRD features) specified in
 	// your API definition.
 	// Avoid adding tests for vanilla CRUD operations because they would

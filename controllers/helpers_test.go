@@ -1,9 +1,8 @@
 package controllers
 
 import (
-	"encoding/json"
-	"fmt"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -17,13 +16,9 @@ import (
 func TestGetMaxUnavailableWithPercentageValue(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"75%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("75%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 200)).To(gomega.Equal(150))
 }
 
@@ -89,10 +84,8 @@ func TestIsNodePassesReadinessGates(t *testing.T) {
 			gate: []map[string]string{
 				{"healthy": "true"},
 			},
-			labels: map[string]string{
-
-			},
-			want: false,
+			labels: map[string]string{},
+			want:   false,
 		},
 
 		{
@@ -111,7 +104,7 @@ func TestIsNodePassesReadinessGates(t *testing.T) {
 				{"second-check": "true"},
 			},
 			labels: map[string]string{
-				"healthy": "true",
+				"healthy":      "true",
 				"second-check": "true",
 			},
 			want: true,
@@ -122,11 +115,11 @@ func TestIsNodePassesReadinessGates(t *testing.T) {
 				{"second-check": "true"},
 			},
 			labels: map[string]string{
-				"healthy": "true",
+				"healthy":      "true",
 				"second-check": "false",
 			},
 			want: false,
-		},	}
+		}}
 
 	for _, tt := range tests {
 		readinessGates := make([]upgrademgrv1alpha1.NodeReadinessGate, len(tt.gate))
@@ -182,17 +175,17 @@ func TestGetInServiceCount(t *testing.T) {
 func TestGetInServiceIds(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	tt := map[*autoscaling.Instance][]string{
-		&autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}: {"i-1"},
-		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:        {},
-		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:       {},
-		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}: {},
-		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:         {},
-		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:  {},
-		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:     {},
-		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:     {},
-		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:         {},
-		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:     {},
-		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:    {},
+		&autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}:           {"i-1"},
+		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:            {},
+		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:           {},
+		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}:     {},
+		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:             {},
+		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:      {},
+		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:             {},
+		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:         {},
+		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:        {},
 		&autoscaling.Instance{InstanceId: aws.String("i-12"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingProceed)}: {},
 		&autoscaling.Instance{InstanceId: aws.String("i-13"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingWait)}:    {},
 	}
@@ -216,13 +209,9 @@ func TestGetInServiceIds(t *testing.T) {
 func TestGetMaxUnavailableWithPercentageValue33(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"67%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("67%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 3)).To(gomega.Equal(2))
 }
 
@@ -230,39 +219,27 @@ func TestGetMaxUnavailableWithPercentageAndSingleInstance(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	totalNodes := 1
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"67%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("67%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, totalNodes)).To(gomega.Equal(1))
 }
 
 func TestGetMaxUnavailableWithPercentageNonIntResult(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": \"37%\", \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("37%"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 50)).To(gomega.Equal(18))
 }
 
 func TestGetMaxUnavailableWithIntValue(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	jsonString := "{ \"type\": \"randomUpdate\", \"maxUnavailable\": 75, \"drainTimeout\": 15 }"
-	strategy := upgrademgrv1alpha1.UpdateStrategy{}
-	err := json.Unmarshal([]byte(jsonString), &strategy)
-	if err != nil {
-		fmt.Printf("Error occurred while unmarshalling strategy object, error: %s", err.Error())
+	strategy := upgrademgrv1alpha1.UpdateStrategy{
+		MaxUnavailable: intstr.Parse("75"),
 	}
-
 	g.Expect(getMaxUnavailable(strategy, 200)).To(gomega.Equal(75))
 }
 
@@ -276,14 +253,13 @@ func TestGetNextAvailableInstance(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 	available := getNextAvailableInstances(mockAsgName, 1, instancesList, rcRollingUpgrade.ClusterState)
 
 	g.Expect(1).Should(gomega.Equal(len(available)))
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 
 }
 
@@ -297,14 +273,13 @@ func TestGetNextAvailableInstanceNoInstanceFound(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 	available := getNextAvailableInstances("asg2", 1, instancesList, rcRollingUpgrade.ClusterState)
 
 	g.Expect(0).Should(gomega.Equal(len(available)))
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 
 }
 
@@ -319,8 +294,7 @@ func TestGetNextAvailableInstanceInAz(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az2}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 
@@ -335,7 +309,7 @@ func TestGetNextAvailableInstanceInAz(t *testing.T) {
 	instances = getNextSetOfAvailableInstancesInAz(mockAsgName, "az3", 1, instancesList, rcRollingUpgrade.ClusterState)
 	g.Expect(0).Should(gomega.Equal(len(instances)))
 
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 
 }
 
@@ -349,8 +323,7 @@ func TestGetNextAvailableInstanceInAzGetMultipleInstances(t *testing.T) {
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
 	instance2 := autoscaling.Instance{InstanceId: &mockInstanceName2, AvailabilityZone: &az}
 
-	instancesList := []*autoscaling.Instance{}
-	instancesList = append(instancesList, &instance1, &instance2)
+	instancesList := []*autoscaling.Instance{&instance1, &instance2}
 	rcRollingUpgrade := &RollingUpgradeReconciler{ClusterState: clusterState}
 	rcRollingUpgrade.ClusterState.initializeAsg(mockAsgName, instancesList)
 
@@ -361,5 +334,5 @@ func TestGetNextAvailableInstanceInAzGetMultipleInstances(t *testing.T) {
 	instanceIds := []string{*instances[0].InstanceId, *instances[1].InstanceId}
 	g.Expect(instanceIds).Should(gomega.ConsistOf(mockInstanceName1, mockInstanceName2))
 
-	g.Expect(rcRollingUpgrade.ClusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(rcRollingUpgrade.ClusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
 }

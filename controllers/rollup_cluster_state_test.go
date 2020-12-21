@@ -109,8 +109,8 @@ func TestDeleteEntryOfAsg(t *testing.T) {
 	populateClusterState()
 	mockAsgName := "asg-1"
 
-	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
-	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeFalse())
+	g.Expect(clusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(clusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeFalse())
 }
 
 func TestInstanceStateUpdateSequence(t *testing.T) {
@@ -126,8 +126,8 @@ func TestInstanceStateUpdateSequence(t *testing.T) {
 	clusterState.markUpdateCompleted(mockNodeName)
 	g.Expect(clusterState.instanceUpdateCompleted(mockNodeName)).To(gomega.BeTrue())
 
-	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeTrue())
-	g.Expect(clusterState.deleteEntryOfAsg(mockAsgName)).To(gomega.BeFalse())
+	g.Expect(clusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeTrue())
+	g.Expect(clusterState.deleteAllInstancesInAsg(mockAsgName)).To(gomega.BeFalse())
 }
 
 func TestGetNextAvailableInstanceIdInAz(t *testing.T) {

@@ -17,6 +17,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -29,7 +30,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
-	"github.com/pkg/errors"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,17 +51,10 @@ var (
 var (
 	CacheDefaultTTL                     = time.Second * 0
 	DescribeAutoScalingGroupsTTL        = 60 * time.Second
+	DescribeLaunchTemplatesTTL          = 60 * time.Second
 	CacheMaxItems                int64  = 5000
 	CacheItemsToPrune            uint32 = 500
 )
-
-var DefaultRetryer = client.DefaultRetryer{
-	NumMaxRetries:    12,
-	MinThrottleDelay: time.Second * 5,
-	MaxThrottleDelay: time.Second * 60,
-	MinRetryDelay:    time.Second * 1,
-	MaxRetryDelay:    time.Second * 5,
-}
 
 func init() {
 
@@ -119,8 +112,13 @@ func main() {
 		log.SetLevel("debug")
 	}
 
-	retryer := DefaultRetryer
-	retryer.NumMaxRetries = maxAPIRetries
+	retryer := client.DefaultRetryer{
+		NumMaxRetries:    maxAPIRetries,
+		MinThrottleDelay: time.Second * 5,
+		MaxThrottleDelay: time.Second * 60,
+		MinRetryDelay:    time.Second * 1,
+		MaxRetryDelay:    time.Second * 5,
+	}
 
 	config := aws.NewConfig().WithRegion(region)
 	config = config.WithCredentialsChainVerboseErrors(true)
@@ -133,6 +131,7 @@ func main() {
 	cacheCfg := cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
 	cache.AddCaching(sess, cacheCfg)
 	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
+	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
 	sess.Handlers.Complete.PushFront(func(r *request.Request) {
 		ctx := r.HTTPRequest.Context()
 		log.Debugf("cache hit => %v, service => %s.%s",
@@ -142,13 +141,15 @@ func main() {
 		)
 	})
 
+	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
 	reconciler := &controllers.RollingUpgradeReconciler{
 		Client:       mgr.GetClient(),
-		Log:          ctrl.Log.WithName("controllers").WithName("RollingUpgrade"),
+		Log:          logger,
 		ClusterState: controllers.NewClusterState(),
 		ASGClient:    autoscaling.New(sess),
 		EC2Client:    ec2.New(sess),
 		CacheConfig:  cacheCfg,
+		ScriptRunner: controllers.NewScriptRunner(logger),
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
@@ -197,7 +198,7 @@ func deriveRegion() (string, error) {
 	c := ec2metadata.New(sess)
 	region, err := c.Region()
 	if err != nil {
-		return "", errors.Wrapf(err, "cannot reach ec2metadata, if running locally export AWS_REGION")
+		return "", fmt.Errorf("cannot reach ec2metadata, if running locally export AWS_REGION: %w", err)
 	}
 	return region, nil
 }
