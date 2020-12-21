@@ -493,6 +493,8 @@ func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscali
 	return inProgressInstances, nil
 }
 
+// runRestack performs rollout of new nodes.
+// returns number of processed instances and optional error.
 func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) (int, error) {
 
 	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
@@ -1161,7 +1163,7 @@ func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.Rol
 
 // logger creates logger for rolling upgrade.
 func (r *RollingUpgradeReconciler) logger(ruObj *upgrademgrv1alpha1.RollingUpgrade) logr.Logger {
-	return r.Log.WithValues("rollingupgrade", ruObj.Name)
+	return r.Log.WithValues("rollingupgrade", ruObj.NamespacedName())
 }
 
 // info logs message with Info level for the specified rolling upgrade.
