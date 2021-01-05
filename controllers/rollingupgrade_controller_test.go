@@ -1935,6 +1935,43 @@ func TestTestCallKubectlDrainWithTimeoutOccurring(t *testing.T) {
 	g.Expect(output).To(gomega.ContainSubstring("timed-out"))
 }
 
+func TestTestCallKubectlDrainIgnoresNoiseInOutput(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockKubeCtlCall := "echo 'I0105 Throttling request took 1.097511969s\\nError from server (NotFound): nodes \\\"some-node\\\" not found'; exit 1"
+	mockNodeName := "some-node"
+	mockAsgName := "some-asg"
+	rcRollingUpgrade := createReconciler()
+	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: mockAsgName}}
+
+	errChan := make(chan error)
+	ctx := context.TODO()
+
+	go rcRollingUpgrade.CallKubectlDrain(mockNodeName, ruObj, errChan)
+
+	output := ""
+	select {
+	case <-ctx.Done():
+		log.Printf("Kubectl drain timed out for node - %s", mockNodeName)
+		log.Print(ctx.Err())
+		output = "timed-out"
+		break
+	case err := <-errChan:
+		if err != nil {
+			log.Printf("Kubectl drain errored for node - %s, error: %s", mockNodeName, err.Error())
+			output = "error"
+			break
+		}
+		log.Printf("Kubectl drain completed for node - %s", mockNodeName)
+		output = "completed"
+		break
+	}
+
+	g.Expect(output).To(gomega.ContainSubstring("completed"))
+}
+
 func TestValidateRuObj(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
