@@ -209,10 +209,9 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 // CallKubectlDrain runs the "kubectl drain" for a given node
 // Node will be terminated even if pod eviction is not completed when the drain timeout is exceeded
 func (r *RollingUpgradeReconciler) CallKubectlDrain(nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
-
 	out, err := r.ScriptRunner.drainNode(nodeName, ruObj)
 	if err != nil {
-		if strings.HasPrefix(out, "Error from server (NotFound)") {
+		if strings.Contains(out, "Error from server (NotFound): nodes") {
 			r.error(ruObj, err, "Not executing postDrainHelper. Node not found.", "output", out)
 			errChan <- nil
 			return
