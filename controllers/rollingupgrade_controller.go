@@ -18,6 +18,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/kubectl/pkg/drain"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -209,13 +211,18 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 // CallKubectlDrain runs the "kubectl drain" for a given node
 // Node will be terminated even if pod eviction is not completed when the drain timeout is exceeded
 func (r *RollingUpgradeReconciler) CallKubectlDrain(nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
-	out, err := r.ScriptRunner.drainNode(nodeName, ruObj)
+	drainHelper := &drain.Helper{
+		DeleteEmptyDirData: true,
+		Force: true,
+		IgnoreAllDaemonSets: true,
+		GracePeriodSeconds: -1,
+		Client: r.generatedClient,
+		// TODO: replace with buffered IO
+		Out: os.Stdout,
+		ErrOut: os.Stderr,
+	}
+	err := drain.RunNodeDrain(drainHelper, nodeName)
 	if err != nil {
-		if strings.Contains(out, "Error from server (NotFound): nodes") {
-			r.error(ruObj, err, "Not executing postDrainHelper. Node not found.", "output", out)
-			errChan <- nil
-			return
-		}
 		errChan <- fmt.Errorf("%s failed to drain: %w", ruObj.NamespacedName(), err)
 		return
 	}
