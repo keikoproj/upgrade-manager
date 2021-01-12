@@ -1,0 +1,11 @@
+domain: keikoproj.io
+layout: go.kubebuilder.io/v3
+projectName: upgrade-manager
+repo: github.com/keikoproj/upgrade-manager
+resources:
+- api:
+    crdVersion: v1
+  group: upgrademgr
+  kind: RollingUpgrade
+  version: v1alpha1
+version: 3-alpha
