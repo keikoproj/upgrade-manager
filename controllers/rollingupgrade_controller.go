@@ -18,20 +18,34 @@ package controllers
 
 import (
 	"context"
+	"strings"
+	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/keikoproj/aws-sdk-go-cache/cache"
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
+	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
 type RollingUpgradeReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	logr.Logger
+	Scheme       *runtime.Scheme
+	AdmissionMap sync.Map
+	CacheConfig  *cache.Config
+	Auth         *RollingUpgradeAuthenticator
+}
+
+type RollingUpgradeAuthenticator struct {
+	awsprovider.AmazonClientSet
+	kubeprovider.KubernetesClientSet
 }
 
 // +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades,verbs=get;list;watch;create;update;patch;delete
@@ -46,9 +60,60 @@ type RollingUpgradeReconciler struct {
 // Reconcile reads that state of the cluster for a RollingUpgrade object and makes changes based on the state read
 // and the details in the RollingUpgrade.Spec
 func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = r.Log.WithValues("rollingupgrade", req.NamespacedName)
+	rollingUpgrade := &upgrademgrv1alpha1.RollingUpgrade{}
+	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			r.AdmissionMap.Delete(req.NamespacedName)
+			r.Info("deleted object from admission map", "name", req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
 
-	// your logic here
+	// If the resource is being deleted, remove it from the admissionMap
+	if !rollingUpgrade.DeletionTimestamp.IsZero() {
+		r.AdmissionMap.Delete(req.NamespacedName)
+		r.Info("deleted object from admission map", "name", req.NamespacedName)
+		return reconcile.Result{}, nil
+	}
+
+	// TODO: VALIDATION + SET DEFAULTS
+
+	// Migrate r.setDefaultsForRollingUpdateStrategy & r.validateRollingUpgradeObj into v1alpha1 RollingUpgrade.Validate()
+	// Include setting of defaults in validation
+
+	// if ok, err := rollingUpgrade.Validate(); !ok {
+	//   return reconcile.Result{}, err
+	// }
+
+	var (
+		scalingGroupName = rollingUpgrade.ScalingGroupName()
+		inProgress       bool
+	)
+
+	r.AdmissionMap.Range(func(k, v interface{}) bool {
+		val := v.(string)
+		if strings.EqualFold(val, scalingGroupName) {
+			r.Info("object already being processed", "name", k, "scalingGroup", scalingGroupName)
+			inProgress = true
+			return false
+		}
+		return true
+	})
+
+	if inProgress {
+		return ctrl.Result{}, nil
+	}
+
+	r.Info("admitted new rollingupgrade", "name", req.NamespacedName, "scalingGroup", scalingGroupName)
+	r.AdmissionMap.Store(req.NamespacedName, scalingGroupName)
+
+	// TODO: Cloud Discovery - discover AWS / K8s resources
+
+	// TODO: State - determine state / requeue
+
+	// TODO: Process - rotate nodes
 
 	return ctrl.Result{}, nil
 }
