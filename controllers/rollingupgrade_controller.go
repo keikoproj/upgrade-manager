@@ -209,10 +209,9 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 // CallKubectlDrain runs the "kubectl drain" for a given node
 // Node will be terminated even if pod eviction is not completed when the drain timeout is exceeded
 func (r *RollingUpgradeReconciler) CallKubectlDrain(nodeName string, ruObj *upgrademgrv1alpha1.RollingUpgrade, errChan chan error) {
-
 	out, err := r.ScriptRunner.drainNode(nodeName, ruObj)
 	if err != nil {
-		if strings.HasPrefix(out, "Error from server (NotFound)") {
+		if strings.Contains(out, "Error from server (NotFound): nodes") {
 			r.error(ruObj, err, "Not executing postDrainHelper. Node not found.", "output", out)
 			errChan <- nil
 			return
@@ -455,14 +454,15 @@ func (r *RollingUpgradeReconciler) populateAsg(ruObj *upgrademgrv1alpha1.Rolling
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) populateLaunchTemplates() error {
+func (r *RollingUpgradeReconciler) populateLaunchTemplates(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
 	launchTemplates := []*ec2.LaunchTemplate{}
 	err := r.EC2Client.DescribeLaunchTemplatesPages(&ec2.DescribeLaunchTemplatesInput{}, func(page *ec2.DescribeLaunchTemplatesOutput, lastPage bool) bool {
 		launchTemplates = append(launchTemplates, page.LaunchTemplates...)
 		return page.NextToken != nil
 	})
 	if err != nil {
-		return err
+		r.error(ruObj, err, "Failed to populate launch template list")
+		return fmt.Errorf("failed to populate launch template list for %s: %w", ruObj.NamespacedName(), err)
 	}
 	r.LaunchTemplates = launchTemplates
 	return nil
@@ -560,8 +560,20 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 	return processedInstances, nil
 }
 
-func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProcessed int, ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) {
-	r.info(ruObj, "Marked object as", "finalStatus", finalStatus)
+func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int, ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) {
+	var level string
+	var finalStatus string
+
+	if err == nil {
+		finalStatus = upgrademgrv1alpha1.StatusComplete
+		level = EventLevelNormal
+		r.info(ruObj, "Marked object as", "finalStatus", finalStatus)
+	} else {
+		finalStatus = upgrademgrv1alpha1.StatusError
+		level = EventLevelWarning
+		r.error(ruObj, err, "Marked object as", "finalStatus", finalStatus)
+	}
+
 	endTime := time.Now()
 	ruObj.Status.EndTime = endTime.Format(time.RFC3339)
 	ruObj.Status.CurrentStatus = finalStatus
@@ -580,12 +592,7 @@ func (r *RollingUpgradeReconciler) finishExecution(finalStatus string, nodesProc
 		ruObj.Status.TotalProcessingTime = endTime.Sub(startTime).String()
 	}
 	// end event
-	var level string
-	if finalStatus == upgrademgrv1alpha1.StatusComplete {
-		level = EventLevelNormal
-	} else {
-		level = EventLevelWarning
-	}
+
 	r.createK8sV1Event(ruObj, EventReasonRUFinished, level, map[string]string{
 		"status":   finalStatus,
 		"asgName":  ruObj.Spec.AsgName,
@@ -637,26 +644,26 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	r.CacheConfig.FlushCache("autoscaling")
 	err := r.populateAsg(ruObj)
 	if err != nil {
-		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
+		r.finishExecution(err, 0, ctx, ruObj)
 		return
 	}
 
 	//TODO(shri): Ensure that no node is Unschedulable at this time.
 	err = r.populateNodeList(ruObj, r.generatedClient.CoreV1().Nodes())
 	if err != nil {
-		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
+		r.finishExecution(err, 0, ctx, ruObj)
 		return
 	}
 
-	if err := r.populateLaunchTemplates(); err != nil {
-		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
+	if err := r.populateLaunchTemplates(ruObj); err != nil {
+		r.finishExecution(err, 0, ctx, ruObj)
 		return
 	}
 
 	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
 		r.error(ruObj, err, "Unable to load ASG for rolling upgrade")
-		r.finishExecution(upgrademgrv1alpha1.StatusError, 0, ctx, ruObj)
+		r.finishExecution(err, 0, ctx, ruObj)
 		return
 	}
 
@@ -674,7 +681,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	nodesProcessed, err := r.runRestack(ctx, ruObj)
 	if err != nil {
 		r.error(ruObj, err, "Failed to runRestack")
-		r.finishExecution(upgrademgrv1alpha1.StatusError, nodesProcessed, ctx, ruObj)
+		r.finishExecution(err, nodesProcessed, ctx, ruObj)
 		return
 	}
 
@@ -682,11 +689,12 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	r.info(ruObj, "Validating the launch definition of nodes and ASG")
 	if err := r.validateNodesLaunchDefinition(ruObj); err != nil {
 		r.error(ruObj, err, "Launch definition validation failed")
-		r.finishExecution(upgrademgrv1alpha1.StatusError, nodesProcessed, ctx, ruObj)
+		r.finishExecution(err, nodesProcessed, ctx, ruObj)
 		return
 	}
 
-	r.finishExecution(upgrademgrv1alpha1.StatusComplete, nodesProcessed, ctx, ruObj)
+	// no error -> report success
+	r.finishExecution(nil, nodesProcessed, ctx, ruObj)
 }
 
 //Check if ec2Instances and the ASG have same launch config.

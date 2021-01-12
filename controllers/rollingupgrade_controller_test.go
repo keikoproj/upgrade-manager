@@ -65,8 +65,9 @@ func TestErrorStatusMarkJanitor(t *testing.T) {
 	}
 
 	ctx := context.TODO()
+	err = fmt.Errorf("execution error")
 	rcRollingUpgrade.inProcessASGs.Store(someAsg, "processing")
-	rcRollingUpgrade.finishExecution(upgrademgrv1alpha1.StatusError, 3, &ctx, instance)
+	rcRollingUpgrade.finishExecution(err, 3, &ctx, instance)
 	g.Expect(instance.ObjectMeta.Annotations[JanitorAnnotation]).To(gomega.Equal(ClearErrorFrequency))
 	_, exists := rcRollingUpgrade.inProcessASGs.Load(someAsg)
 	g.Expect(exists).To(gomega.BeFalse())
@@ -935,7 +936,7 @@ func TestFinishExecutionCompleted(t *testing.T) {
 	ctx := context.TODO()
 	mockNodesProcessed := 3
 
-	rcRollingUpgrade.finishExecution(upgrademgrv1alpha1.StatusComplete, mockNodesProcessed, &ctx, ruObj)
+	rcRollingUpgrade.finishExecution(nil, mockNodesProcessed, &ctx, ruObj)
 
 	g.Expect(ruObj.Status.CurrentStatus).To(gomega.Equal(upgrademgrv1alpha1.StatusComplete))
 	g.Expect(ruObj.Status.NodesProcessed).To(gomega.Equal(mockNodesProcessed))
@@ -970,7 +971,8 @@ func TestFinishExecutionError(t *testing.T) {
 	ctx := context.TODO()
 	mockNodesProcessed := 3
 
-	rcRollingUpgrade.finishExecution(upgrademgrv1alpha1.StatusError, mockNodesProcessed, &ctx, ruObj)
+	err = fmt.Errorf("execution error")
+	rcRollingUpgrade.finishExecution(err, mockNodesProcessed, &ctx, ruObj)
 
 	g.Expect(ruObj.Status.CurrentStatus).To(gomega.Equal(upgrademgrv1alpha1.StatusError))
 	g.Expect(ruObj.Status.NodesProcessed).To(gomega.Equal(mockNodesProcessed))
@@ -1931,6 +1933,43 @@ func TestTestCallKubectlDrainWithTimeoutOccurring(t *testing.T) {
 	}
 
 	g.Expect(output).To(gomega.ContainSubstring("timed-out"))
+}
+
+func TestTestCallKubectlDrainIgnoresNoiseInOutput(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockKubeCtlCall := "echo 'I0105 Throttling request took 1.097511969s\\nError from server (NotFound): nodes \\\"some-node\\\" not found'; exit 1"
+	mockNodeName := "some-node"
+	mockAsgName := "some-asg"
+	rcRollingUpgrade := createReconciler()
+	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: mockAsgName}}
+
+	errChan := make(chan error)
+	ctx := context.TODO()
+
+	go rcRollingUpgrade.CallKubectlDrain(mockNodeName, ruObj, errChan)
+
+	output := ""
+	select {
+	case <-ctx.Done():
+		log.Printf("Kubectl drain timed out for node - %s", mockNodeName)
+		log.Print(ctx.Err())
+		output = "timed-out"
+		break
+	case err := <-errChan:
+		if err != nil {
+			log.Printf("Kubectl drain errored for node - %s, error: %s", mockNodeName, err.Error())
+			output = "error"
+			break
+		}
+		log.Printf("Kubectl drain completed for node - %s", mockNodeName)
+		output = "completed"
+		break
+	}
+
+	g.Expect(output).To(gomega.ContainSubstring("completed"))
 }
 
 func TestValidateRuObj(t *testing.T) {
