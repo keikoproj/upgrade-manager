@@ -101,12 +101,17 @@ type NodeReadinessGate struct {
 
 const (
 	// Status
+	StatusInit     = "init"
 	StatusRunning  = "running"
 	StatusComplete = "completed"
 	StatusError    = "error"
 
 	// Conditions
 	UpgradeComplete UpgradeConditionType = "Complete"
+)
+
+var (
+	FiniteStates = []string{StatusComplete, StatusError}
 )
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade
@@ -140,10 +145,18 @@ func (c UpdateStrategyMode) String() string {
 }
 
 // NamespacedName returns namespaced name of the object.
-func (r RollingUpgrade) NamespacedName() string {
+func (r *RollingUpgrade) NamespacedName() string {
 	return fmt.Sprintf("%s/%s", r.Namespace, r.Name)
 }
 
-func (r RollingUpgrade) ScalingGroupName() string {
+func (r *RollingUpgrade) ScalingGroupName() string {
 	return r.Spec.AsgName
+}
+
+func (r *RollingUpgrade) CurrentStatus() string {
+	return r.Status.CurrentStatus
+}
+
+func (r *RollingUpgrade) SetCurrentStatus(status string) {
+	r.Status.CurrentStatus = status
 }
