@@ -14,17 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package common
 
-import "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+import "strings"
 
-func (r *RollingUpgradeReconciler) DiscoverState(rollingUpgrade *v1alpha1.RollingUpgrade) {
-
-	if rollingUpgrade.CurrentStatus() != v1alpha1.StatusInit {
-		return
+// ContainsEqualFold returns true if a given slice 'slice' contains string 's' under unicode case-folding
+func ContainsEqualFold(slice []string, s string) bool {
+	for _, item := range slice {
+		if strings.EqualFold(item, s) {
+			return true
+		}
 	}
-
-	// Detect if launch template / config drifted via discovered state
-
-	// set currentStatus to running or completed
+	return false
 }
