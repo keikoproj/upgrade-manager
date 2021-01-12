@@ -1,7 +1,0 @@
-version: "2"
-domain: keikoproj.io
-repo: github.com/keikoproj/upgrade-manager
-resources:
-- group: upgrademgr
-  version: v1alpha1
-  kind: RollingUpgrade
