@@ -1,0 +1,7 @@
+apiVersion: upgrademgr.keikoproj.io/v1alpha1
+kind: RollingUpgrade
+metadata:
+  name: rollingupgrade-sample
+spec:
+  # Add fields here
+  foo: bar
