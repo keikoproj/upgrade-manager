@@ -1,9 +1,0 @@
-apiVersion: upgrademgr.keikoproj.io/v1alpha1
-kind: RollingUpgrade
-metadata:
-  generateName: rollingupgrade-sample-
-spec:
-    asgName: my-asg
-    nodeIntervalSeconds: 300
-    postDrain:
-        waitSeconds: 90
