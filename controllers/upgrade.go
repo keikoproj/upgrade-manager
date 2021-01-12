@@ -16,4 +16,10 @@ limitations under the License.
 
 package controllers
 
+import "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+
 // TODO: main node rotation logic
+func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingUpgrade) error {
+
+	return nil
+}

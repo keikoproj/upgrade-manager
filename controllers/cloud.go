@@ -16,4 +16,47 @@ limitations under the License.
 
 package controllers
 
+import (
+	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+)
+
 // TODO: Resource discovery for AWS & Kubernetes
+
+type DiscoveredState struct {
+	*RollingUpgradeAuthenticator
+	logr.Logger
+	ClusterNodes        []corev1.NodeList
+	LaunchTemplates     []*ec2.LaunchTemplate
+	ScalingGroups       []*autoscaling.Group
+	InProgressInstances []*ec2.Instance
+}
+
+func NewDiscoveredState(auth *RollingUpgradeAuthenticator, logger logr.Logger) *DiscoveredState {
+	return &DiscoveredState{
+		RollingUpgradeAuthenticator: auth,
+		Logger:                      logger,
+	}
+}
+
+func (d *DiscoveredState) Discover() error {
+
+	// DescribeLaunchTemplatesPages
+
+	// DescribeAutoScalingGroupsPages
+
+	// DescribeInstancesPages with filter upgrademgr.keikoproj.io/state=in-progress
+
+	// List Nodes
+
+	return nil
+}
+
+func (d *DiscoveredState) IsConfigurationDrift() bool {
+
+	// Check if launch template / launch config mismatch from scaling group
+
+	return false
+}
