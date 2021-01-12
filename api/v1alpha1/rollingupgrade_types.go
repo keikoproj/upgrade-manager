@@ -143,3 +143,7 @@ func (c UpdateStrategyMode) String() string {
 func (r RollingUpgrade) NamespacedName() string {
 	return fmt.Sprintf("%s/%s", r.Namespace, r.Name)
 }
+
+func (r RollingUpgrade) ScalingGroupName() string {
+	return r.Spec.AsgName
+}
