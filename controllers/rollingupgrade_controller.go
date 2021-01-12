@@ -20,16 +20,20 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
+	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -41,6 +45,8 @@ type RollingUpgradeReconciler struct {
 	AdmissionMap sync.Map
 	CacheConfig  *cache.Config
 	Auth         *RollingUpgradeAuthenticator
+	Cloud        *DiscoveredState
+	maxParallel  int
 }
 
 type RollingUpgradeAuthenticator struct {
@@ -74,7 +80,15 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// If the resource is being deleted, remove it from the admissionMap
 	if !rollingUpgrade.DeletionTimestamp.IsZero() {
 		r.AdmissionMap.Delete(req.NamespacedName)
-		r.Info("deleted object from admission map", "name", req.NamespacedName)
+		r.Info("rolling upgrade deleted", "name", req.NamespacedName)
+		return reconcile.Result{}, nil
+	}
+
+	// Stop processing upgrades which are in finite state
+	currentStatus := rollingUpgrade.CurrentStatus()
+	if common.ContainsEqualFold(v1alpha1.FiniteStates, currentStatus) {
+		r.AdmissionMap.Delete(req.NamespacedName)
+		r.Info("rolling upgrade ended", "name", req.NamespacedName, "status", currentStatus)
 		return reconcile.Result{}, nil
 	}
 
@@ -92,10 +106,15 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		inProgress       bool
 	)
 
+	// Defer a status update on the resource
+	defer r.UpdateStatus(rollingUpgrade)
+
+	// handle condition where multiple resources submitted targeting the same scaling group by requeing
 	r.AdmissionMap.Range(func(k, v interface{}) bool {
 		val := v.(string)
-		if strings.EqualFold(val, scalingGroupName) {
-			r.Info("object already being processed", "name", k, "scalingGroup", scalingGroupName)
+		resource := k.(string)
+		if strings.EqualFold(val, scalingGroupName) && !strings.EqualFold(resource, rollingUpgrade.NamespacedName()) {
+			r.Info("object already being processed by existing resource", "resource", resource, "scalingGroup", scalingGroupName)
 			inProgress = true
 			return false
 		}
@@ -103,17 +122,31 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	})
 
 	if inProgress {
-		return ctrl.Result{}, nil
+		// requeue any resources which are already being processed by a different resource, until the resource is completed/deleted
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
 	r.Info("admitted new rollingupgrade", "name", req.NamespacedName, "scalingGroup", scalingGroupName)
 	r.AdmissionMap.Store(req.NamespacedName, scalingGroupName)
+	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
 
-	// TODO: Cloud Discovery - discover AWS / K8s resources
+	discoveredState := NewDiscoveredState(r.Auth, r.Logger)
+	if err := discoveredState.Discover(); err != nil {
+		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		return ctrl.Result{}, err
+	}
 
-	// TODO: State - determine state / requeue
+	// determine and set state
+	r.DiscoverState(rollingUpgrade)
 
-	// TODO: Process - rotate nodes
+	// process node rotation
+	if !common.ContainsEqualFold(v1alpha1.FiniteStates, rollingUpgrade.CurrentStatus()) {
+		if err := r.RotateNodes(rollingUpgrade); err != nil {
+			rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+			return ctrl.Result{}, err
+		}
+		return reconcile.Result{RequeueAfter: time.Second * 10}, nil
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -122,5 +155,19 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&upgrademgrv1alpha1.RollingUpgrade{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
+}
+
+func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
+	if n >= 1 {
+		r.Info("setting max parallel reconcile", "value", n)
+		r.maxParallel = n
+	}
+}
+
+func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.RollingUpgrade) {
+	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
+		r.Error(err, "failed to update status", "name", rollingUpgrade.NamespacedName())
+	}
 }

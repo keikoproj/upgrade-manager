@@ -178,7 +178,8 @@ func main() {
 	}
 
 	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
-	if err = (&controllers.RollingUpgradeReconciler{
+
+	reconciler := &controllers.RollingUpgradeReconciler{
 		Client:      mgr.GetClient(),
 		Logger:      logger,
 		Scheme:      mgr.GetScheme(),
@@ -187,7 +188,11 @@ func main() {
 			AmazonClientSet:     awsClient,
 			KubernetesClientSet: kubeClient,
 		},
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	reconciler.SetMaxParallel(maxParallel)
+
+	if err = (reconciler).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RollingUpgrade")
 		os.Exit(1)
 	}
