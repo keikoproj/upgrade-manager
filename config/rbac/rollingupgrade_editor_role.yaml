@@ -1,0 +1,24 @@
+# permissions for end users to edit rollingupgrades.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rollingupgrade-editor-role
+rules:
+- apiGroups:
+  - upgrademgr.keikoproj.io
+  resources:
+  - rollingupgrades
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - upgrademgr.keikoproj.io
+  resources:
+  - rollingupgrades/status
+  verbs:
+  - get
