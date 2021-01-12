@@ -1,0 +1,155 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: rollingupgrades.upgrademgr.keikoproj.io
+spec:
+  group: upgrademgr.keikoproj.io
+  names:
+    kind: RollingUpgrade
+    listKind: RollingUpgradeList
+    plural: rollingupgrades
+    shortNames:
+    - ru
+    singular: rollingupgrade
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: current status of the rollingupgarde
+      jsonPath: .status.currentStatus
+      name: Status
+      type: string
+    - description: total nodes involved in the rollingupgarde
+      jsonPath: .status.totalNodes
+      name: TotalNodes
+      type: string
+    - description: current number of nodes processed in the rollingupgarde
+      jsonPath: .status.nodesProcessed
+      name: NodesProcessed
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: RollingUpgrade is the Schema for the rollingupgrades API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RollingUpgradeSpec defines the desired state of RollingUpgrade
+            properties:
+              asgName:
+                type: string
+              forceRefresh:
+                type: boolean
+              ignoreDrainFailures:
+                type: boolean
+              nodeIntervalSeconds:
+                type: integer
+              postDrain:
+                description: PostDrainSpec contains the fields for actions taken after
+                  draining the node.
+                properties:
+                  postWaitScript:
+                    type: string
+                  script:
+                    type: string
+                  waitSeconds:
+                    format: int64
+                    type: integer
+                type: object
+              postDrainDelaySeconds:
+                type: integer
+              postTerminate:
+                description: PostTerminateSpec contains the fields for actions taken
+                  after terminating the node.
+                properties:
+                  script:
+                    type: string
+                type: object
+              preDrain:
+                description: PreDrainSpec contains the fields for actions taken before
+                  draining the node.
+                properties:
+                  script:
+                    type: string
+                type: object
+              readinessGates:
+                items:
+                  properties:
+                    matchLabels:
+                      additionalProperties:
+                        type: string
+                      type: object
+                  type: object
+                type: array
+              strategy:
+                description: UpdateStrategy holds the information needed to perform
+                  update based on different update strategies
+                properties:
+                  drainTimeout:
+                    type: integer
+                  maxUnavailable:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    x-kubernetes-int-or-string: true
+                  mode:
+                    type: string
+                  type:
+                    type: string
+                required:
+                - drainTimeout
+                type: object
+            type: object
+          status:
+            description: RollingUpgradeStatus defines the observed state of RollingUpgrade
+            properties:
+              conditions:
+                items:
+                  description: RollingUpgradeCondition describes the state of the
+                    RollingUpgrade
+                  properties:
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  type: object
+                type: array
+              currentStatus:
+                type: string
+              endTime:
+                type: string
+              nodesProcessed:
+                type: integer
+              startTime:
+                type: string
+              totalNodes:
+                type: integer
+              totalProcessingTime:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
