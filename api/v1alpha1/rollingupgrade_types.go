@@ -160,3 +160,8 @@ func (r *RollingUpgrade) CurrentStatus() string {
 func (r *RollingUpgrade) SetCurrentStatus(status string) {
 	r.Status.CurrentStatus = status
 }
+
+// Migrate r.setDefaultsForRollingUpdateStrategy & r.validateRollingUpgradeObj into v1alpha1 RollingUpgrade.Validate()
+func (r *RollingUpgrade) Validate() (bool, error) {
+	return true, nil
+}
