@@ -46,6 +46,7 @@ type RollingUpgradeReconciler struct {
 	CacheConfig  *cache.Config
 	Auth         *RollingUpgradeAuthenticator
 	Cloud        *DiscoveredState
+	EventWriter  *kubeprovider.EventWriter
 	maxParallel  int
 }
 
@@ -92,14 +93,9 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return reconcile.Result{}, nil
 	}
 
-	// TODO: VALIDATION + SET DEFAULTS
-
-	// Migrate r.setDefaultsForRollingUpdateStrategy & r.validateRollingUpgradeObj into v1alpha1 RollingUpgrade.Validate()
-	// Include setting of defaults in validation
-
-	// if ok, err := rollingUpgrade.Validate(); !ok {
-	//   return reconcile.Result{}, err
-	// }
+	if ok, err := rollingUpgrade.Validate(); !ok {
+		return reconcile.Result{}, err
+	}
 
 	var (
 		scalingGroupName = rollingUpgrade.ScalingGroupName()

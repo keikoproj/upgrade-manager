@@ -16,4 +16,20 @@ limitations under the License.
 
 package kubernetes
 
-// TODO: Kubernetes Nodes API calls
+import (
+	"context"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+)
+
+// ListClusterNodes gets a list of all nodes in the cluster
+func ListClusterNodes(k kubernetes.Interface) (*corev1.NodeList, error) {
+	var nodes *corev1.NodeList
+	nodes, err := k.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return nodes, err
+	}
+	return nodes, nil
+}
