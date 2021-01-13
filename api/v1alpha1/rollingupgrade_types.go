@@ -1,4 +1,5 @@
 /*
+Copyright 2021 Intuit Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,70 +24,29 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// PreDrainSpec contains the fields for actions taken before draining the node.
-type PreDrainSpec struct {
-	Script string `json:"script,omitempty"`
-}
-
-// PostDrainSpec contains the fields for actions taken after draining the node.
-type PostDrainSpec struct {
-	Script         string `json:"script,omitempty"`
-	WaitSeconds    int64  `json:"waitSeconds,omitempty"`
-	PostWaitScript string `json:"postWaitScript,omitempty"`
-}
-
-// PostTerminateSpec contains the fields for actions taken after terminating the node.
-type PostTerminateSpec struct {
-	Script string `json:"script,omitempty"`
-}
-
 // RollingUpgradeSpec defines the desired state of RollingUpgrade
 type RollingUpgradeSpec struct {
-	PostDrainDelaySeconds int `json:"postDrainDelaySeconds,omitempty"`
-	NodeIntervalSeconds   int `json:"nodeIntervalSeconds,omitempty"`
-	// AsgName is AWS Autoscaling Group name to roll.
-	AsgName       string            `json:"asgName,omitempty"`
-	PreDrain      PreDrainSpec      `json:"preDrain,omitempty"`
-	PostDrain     PostDrainSpec     `json:"postDrain,omitempty"`
-	PostTerminate PostTerminateSpec `json:"postTerminate,omitempty"`
-	Strategy      UpdateStrategy    `json:"strategy,omitempty"`
-	// IgnoreDrainFailures allows ignoring node drain failures and proceed with rolling upgrade.
-	IgnoreDrainFailures bool `json:"ignoreDrainFailures,omitempty"`
-	// ForceRefresh enables draining and terminating the node even if the launch config/template hasn't changed.
-	ForceRefresh bool `json:"forceRefresh,omitempty"`
-	// ReadinessGates allow to specify label selectors that node must match to be considered ready.
-	ReadinessGates []NodeReadinessGate `json:"readinessGates,omitempty"`
-}
-
-type NodeReadinessGate struct {
-	MatchLabels map[string]string `json:"matchLabels,omitempty" protobuf:"bytes,1,rep,name=matchLabels"`
+	PostDrainDelaySeconds int                 `json:"postDrainDelaySeconds,omitempty"`
+	NodeIntervalSeconds   int                 `json:"nodeIntervalSeconds,omitempty"`
+	AsgName               string              `json:"asgName,omitempty"`
+	PreDrain              PreDrainSpec        `json:"preDrain,omitempty"`
+	PostDrain             PostDrainSpec       `json:"postDrain,omitempty"`
+	PostTerminate         PostTerminateSpec   `json:"postTerminate,omitempty"`
+	Strategy              UpdateStrategy      `json:"strategy,omitempty"`
+	IgnoreDrainFailures   bool                `json:"ignoreDrainFailures,omitempty"`
+	ForceRefresh          bool                `json:"forceRefresh,omitempty"`
+	ReadinessGates        []NodeReadinessGate `json:"readinessGates,omitempty"`
 }
 
 // RollingUpgradeStatus defines the observed state of RollingUpgrade
 type RollingUpgradeStatus struct {
-	CurrentStatus       string `json:"currentStatus,omitempty"`
-	StartTime           string `json:"startTime,omitempty"`
-	EndTime             string `json:"endTime,omitempty"`
-	TotalProcessingTime string `json:"totalProcessingTime,omitempty"`
-	NodesProcessed      int    `json:"nodesProcessed,omitempty"`
-	TotalNodes          int    `json:"totalNodes,omitempty"`
-
-	Conditions []RollingUpgradeCondition `json:"conditions,omitempty"`
-}
-
-const (
-	// StatusRunning marks the CR to be running.
-	StatusRunning = "running"
-	// StatusComplete marks the CR as completed.
-	StatusComplete = "completed"
-	// StatusError marks the CR as errored out.
-	StatusError = "error"
-)
-
-// RollingUpgradeCondition describes the state of the RollingUpgrade
-type RollingUpgradeCondition struct {
-	Type   UpgradeConditionType   `json:"type,omitempty"`
-	Status corev1.ConditionStatus `json:"status,omitempty"`
+	CurrentStatus       string                    `json:"currentStatus,omitempty"`
+	StartTime           string                    `json:"startTime,omitempty"`
+	EndTime             string                    `json:"endTime,omitempty"`
+	TotalProcessingTime string                    `json:"totalProcessingTime,omitempty"`
+	NodesProcessed      int                       `json:"nodesProcessed,omitempty"`
+	TotalNodes          int                       `json:"totalNodes,omitempty"`
+	Conditions          []RollingUpgradeCondition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -105,7 +65,7 @@ type RollingUpgrade struct {
 	Status RollingUpgradeStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // RollingUpgradeList contains a list of RollingUpgrade
 type RollingUpgradeList struct {
@@ -118,46 +78,94 @@ func init() {
 	SchemeBuilder.Register(&RollingUpgrade{}, &RollingUpgradeList{})
 }
 
-// UpdateStrategyType indicates how the update has to be rolled out
-// whether to roll the update AZ wise or all Azs at once
+// PreDrainSpec contains the fields for actions taken before draining the node.
+type PreDrainSpec struct {
+	Script string `json:"script,omitempty"`
+}
+
+// PostDrainSpec contains the fields for actions taken after draining the node.
+type PostDrainSpec struct {
+	Script         string `json:"script,omitempty"`
+	WaitSeconds    int64  `json:"waitSeconds,omitempty"`
+	PostWaitScript string `json:"postWaitScript,omitempty"`
+}
+
+// PostTerminateSpec contains the fields for actions taken after terminating the node.
+type PostTerminateSpec struct {
+	Script string `json:"script,omitempty"`
+}
+
+type NodeReadinessGate struct {
+	MatchLabels map[string]string `json:"matchLabels,omitempty" protobuf:"bytes,1,rep,name=matchLabels"`
+}
+
+const (
+	// Status
+	StatusInit     = "init"
+	StatusRunning  = "running"
+	StatusComplete = "completed"
+	StatusError    = "error"
+
+	// Conditions
+	UpgradeComplete UpgradeConditionType = "Complete"
+)
+
+var (
+	FiniteStates = []string{StatusComplete, StatusError}
+)
+
+// RollingUpgradeCondition describes the state of the RollingUpgrade
+type RollingUpgradeCondition struct {
+	Type   UpgradeConditionType   `json:"type,omitempty"`
+	Status corev1.ConditionStatus `json:"status,omitempty"`
+}
+
 type UpdateStrategyType string
-
 type UpdateStrategyMode string
-
 type UpgradeConditionType string
 
 const (
-	// RandomUpdate strategy treats all the availability zones as a single unit and picks random nodes for update.
-	RandomUpdateStrategy UpdateStrategyType = "randomUpdate"
-
-	// UniformAcrossAzUpdateStrategy Picks same number of nodes or same percentage of nodes from each AZ for update.
+	RandomUpdateStrategy          UpdateStrategyType = "randomUpdate"
 	UniformAcrossAzUpdateStrategy UpdateStrategyType = "uniformAcrossAzUpdate"
 
 	UpdateStrategyModeLazy  UpdateStrategyMode = "lazy"
 	UpdateStrategyModeEager UpdateStrategyMode = "eager"
-
-	// Other update strategies such as rolling update by AZ or rolling update with a pre-defined instance list
-	// can be implemented in future by adding more update strategy types
-
-	UpgradeComplete UpgradeConditionType = "Complete"
 )
+
+// UpdateStrategy holds the information needed to perform update based on different update strategies
+type UpdateStrategy struct {
+	Type           UpdateStrategyType `json:"type,omitempty"`
+	Mode           UpdateStrategyMode `json:"mode,omitempty"`
+	MaxUnavailable intstr.IntOrString `json:"maxUnavailable,omitempty"`
+	DrainTimeout   int                `json:"drainTimeout"`
+}
 
 func (c UpdateStrategyMode) String() string {
 	return string(c)
 }
 
 // NamespacedName returns namespaced name of the object.
-func (r RollingUpgrade) NamespacedName() string {
+func (r *RollingUpgrade) NamespacedName() string {
 	return fmt.Sprintf("%s/%s", r.Namespace, r.Name)
 }
 
-// UpdateStrategy holds the information needed to perform update based on different update strategies
-type UpdateStrategy struct {
-	Type UpdateStrategyType `json:"type,omitempty"`
-	Mode UpdateStrategyMode `json:"mode,omitempty"`
-	// MaxUnavailable can be specified as number of nodes or the percent of total number of nodes
-	MaxUnavailable intstr.IntOrString `json:"maxUnavailable,omitempty"`
-	// Node will be terminated after drain timeout even if `kubectl drain` has not been completed
-	// and value has to be specified in seconds
-	DrainTimeout int `json:"drainTimeout"`
+func (r *RollingUpgrade) ScalingGroupName() string {
+	return r.Spec.AsgName
+}
+
+func (r *RollingUpgrade) CurrentStatus() string {
+	return r.Status.CurrentStatus
+}
+
+func (r *RollingUpgrade) SetCurrentStatus(status string) {
+	r.Status.CurrentStatus = status
+}
+
+func (r *RollingUpgrade) IsForceRefresh() bool {
+	return r.Spec.ForceRefresh
+}
+
+// Migrate r.setDefaultsForRollingUpdateStrategy & r.validateRollingUpgradeObj into v1alpha1 RollingUpgrade.Validate()
+func (r *RollingUpgrade) Validate() (bool, error) {
+	return true, nil
 }

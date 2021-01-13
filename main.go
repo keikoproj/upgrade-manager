@@ -1,4 +1,5 @@
 /*
+Copyright 2021 Intuit Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,35 +18,40 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"time"
 
+	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	// to ensure that exec-entrypoint and run can make use of them.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers"
+	"github.com/keikoproj/upgrade-manager/controllers/common/log"
+	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
+	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
-	"github.com/keikoproj/upgrade-manager/controllers"
-	"github.com/keikoproj/upgrade-manager/pkg/log"
-	// +kubebuilder:scaffold:imports
+	//+kubebuilder:scaffold:imports
 )
 
 var (
 	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	setupLog = ctrl.Log.WithName("main")
 )
 
 var (
@@ -57,53 +63,67 @@ var (
 )
 
 func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	err := upgrademgrv1alpha1.AddToScheme(scheme)
-	if err != nil {
-		panic(err)
-	}
-	// +kubebuilder:scaffold:scheme
+	utilruntime.Must(upgrademgrv1alpha1.AddToScheme(scheme))
+	//+kubebuilder:scaffold:scheme
 }
 
 func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	var namespace string
-	var maxParallel int
-	var maxAPIRetries int
-	var debugMode bool
-	var logMode string
+
+	var (
+		metricsAddr          string
+		probeAddr            string
+		enableLeaderElection bool
+		namespace            string
+		maxParallel          int
+		maxAPIRetries        int
+		debugMode            bool
+		logMode              string
+	)
+
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
 	flag.StringVar(&logMode, "log-format", "text", "Log mode: supported values: text, json.")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&namespace, "namespace", "", "The namespace in which to watch objects")
 	flag.IntVar(&maxParallel, "max-parallel", 10, "The max number of parallel rolling upgrades")
 	flag.IntVar(&maxAPIRetries, "max-api-retries", 12, "The number of maximum retries for failed/rate limited AWS API calls")
+
+	opts := zap.Options{
+		Development: true,
+	}
+	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(newLogger(logMode))
 
-	mgo := ctrl.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: metricsAddr,
-		LeaderElection:     enableLeaderElection,
+	ctrlOpts := ctrl.Options{
+		Scheme:                 scheme,
+		MetricsBindAddress:     metricsAddr,
+		Port:                   9443,
+		HealthProbeBindAddress: probeAddr,
+		LeaderElection:         enableLeaderElection,
+		LeaderElectionID:       "d6edb06e.keikoproj.io",
 	}
+
 	if namespace != "" {
-		mgo.Namespace = namespace
-		setupLog.Info("Watch RollingUpgrade objects only in namespace " + namespace)
+		ctrlOpts.Namespace = namespace
+		setupLog.Info("starting watch in namespaced mode", "namespace", namespace)
 	} else {
-		setupLog.Info("Watch RollingUpgrade objects in all namespaces")
+		setupLog.Info("starting watch in all namespaces")
 	}
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgo)
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrlOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
 	var region string
-	if region, err = deriveRegion(); err != nil {
+	if region, err = awsprovider.DeriveRegion(); err != nil {
 		setupLog.Error(err, "unable to get region")
 		os.Exit(1)
 	}
@@ -125,7 +145,8 @@ func main() {
 	config = request.WithRetryer(config, log.NewRetryLogger(retryer))
 	sess, err := session.NewSession(config)
 	if err != nil {
-		log.Fatalf("failed to AWS session, %v", err)
+		setupLog.Error(err, "failed to create an AWS session")
+		os.Exit(1)
 	}
 
 	cacheCfg := cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
@@ -141,31 +162,59 @@ func main() {
 		)
 	})
 
+	kube, err := kubeprovider.GetKubernetesClient()
+	if err != nil {
+		setupLog.Error(err, "unable to create kubernetes client")
+		os.Exit(1)
+	}
+
+	awsClient := &awsprovider.AmazonClientSet{
+		Ec2Client: ec2.New(sess),
+		AsgClient: autoscaling.New(sess),
+	}
+
+	kubeClient := &kubeprovider.KubernetesClientSet{
+		Kubernetes: kube,
+	}
+
 	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
+
 	reconciler := &controllers.RollingUpgradeReconciler{
-		Client:       mgr.GetClient(),
-		Log:          logger,
-		ClusterState: controllers.NewClusterState(),
-		ASGClient:    autoscaling.New(sess),
-		EC2Client:    ec2.New(sess),
-		CacheConfig:  cacheCfg,
-		ScriptRunner: controllers.NewScriptRunner(logger),
+		Client:      mgr.GetClient(),
+		Logger:      logger,
+		Scheme:      mgr.GetScheme(),
+		CacheConfig: cacheCfg,
+		Auth: &controllers.RollingUpgradeAuthenticator{
+			AmazonClientSet:     awsClient,
+			KubernetesClientSet: kubeClient,
+		},
+		EventWriter: kubeprovider.NewEventWriter(kubeClient, logger),
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
 
-	err = (reconciler).SetupWithManager(mgr)
-	if err != nil {
+	if err = (reconciler).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RollingUpgrade")
 		os.Exit(1)
 	}
-	// +kubebuilder:scaffold:builder
+
+	//+kubebuilder:scaffold:builder
+
+	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("check", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+
 }
 
 func newLogger(logMode string) logr.Logger {
@@ -182,23 +231,4 @@ func newLogger(logMode string) logr.Logger {
 	}
 	logger := zap.New(opts...)
 	return logger
-}
-
-func deriveRegion() (string, error) {
-
-	if region := os.Getenv("AWS_REGION"); region != "" {
-		return region, nil
-	}
-
-	var config aws.Config
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-		Config:            config,
-	}))
-	c := ec2metadata.New(sess)
-	region, err := c.Region()
-	if err != nil {
-		return "", fmt.Errorf("cannot reach ec2metadata, if running locally export AWS_REGION: %w", err)
-	}
-	return region, nil
 }

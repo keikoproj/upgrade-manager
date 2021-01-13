@@ -13,3 +13,17 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+package common
+
+import "strings"
+
+// ContainsEqualFold returns true if a given slice 'slice' contains string 's' under unicode case-folding
+func ContainsEqualFold(slice []string, s string) bool {
+	for _, item := range slice {
+		if strings.EqualFold(item, s) {
+			return true
+		}
+	}
+	return false
+}

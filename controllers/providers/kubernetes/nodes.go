@@ -13,3 +13,22 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+package kubernetes
+
+import (
+	"context"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// ListClusterNodes gets a list of all nodes in the cluster
+func (k *KubernetesClientSet) ListClusterNodes() (*corev1.NodeList, error) {
+	var nodes *corev1.NodeList
+	nodes, err := k.Kubernetes.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return nodes, err
+	}
+	return nodes, nil
+}
