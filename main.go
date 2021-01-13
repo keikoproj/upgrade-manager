@@ -168,12 +168,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	awsClient := awsprovider.AmazonClientSet{
+	awsClient := &awsprovider.AmazonClientSet{
 		Ec2Client: ec2.New(sess),
 		AsgClient: autoscaling.New(sess),
 	}
 
-	kubeClient := kubeprovider.KubernetesClientSet{
+	kubeClient := &kubeprovider.KubernetesClientSet{
 		Kubernetes: kube,
 	}
 
@@ -188,7 +188,7 @@ func main() {
 			AmazonClientSet:     awsClient,
 			KubernetesClientSet: kubeClient,
 		},
-		EventWriter: kubeprovider.NewEventWriter(kubeClient.Kubernetes, logger),
+		EventWriter: kubeprovider.NewEventWriter(kubeClient, logger),
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
