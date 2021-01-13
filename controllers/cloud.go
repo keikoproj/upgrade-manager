@@ -20,18 +20,24 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-logr/logr"
+
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/pkg/errors"
 )
 
-// TODO: Resource discovery for AWS & Kubernetes
+var (
+	instanceStateTagKey = "upgrademgr.keikoproj.io/state"
+	inProgressTagValue  = "in-progress"
+)
 
 type DiscoveredState struct {
 	*RollingUpgradeAuthenticator
 	logr.Logger
-	ClusterNodes        []corev1.NodeList
+	ClusterNodes        *corev1.NodeList
 	LaunchTemplates     []*ec2.LaunchTemplate
 	ScalingGroups       []*autoscaling.Group
-	InProgressInstances []*ec2.Instance
+	InProgressInstances []string
 }
 
 func NewDiscoveredState(auth *RollingUpgradeAuthenticator, logger logr.Logger) *DiscoveredState {
@@ -43,20 +49,29 @@ func NewDiscoveredState(auth *RollingUpgradeAuthenticator, logger logr.Logger) *
 
 func (d *DiscoveredState) Discover() error {
 
-	// DescribeLaunchTemplatesPages
+	launchTemplates, err := d.AmazonClientSet.DescribeLaunchTemplates()
+	if err != nil {
+		return errors.Wrap(err, "failed to discover launch templates")
+	}
+	d.LaunchTemplates = launchTemplates
 
-	// DescribeAutoScalingGroupsPages
+	scalingGroups, err := d.AmazonClientSet.DescribeScalingGroups()
+	if err != nil {
+		return errors.Wrap(err, "failed to discover scaling groups")
+	}
+	d.ScalingGroups = scalingGroups
 
-	// DescribeInstancesPages with filter upgrademgr.keikoproj.io/state=in-progress
+	inProgressInstances, err := d.AmazonClientSet.DescribeTaggedInstanceIDs(instanceStateTagKey, inProgressTagValue)
+	if err != nil {
+		return errors.Wrap(err, "failed to discover ec2 instances")
+	}
+	d.InProgressInstances = inProgressInstances
 
-	// List Nodes
+	nodes, err := d.KubernetesClientSet.ListClusterNodes()
+	if err != nil {
+		return errors.Wrap(err, "failed to discover cluster nodes")
+	}
+	d.ClusterNodes = nodes
 
 	return nil
-}
-
-func (d *DiscoveredState) IsConfigurationDrift() bool {
-
-	// Check if launch template / launch config mismatch from scaling group
-
-	return false
 }

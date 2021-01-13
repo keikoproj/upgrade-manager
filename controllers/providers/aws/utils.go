@@ -19,11 +19,15 @@ package aws
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 )
 
@@ -49,4 +53,34 @@ func DeriveRegion() (string, error) {
 		return "", fmt.Errorf("cannot reach ec2metadata, if running locally export AWS_REGION: %w", err)
 	}
 	return region, nil
+}
+
+func SelectScalingGroup(name string, groups []*autoscaling.Group) *autoscaling.Group {
+	for _, group := range groups {
+		groupName := aws.StringValue(group.AutoScalingGroupName)
+		if strings.EqualFold(groupName, name) {
+			return group
+		}
+	}
+	return &autoscaling.Group{}
+}
+
+// func ListScalingInstanceIDs(group *autoscaling.Group) []string {
+// 	instanceIDs := make([]string, 0)
+// 	for _, instance := range group.Instances {
+// 		instanceID := aws.StringValue(instance.InstanceId)
+// 		instanceIDs = append(instanceIDs, instanceID)
+// 	}
+// 	return instanceIDs
+// }
+
+func GetTemplateLatestVersion(templates []*ec2.LaunchTemplate, templateName string) string {
+	for _, template := range templates {
+		name := aws.StringValue(template.LaunchTemplateName)
+		if strings.EqualFold(name, templateName) {
+			versionInt := aws.Int64Value(template.LatestVersionNumber)
+			return strconv.FormatInt(versionInt, 10)
+		}
+	}
+	return "0"
 }
