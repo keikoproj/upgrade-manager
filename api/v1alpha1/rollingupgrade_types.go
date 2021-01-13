@@ -18,6 +18,8 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -167,5 +169,56 @@ func (r *RollingUpgrade) IsForceRefresh() bool {
 
 // Migrate r.setDefaultsForRollingUpdateStrategy & r.validateRollingUpgradeObj into v1alpha1 RollingUpgrade.Validate()
 func (r *RollingUpgrade) Validate() (bool, error) {
+	strategy := r.Spec.Strategy
+
+	// if strategy is not defined.
+	if (strategy == UpdateStrategy{}) {
+		return false, nil
+	}
+
+	r.setDefaultsForRollingUpdateStrategy()
+
+	// validating the maxUnavailable value
+	if strategy.MaxUnavailable.Type == intstr.Int {
+		if strategy.MaxUnavailable.IntVal <= 0 {
+			err := fmt.Errorf("%s: Invalid value for maxUnavailable - %d", r.Name, strategy.MaxUnavailable.IntVal)
+			r.error(r, err, "Invalid value for maxUnavailable", "value", strategy.MaxUnavailable.IntVal)
+			return false, err
+		}
+	} else if strategy.MaxUnavailable.Type == intstr.String {
+		intValue, _ := strconv.Atoi(strings.Trim(strategy.MaxUnavailable.StrVal, "%"))
+		if intValue <= 0 || intValue > 100 {
+			err := fmt.Errorf("%s: Invalid value for maxUnavailable - %s", r.Name, strategy.MaxUnavailable.StrVal)
+			r.error(r, err, "Invalid value for maxUnavailable", "value", strategy.MaxUnavailable.StrVal)
+			return false, err
+		}
+	}
+
+	// validating the strategy type
+	if strategy.Type != RandomUpdateStrategy && strategy.Type != UniformAcrossAzUpdateStrategy {
+		err := fmt.Errorf("%s: Invalid value for strategy type - %s", r.NamespacedName(), strategy.Type)
+		r.error(r, err, "Invalid value for strategy type", "value", strategy.Type)
+		return false, err
+	}
+
 	return true, nil
+}
+
+func (r *RollingUpgrade) setDefaultsForRollingUpdateStrategy() {
+	if r.Spec.Strategy.Type == "" {
+		r.Spec.Strategy.Type = RandomUpdateStrategy
+	}
+
+	if r.Spec.Strategy.Mode == "" {
+		r.Spec.Strategy.Mode = UpdateStrategyModeLazy
+	}
+
+	if r.Spec.Strategy.MaxUnavailable.Type == intstr.Int && r.Spec.Strategy.MaxUnavailable.IntVal == 0 {
+		r.Spec.Strategy.MaxUnavailable.IntVal = 1
+	}
+
+	if r.Spec.Strategy.DrainTimeout == 0 {
+		r.Spec.Strategy.DrainTimeout = -1
+	}
+
 }
