@@ -51,8 +51,8 @@ type RollingUpgradeReconciler struct {
 }
 
 type RollingUpgradeAuthenticator struct {
-	awsprovider.AmazonClientSet
-	kubeprovider.KubernetesClientSet
+	*awsprovider.AmazonClientSet
+	*kubeprovider.KubernetesClientSet
 }
 
 // +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades,verbs=get;list;watch;create;update;patch;delete

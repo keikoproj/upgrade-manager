@@ -27,18 +27,17 @@ import (
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 type EventWriter struct {
-	kubernetes.Interface
+	*KubernetesClientSet
 	logr.Logger
 }
 
-func NewEventWriter(k kubernetes.Interface, logger logr.Logger) *EventWriter {
+func NewEventWriter(k *KubernetesClientSet, logger logr.Logger) *EventWriter {
 	return &EventWriter{
-		Interface: k,
-		Logger:    logger,
+		KubernetesClientSet: k,
+		Logger:              logger,
 	}
 }
 
@@ -91,7 +90,7 @@ func (w *EventWriter) CreateEvent(rollingUpgrade *v1alpha1.RollingUpgrade, reaso
 	}
 
 	w.V(1).Info("publishing event", "event", event)
-	_, err := w.CoreV1().Events(rollingUpgrade.GetNamespace()).Create(context.Background(), event, metav1.CreateOptions{})
+	_, err := w.Kubernetes.CoreV1().Events(rollingUpgrade.GetNamespace()).Create(context.Background(), event, metav1.CreateOptions{})
 	if err != nil {
 		w.Error(err, "failed to publish event")
 	}
