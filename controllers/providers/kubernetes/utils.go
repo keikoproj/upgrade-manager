@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -80,4 +83,15 @@ func GetKubernetesLocalConfig() (*rest.Config, error) {
 		return nil, err
 	}
 	return config, nil
+}
+
+func SelectNodeByInstanceID(instanceID string, nodes *corev1.NodeList) corev1.Node {
+	for _, node := range nodes.Items {
+		tokens := strings.Split(node.Spec.ProviderID, "/")
+		nodeID := tokens[len(tokens)-1]
+		if strings.EqualFold(instanceID, nodeID) {
+			return node
+		}
+	}
+	return corev1.Node{}
 }

@@ -132,19 +132,13 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// determine and set state
-	r.DiscoverState(rollingUpgrade)
-
 	// process node rotation
-	if !common.ContainsEqualFold(v1alpha1.FiniteStates, rollingUpgrade.CurrentStatus()) {
-		if err := r.RotateNodes(rollingUpgrade); err != nil {
-			rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
-			return ctrl.Result{}, err
-		}
-		return reconcile.Result{RequeueAfter: time.Second * 10}, nil
+	if err := r.RotateNodes(rollingUpgrade); err != nil {
+		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	return reconcile.Result{RequeueAfter: time.Second * 10}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
