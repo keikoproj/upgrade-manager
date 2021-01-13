@@ -16,4 +16,18 @@ limitations under the License.
 
 package aws
 
-// TODO: Autoscaling API Calls
+import (
+	"github.com/aws/aws-sdk-go/service/autoscaling"
+)
+
+func (a *AmazonClientSet) DescribeScalingGroups() ([]*autoscaling.Group, error) {
+	scalingGroups := []*autoscaling.Group{}
+	err := a.AsgClient.DescribeAutoScalingGroupsPages(&autoscaling.DescribeAutoScalingGroupsInput{}, func(page *autoscaling.DescribeAutoScalingGroupsOutput, lastPage bool) bool {
+		scalingGroups = append(scalingGroups, page.AutoScalingGroups...)
+		return page.NextToken != nil
+	})
+	if err != nil {
+		return scalingGroups, err
+	}
+	return scalingGroups, nil
+}
