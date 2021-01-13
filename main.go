@@ -188,6 +188,7 @@ func main() {
 			AmazonClientSet:     awsClient,
 			KubernetesClientSet: kubeClient,
 		},
+		EventWriter: kubeprovider.NewEventWriter(kubeClient.Kubernetes, logger),
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
