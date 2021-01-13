@@ -161,6 +161,10 @@ func (r *RollingUpgrade) SetCurrentStatus(status string) {
 	r.Status.CurrentStatus = status
 }
 
+func (r *RollingUpgrade) IsForceRefresh() bool {
+	return r.Spec.ForceRefresh
+}
+
 // Migrate r.setDefaultsForRollingUpdateStrategy & r.validateRollingUpgradeObj into v1alpha1 RollingUpgrade.Validate()
 func (r *RollingUpgrade) Validate() (bool, error) {
 	return true, nil
