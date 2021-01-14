@@ -17,7 +17,10 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"common"
 	"fmt"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,7 +114,9 @@ const (
 )
 
 var (
-	FiniteStates = []string{StatusComplete, StatusError}
+	FiniteStates        = []string{StatusComplete, StatusError}
+	AllowedStrategyType = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
+	AllowedStrategyMode = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
 )
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade
@@ -165,7 +170,46 @@ func (r *RollingUpgrade) IsForceRefresh() bool {
 	return r.Spec.ForceRefresh
 }
 
-// Migrate r.setDefaultsForRollingUpdateStrategy & r.validateRollingUpgradeObj into v1alpha1 RollingUpgrade.Validate()
 func (r *RollingUpgrade) Validate() (bool, error) {
+	strategy := r.Spec.Strategy
+
+	// validating the Type value
+	if strategy.Type == "" {
+		r.Spec.Strategy.Type = RandomUpdateStrategy
+	} else if !common.ContainsEqualFold(AllowedStrategyType, strategy.Type) {
+		err := fmt.Errorf("%s: Invalid value for startegy Type - %d", r.Name, strategy.MaxUnavailable.IntVal)
+		return false, err
+	}
+
+	// validating the Mode value
+	if strategy.Mode == "" {
+		r.Spec.Strategy.Mode = UpdateStrategyModeLazy
+	} else if !common.ContainsEqualFold(AllowedStrategyMode, strategy.Mode) {
+		err := fmt.Errorf("%s: Invalid value for startegy Mode - %d", r.Name, strategy.MaxUnavailable.IntVal)
+		return false, err
+	}
+
+	// validating the maxUnavailable value
+	if strategy.MaxUnavailable.Type == intstr.Int && strategy.MaxUnavailable.IntVal == 0 {
+		r.Spec.Strategy.MaxUnavailable.IntVal = 1
+	} else if strategy.MaxUnavailable.Type == intstr.Int && strategy.MaxUnavailable.IntVal < 0 {
+		err := fmt.Errorf("%s: Invalid value for startegy maxUnavailable - %d", r.Name, strategy.MaxUnavailable.IntVal)
+		return false, err
+	} else if strategy.MaxUnavailable.Type == intstr.String {
+		intValue, _ := strconv.Atoi(strings.Trim(strategy.MaxUnavailable.StrVal, "%"))
+		if intValue <= 0 || intValue > 100 {
+			err := fmt.Errorf("%s: Invalid value for startegy maxUnavailable - %s", r.Name, strategy.MaxUnavailable.StrVal)
+			return false, err
+		}
+	}
+
+	// validating the DrainTimeout value
+	if strategy.DrainTimeout == 0 {
+		r.Spec.Strategy.DrainTimeout = -1
+	} else if strategy.DrainTimeout < -1 {
+		err := fmt.Errorf("%s: Invalid value for startegy DrainTimeout - %d", r.Name, strategy.MaxUnavailable.IntVal)
+		return false, err
+	}
+
 	return true, nil
 }
