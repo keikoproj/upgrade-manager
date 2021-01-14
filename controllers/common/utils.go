@@ -16,7 +16,9 @@ limitations under the License.
 
 package common
 
-import "strings"
+import (
+	"strings"
+)
 
 // ContainsEqualFold returns true if a given slice 'slice' contains string 's' under unicode case-folding
 func ContainsEqualFold(slice []string, s string) bool {
