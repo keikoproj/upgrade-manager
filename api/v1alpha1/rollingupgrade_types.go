@@ -40,13 +40,15 @@ type RollingUpgradeSpec struct {
 
 // RollingUpgradeStatus defines the observed state of RollingUpgrade
 type RollingUpgradeStatus struct {
-	CurrentStatus       string                    `json:"currentStatus,omitempty"`
-	StartTime           string                    `json:"startTime,omitempty"`
-	EndTime             string                    `json:"endTime,omitempty"`
-	TotalProcessingTime string                    `json:"totalProcessingTime,omitempty"`
-	NodesProcessed      int                       `json:"nodesProcessed,omitempty"`
-	TotalNodes          int                       `json:"totalNodes,omitempty"`
-	Conditions          []RollingUpgradeCondition `json:"conditions,omitempty"`
+	CurrentStatus           string                    `json:"currentStatus,omitempty"`
+	StartTime               string                    `json:"startTime,omitempty"`
+	EndTime                 string                    `json:"endTime,omitempty"`
+	TotalProcessingTime     string                    `json:"totalProcessingTime,omitempty"`
+	NodesProcessed          int                       `json:"nodesProcessed,omitempty"`
+	TotalNodes              int                       `json:"totalNodes,omitempty"`
+	Conditions              []RollingUpgradeCondition `json:"conditions,omitempty"`
+	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
+	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -157,8 +159,56 @@ func (r *RollingUpgrade) CurrentStatus() string {
 	return r.Status.CurrentStatus
 }
 
+func (r *RollingUpgrade) UpdateStrategyType() UpdateStrategyType {
+	return r.Spec.Strategy.Type
+}
+
+func (r *RollingUpgrade) MaxUnavailable() intstr.IntOrString {
+	return r.Spec.Strategy.MaxUnavailable
+}
+
+func (r *RollingUpgrade) LastNodeTerminationTime() metav1.Time {
+	return r.Status.LastNodeTerminationTime
+}
+
+func (r *RollingUpgrade) LastNodeDrainTime() metav1.Time {
+	return r.Status.LastNodeDrainTime
+}
+
+func (r *RollingUpgrade) NodeIntervalSeconds() int {
+	return r.Spec.NodeIntervalSeconds
+}
+
+func (r *RollingUpgrade) PostDrainDelaySeconds() int {
+	return r.Spec.PostDrainDelaySeconds
+}
+
 func (r *RollingUpgrade) SetCurrentStatus(status string) {
 	r.Status.CurrentStatus = status
+}
+
+func (r *RollingUpgrade) SetStartTime(t string) {
+	r.Status.StartTime = t
+}
+
+func (r *RollingUpgrade) StartTime() string {
+	return r.Status.StartTime
+}
+
+func (r *RollingUpgrade) SetEndTime(t string) {
+	r.Status.EndTime = t
+}
+
+func (r *RollingUpgrade) EndTime() string {
+	return r.Status.EndTime
+}
+
+func (r *RollingUpgrade) SetTotalNodes(n int) {
+	r.Status.TotalNodes = n
+}
+
+func (r *RollingUpgrade) SetNodesProcessed(n int) {
+	r.Status.NodesProcessed = n
 }
 
 func (r *RollingUpgrade) IsForceRefresh() bool {

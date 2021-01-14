@@ -18,18 +18,155 @@ package controllers
 
 import (
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // TODO: main node rotation logic
 func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingUpgrade) error {
+	var (
+		lastTerminationTime = rollingUpgrade.LastNodeTerminationTime()
+		nodeInterval        = rollingUpgrade.NodeIntervalSeconds()
+		lastDrainTime       = rollingUpgrade.LastNodeDrainTime()
+		drainInterval       = rollingUpgrade.PostDrainDelaySeconds()
+	)
+	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+
+	// set status start time
+	if rollingUpgrade.StartTime() == "" {
+		rollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
+	}
+
+	if !lastTerminationTime.IsZero() || !lastDrainTime.IsZero() {
+
+		// Check if we are still waiting on a termination delay
+		if time.Since(lastTerminationTime.Time).Seconds() < float64(nodeInterval) {
+			r.Info("reconcile requeue due to termination interval wait", "name", rollingUpgrade.NamespacedName())
+			return nil
+		}
+
+		// Check if we are still waiting on a drain delay
+		if time.Since(lastDrainTime.Time).Seconds() < float64(drainInterval) {
+			r.Info("reconcile requeue due to drain interval wait", "name", rollingUpgrade.NamespacedName())
+			return nil
+		}
+	}
+
+	var (
+		scalingGroup = awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+	)
+
+	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
+	rotationTargets := r.SelectTargets(rollingUpgrade, scalingGroup)
+	r.ReplaceNodeBatch(rollingUpgrade, rotationTargets)
 
 	return nil
+}
+
+func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.RollingUpgrade, batch []*autoscaling.Instance) (bool, error) {
+	var (
+		mode = rollingUpgrade.StrategyMode()
+	)
+
+	switch mode {
+	case v1alpha1.UpdateStrategyModeEager:
+		for _, target := range batch {
+			// Add in-progress tag
+
+			// Standby
+
+			// Wait for desired nodes
+
+			// Issue drain/scripts concurrently - set lastDrainTime
+
+			// Is drained?
+
+			// Terminate - set lastTerminateTime
+		}
+	case v1alpha1.UpdateStrategyModeLazy:
+		for _, target := range batch {
+			// Add in-progress tag
+
+			// Issue drain/scripts concurrently - set lastDrainTime
+
+			// Is drained?
+
+			// Terminate - set lastTerminateTime
+		}
+	}
+
+}
+
+func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
+	var (
+		batchSize  = rollingUpgrade.MaxUnavailable()
+		totalNodes = len(scalingGroup.Instances)
+		targets    = make([]*autoscaling.Instance, 0)
+	)
+
+	var unavailableInt int
+	if batchSize.Type == intstr.String {
+		unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
+	} else {
+		unavailableInt = batchSize.IntValue()
+	}
+
+	// first process all in progress instances
+	for _, instance := range r.Cloud.InProgressInstances {
+		selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup)
+		targets = append(targets, selectedInstance)
+	}
+
+	if len(targets) > 0 {
+		if unavailableInt > len(targets) {
+			unavailableInt = len(targets)
+		}
+		return targets[:unavailableInt]
+	}
+
+	// select via strategy if there are no in-progress instances
+	if rollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
+		for _, instance := range scalingGroup.Instances {
+			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+				targets = append(targets, instance)
+			}
+		}
+		if unavailableInt > len(targets) {
+			unavailableInt = len(targets)
+		}
+		return targets[:unavailableInt]
+
+	} else if rollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
+		for _, instance := range scalingGroup.Instances {
+			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+				targets = append(targets, instance)
+			}
+		}
+
+		var AZtargets = make([]*autoscaling.Instance, 0)
+		AZs := awsprovider.GetScalingAZs(targets)
+		if len(AZs) == 0 {
+			return AZtargets
+		}
+		for _, target := range targets {
+			AZ := aws.StringValue(target.AvailabilityZone)
+			if strings.EqualFold(AZ, AZs[0]) {
+				AZtargets = append(AZtargets, target)
+			}
+		}
+		if unavailableInt > len(AZtargets) {
+			unavailableInt = len(AZtargets)
+		}
+		return AZtargets[:unavailableInt]
+	}
+
+	return targets
 }
 
 func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance) bool {
