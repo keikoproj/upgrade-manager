@@ -19,6 +19,7 @@ package aws
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -63,6 +64,36 @@ func SelectScalingGroup(name string, groups []*autoscaling.Group) *autoscaling.G
 		}
 	}
 	return &autoscaling.Group{}
+}
+
+func SelectScalingGroupInstance(instanceID string, group *autoscaling.Group) *autoscaling.Instance {
+	for _, instance := range group.Instances {
+		selectedID := aws.StringValue(instance.InstanceId)
+		if strings.EqualFold(instanceID, selectedID) {
+			return instance
+		}
+	}
+	return &autoscaling.Instance{}
+}
+
+func GetScalingAZs(instances []*autoscaling.Instance) []string {
+	AZs := make([]string, 0)
+	for _, instance := range instances {
+		AZ := aws.StringValue(instance.AvailabilityZone)
+		AZs = append(AZs, AZ)
+	}
+	sort.Strings(AZs)
+	return AZs
+}
+
+func SelectInstancesByAZ(instances []*autoscaling.Group) *autoscaling.Instance {
+	for _, instance := range group.Instances {
+		selectedID := aws.StringValue(instance.InstanceId)
+		if strings.EqualFold(instanceID, selectedID) {
+			return instance
+		}
+	}
+	return &autoscaling.Instance{}
 }
 
 // func ListScalingInstanceIDs(group *autoscaling.Group) []string {
