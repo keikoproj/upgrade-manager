@@ -77,13 +77,20 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
 		for _, target := range batch {
+			_ = target
 			// Add in-progress tag
 
 			// Standby
 
+			// Wait for standby
+
 			// Wait for desired nodes
 
+			// predrain script
+
 			// Issue drain/scripts concurrently - set lastDrainTime
+
+			// post drain script
 
 			// Is drained?
 
@@ -91,6 +98,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
+			_ = target
 			// Add in-progress tag
 
 			// Issue drain/scripts concurrently - set lastDrainTime
@@ -100,7 +108,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Terminate - set lastTerminateTime
 		}
 	}
-
+	return true, nil
 }
 
 func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
