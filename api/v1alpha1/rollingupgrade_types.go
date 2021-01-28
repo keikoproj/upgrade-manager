@@ -17,11 +17,12 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"common"
+
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -220,13 +221,16 @@ func (r *RollingUpgrade) IsForceRefresh() bool {
 	return r.Spec.ForceRefresh
 }
 
+func (r *RollingUpgrade) StrategyMode() UpdateStrategyMode {
+	return r.Spec.Strategy.Mode
+}
 func (r *RollingUpgrade) Validate() (bool, error) {
 	strategy := r.Spec.Strategy
 
 	// validating the Type value
 	if strategy.Type == "" {
 		r.Spec.Strategy.Type = RandomUpdateStrategy
-	} else if !common.ContainsEqualFold(AllowedStrategyType, strategy.Type) {
+	} else if !common.ContainsEqualFold(AllowedStrategyType, string(strategy.Type)) {
 		err := fmt.Errorf("%s: Invalid value for startegy Type - %d", r.Name, strategy.MaxUnavailable.IntVal)
 		return false, err
 	}
