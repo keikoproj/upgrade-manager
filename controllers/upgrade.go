@@ -82,8 +82,6 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 			// Standby
 
-			// Wait for standby
-
 			// Wait for desired nodes
 
 			// predrain script
@@ -91,6 +89,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Issue drain/scripts concurrently - set lastDrainTime
 
 			// post drain script
+
+			// Wait for desired nodes
+
+			// Issue drain/scripts concurrently - set lastDrainTime
 
 			// Is drained?
 

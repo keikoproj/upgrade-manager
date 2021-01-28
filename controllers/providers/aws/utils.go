@@ -96,6 +96,7 @@ func GetScalingAZs(instances []*autoscaling.Instance) []string {
 // 	return &autoscaling.Instance{}
 // }
 
+
 // func ListScalingInstanceIDs(group *autoscaling.Group) []string {
 // 	instanceIDs := make([]string, 0)
 // 	for _, instance := range group.Instances {

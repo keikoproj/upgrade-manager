@@ -17,12 +17,12 @@ limitations under the License.
 package v1alpha1
 
 import (
+
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/keikoproj/upgrade-manager/controllers/common"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -238,7 +238,7 @@ func (r *RollingUpgrade) Validate() (bool, error) {
 	// validating the Mode value
 	if strategy.Mode == "" {
 		r.Spec.Strategy.Mode = UpdateStrategyModeLazy
-	} else if !common.ContainsEqualFold(AllowedStrategyMode, string(strategy.Mode)) {
+	} else if !common.ContainsEqualFold(AllowedStrategyMode, strategy.Mode) {
 		err := fmt.Errorf("%s: Invalid value for startegy Mode - %d", r.Name, strategy.MaxUnavailable.IntVal)
 		return false, err
 	}
