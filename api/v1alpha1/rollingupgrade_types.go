@@ -116,9 +116,21 @@ const (
 )
 
 var (
-	FiniteStates        = []string{StatusComplete, StatusError}
-	AllowedStrategyType = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
-	AllowedStrategyMode = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
+	FiniteStates                = []string{StatusComplete, StatusError}
+	AllowedStrategyType         = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
+	AllowedStrategyMode         = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
+	ASGNonRunningInstanceStates = []string{Pending, PendingWait, PendingProceed, Terminating, TerminatingWait, TerminatingProceed}
+)
+
+//ASG Instance states
+const (
+	InService          = "InService"
+	Pending            = "Pending"
+	PendingWait        = "Pending:Wait"
+	PendingProceed     = "Pending:Proceed"
+	Terminating        = "Terminating"
+	TerminatingWait    = "Terminating:Wait"
+	TerminatingProceed = "Terminating:Proceed"
 )
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade

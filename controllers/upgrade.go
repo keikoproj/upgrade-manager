@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -64,7 +65,9 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 
 	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
 	rotationTargets := r.SelectTargets(rollingUpgrade, scalingGroup)
-	r.ReplaceNodeBatch(rollingUpgrade, rotationTargets)
+	if ok, err := r.ReplaceNodeBatch(rollingUpgrade, rotationTargets); !ok {
+		return err
+	}
 
 	return nil
 }
@@ -79,6 +82,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		for _, target := range batch {
 			_ = target
 			// Add in-progress tag
+			r.SetInstanceTag(rollingUpgrade, target, instanceStateTagKey, inProgressTagValue)
 
 			// Standby
 
@@ -97,6 +101,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Is drained?
 
 			// Terminate - set lastTerminateTime
+			if ok := r.TerminateNodeInstances(rollingUpgrade, target); !ok {
+				return true, nil
+			}
+			r.SetInstanceTag(rollingUpgrade, target, instanceStateTagKey, completedTagValue)
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
@@ -111,6 +119,44 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		}
 	}
 	return true, nil
+}
+
+func (r *RollingUpgradeReconciler) SetInstanceTag(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance, tagKey string, tagVal string) error {
+	return awsprovider.TagEC2instance(aws.StringValue(instance.InstanceId), tagKey, tagVal, r.Auth.Ec2Client)
+}
+
+func (r *RollingUpgradeReconciler) CanTerminate(instance *autoscaling.Instance) bool {
+	instances, err := r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, completedTagValue)
+	if err != nil {
+		r.Error(err, "unable to get tagged instances")
+		//Exit.
+	}
+
+	instanceID := aws.StringValue(instance.InstanceId)
+	if common.ContainsEqualFold(instances, instanceID) {
+		return false
+	}
+
+	if common.ContainsEqualFold(v1alpha1.ASGNonRunningInstanceStates, aws.StringValue(instance.LifecycleState)) {
+		return false
+	}
+	return true
+}
+
+func (r *RollingUpgradeReconciler) TerminateNodeInstances(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance) bool {
+	instanceID := aws.StringValue(instance.InstanceId)
+	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
+		InstanceId:                     aws.String(instanceID),
+		ShouldDecrementDesiredCapacity: aws.Bool(false),
+	}
+
+	r.Info("Terminating node-instance", "instance", instanceID)
+	_, err := r.Auth.AsgClient.TerminateInstanceInAutoScalingGroup(input)
+	if err != nil {
+		r.Error(err, "Failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
+		return false
+	}
+	return true
 }
 
 func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
@@ -144,6 +190,9 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	if rollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+				if !r.CanTerminate(instance) {
+					continue
+				}
 				targets = append(targets, instance)
 			}
 		}
@@ -155,6 +204,9 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	} else if rollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+				if !r.CanTerminate(instance) {
+					continue
+				}
 				targets = append(targets, instance)
 			}
 		}
