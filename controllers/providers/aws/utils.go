@@ -96,7 +96,6 @@ func GetScalingAZs(instances []*autoscaling.Instance) []string {
 // 	return &autoscaling.Instance{}
 // }
 
-
 // func ListScalingInstanceIDs(group *autoscaling.Group) []string {
 // 	instanceIDs := make([]string, 0)
 // 	for _, instance := range group.Instances {
@@ -115,4 +114,18 @@ func GetTemplateLatestVersion(templates []*ec2.LaunchTemplate, templateName stri
 		}
 	}
 	return "0"
+}
+
+func TagEC2instance(instanceID, tagKey, tagValue string, client ec2iface.EC2API) error {
+	input := &ec2.CreateTagsInput{
+		Resources: aws.StringSlice([]string{instanceID}),
+		Tags: []*ec2.Tag{
+			{
+				Key:   aws.String(tagKey),
+				Value: aws.String(tagValue),
+			},
+		},
+	}
+	_, err := client.CreateTags(input)
+	return err
 }
