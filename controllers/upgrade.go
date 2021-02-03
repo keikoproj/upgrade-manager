@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -63,8 +64,17 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	)
 
 	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
+
+	// check if all instances are rotated.
+	if r.IsScalingGroupDrifted(rollingUpgrade) {
+		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
+		return nil
+	}
+
 	rotationTargets := r.SelectTargets(rollingUpgrade, scalingGroup)
-	r.ReplaceNodeBatch(rollingUpgrade, rotationTargets)
+	if ok, err := r.ReplaceNodeBatch(rollingUpgrade, rotationTargets); !ok {
+		return err
+	}
 
 	return nil
 }
@@ -79,6 +89,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		for _, target := range batch {
 			_ = target
 			// Add in-progress tag
+			if err := r.Auth.TagEC2instance(aws.StringValue(target.InstanceId), instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
+			}
 
 			// Standby
 
@@ -97,6 +110,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Is drained?
 
 			// Terminate - set lastTerminateTime
+			if err := r.Auth.TerminateInstance(target); err != nil {
+				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId), "message", err)
+				return true, nil
+			}
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
@@ -187,6 +204,10 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 		instanceID       = aws.StringValue(instance.InstanceId)
 	)
 
+	// if an instance is in terminating state, ignore.
+	if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+		return false
+	}
 	// check if there is atleast one node that meets the force-referesh criteria
 	if rollingUpgrade.IsForceRefresh() {
 		var (
@@ -256,4 +277,15 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 
 	r.Info("node refresh not required", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
 	return false
+}
+
+func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
+	r.Info("checking if rolling upgrade is completed", "name", rollingUpgrade.NamespacedName())
+	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+	for _, instance := range scalingGroup.Instances {
+		if r.IsInstanceDrifted(rollingUpgrade, instance) {
+			return false
+		}
+	}
+	return true
 }
