@@ -57,3 +57,17 @@ func (a *AmazonClientSet) DescribeTaggedInstanceIDs(tagKey, tagValue string) ([]
 	})
 	return instances, err
 }
+
+func (a *AmazonClientSet) TagEC2instance(instanceID, tagKey, tagValue string) error {
+	input := &ec2.CreateTagsInput{
+		Resources: aws.StringSlice([]string{instanceID}),
+		Tags: []*ec2.Tag{
+			{
+				Key:   aws.String(tagKey),
+				Value: aws.String(tagValue),
+			},
+		},
+	}
+	_, err := a.Ec2Client.CreateTags(input)
+	return err
+}
