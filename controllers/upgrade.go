@@ -89,7 +89,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		for _, target := range batch {
 			_ = target
 			// Add in-progress tag
-			r.Auth.TagEC2instance(aws.StringValue(target.InstanceId), instanceStateTagKey, inProgressTagValue)
+			if err := r.Auth.TagEC2instance(aws.StringValue(target.InstanceId), instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
+			}
 
 			// Standby
 
