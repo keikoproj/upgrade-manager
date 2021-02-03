@@ -17,6 +17,7 @@ limitations under the License.
 package aws
 
 import (
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 )
 
@@ -30,4 +31,17 @@ func (a *AmazonClientSet) DescribeScalingGroups() ([]*autoscaling.Group, error) 
 		return scalingGroups, err
 	}
 	return scalingGroups, nil
+}
+
+func (a *AmazonClientSet) TerminateInstance(instance *autoscaling.Instance) error {
+	instanceID := aws.StringValue(instance.InstanceId)
+	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
+		InstanceId:                     aws.String(instanceID),
+		ShouldDecrementDesiredCapacity: aws.Bool(false),
+	}
+
+	if _, err := a.AsgClient.TerminateInstanceInAutoScalingGroup(input); err != nil {
+		return err
+	}
+	return nil
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -63,8 +64,17 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	)
 
 	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
+
+	// check if all instances are rotated.
+	if r.IsScalingGroupDrifted(rollingUpgrade) {
+		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
+		return nil
+	}
+
 	rotationTargets := r.SelectTargets(rollingUpgrade, scalingGroup)
-	r.ReplaceNodeBatch(rollingUpgrade, rotationTargets)
+	if ok, err := r.ReplaceNodeBatch(rollingUpgrade, rotationTargets); !ok {
+		return err
+	}
 
 	return nil
 }
@@ -79,6 +89,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		for _, target := range batch {
 			_ = target
 			// Add in-progress tag
+			r.SetInstanceTag(rollingUpgrade, target, instanceStateTagKey, inProgressTagValue)
 
 			// Standby
 
@@ -97,6 +108,11 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Is drained?
 
 			// Terminate - set lastTerminateTime
+			if err := r.Auth.TerminateInstance(target); err != nil {
+				r.Info("Instance termination failed. Will retry in next reconcile", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
+				return true, nil
+			}
+			r.SetInstanceTag(rollingUpgrade, target, instanceStateTagKey, completedTagValue)
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
@@ -111,6 +127,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		}
 	}
 	return true, nil
+}
+
+func (r *RollingUpgradeReconciler) SetInstanceTag(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance, tagKey string, tagVal string) error {
+	return r.Auth.TagEC2instance(aws.StringValue(instance.InstanceId), tagKey, tagVal)
 }
 
 func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
@@ -144,6 +164,9 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	if rollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+				if common.ContainsEqualFold(v1alpha1.ASGTerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+					continue
+				}
 				targets = append(targets, instance)
 			}
 		}
@@ -155,6 +178,9 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	} else if rollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+				if common.ContainsEqualFold(v1alpha1.ASGTerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+					continue
+				}
 				targets = append(targets, instance)
 			}
 		}
@@ -256,4 +282,15 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 
 	r.Info("node refresh not required", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
 	return false
+}
+
+func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
+	r.Info("checking if rolling upgrade is completed", "name", rollingUpgrade.NamespacedName())
+	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+	for _, instance := range scalingGroup.Instances {
+		if r.IsInstanceDrifted(rollingUpgrade, instance) {
+			return false
+		}
+	}
+	return true
 }
