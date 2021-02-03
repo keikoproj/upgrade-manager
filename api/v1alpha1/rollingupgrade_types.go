@@ -17,11 +17,11 @@ limitations under the License.
 package v1alpha1
 
 import (
-
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -117,9 +117,14 @@ const (
 )
 
 var (
-	FiniteStates        = []string{StatusComplete, StatusError}
-	AllowedStrategyType = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
-	AllowedStrategyMode = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
+	FiniteStates                 = []string{StatusComplete, StatusError}
+	AllowedStrategyType          = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
+	AllowedStrategyMode          = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
+	ASGTerminatingInstanceStates = []string{
+		autoscaling.LifecycleStateTerminating,
+		autoscaling.LifecycleStateTerminatingWait,
+		autoscaling.LifecycleStateTerminatingProceed,
+	}
 )
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade
@@ -238,7 +243,7 @@ func (r *RollingUpgrade) Validate() (bool, error) {
 	// validating the Mode value
 	if strategy.Mode == "" {
 		r.Spec.Strategy.Mode = UpdateStrategyModeLazy
-	} else if !common.ContainsEqualFold(AllowedStrategyMode, strategy.Mode) {
+	} else if !common.ContainsEqualFold(AllowedStrategyMode, string(strategy.Mode)) {
 		err := fmt.Errorf("%s: Invalid value for startegy Mode - %d", r.Name, strategy.MaxUnavailable.IntVal)
 		return false, err
 	}

@@ -29,6 +29,7 @@ import (
 var (
 	instanceStateTagKey = "upgrademgr.keikoproj.io/state"
 	inProgressTagValue  = "in-progress"
+	completedTagValue   = "completed"
 )
 
 type DiscoveredState struct {
