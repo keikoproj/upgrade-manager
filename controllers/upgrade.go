@@ -64,6 +64,13 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	)
 
 	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
+
+	// check if all instances are rotated.
+	if r.IsScalingGroupDrifted(rollingUpgrade) {
+		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
+		return nil
+	}
+
 	rotationTargets := r.SelectTargets(rollingUpgrade, scalingGroup)
 	if ok, err := r.ReplaceNodeBatch(rollingUpgrade, rotationTargets); !ok {
 		return err
@@ -101,7 +108,8 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Is drained?
 
 			// Terminate - set lastTerminateTime
-			if ok := r.TerminateNodeInstances(rollingUpgrade, target); !ok {
+			if err := r.Auth.TerminateInstance(target); err != nil {
+				r.Info("Instance termination failed. Will retry in next reconcile", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
 				return true, nil
 			}
 			r.SetInstanceTag(rollingUpgrade, target, instanceStateTagKey, completedTagValue)
@@ -122,41 +130,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 }
 
 func (r *RollingUpgradeReconciler) SetInstanceTag(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance, tagKey string, tagVal string) error {
-	return awsprovider.TagEC2instance(aws.StringValue(instance.InstanceId), tagKey, tagVal, r.Auth.Ec2Client)
-}
-
-func (r *RollingUpgradeReconciler) CanTerminate(instance *autoscaling.Instance) bool {
-	instances, err := r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, completedTagValue)
-	if err != nil {
-		r.Error(err, "unable to get tagged instances")
-		//Exit.
-	}
-
-	instanceID := aws.StringValue(instance.InstanceId)
-	if common.ContainsEqualFold(instances, instanceID) {
-		return false
-	}
-
-	if common.ContainsEqualFold(v1alpha1.ASGNonRunningInstanceStates, aws.StringValue(instance.LifecycleState)) {
-		return false
-	}
-	return true
-}
-
-func (r *RollingUpgradeReconciler) TerminateNodeInstances(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance) bool {
-	instanceID := aws.StringValue(instance.InstanceId)
-	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
-		InstanceId:                     aws.String(instanceID),
-		ShouldDecrementDesiredCapacity: aws.Bool(false),
-	}
-
-	r.Info("Terminating node-instance", "instance", instanceID)
-	_, err := r.Auth.AsgClient.TerminateInstanceInAutoScalingGroup(input)
-	if err != nil {
-		r.Error(err, "Failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
-		return false
-	}
-	return true
+	return r.Auth.TagEC2instance(aws.StringValue(instance.InstanceId), tagKey, tagVal)
 }
 
 func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
@@ -190,7 +164,7 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	if rollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
-				if !r.CanTerminate(instance) {
+				if common.ContainsEqualFold(v1alpha1.ASGTerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
 					continue
 				}
 				targets = append(targets, instance)
@@ -204,7 +178,7 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	} else if rollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
-				if !r.CanTerminate(instance) {
+				if common.ContainsEqualFold(v1alpha1.ASGTerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
 					continue
 				}
 				targets = append(targets, instance)
@@ -308,4 +282,15 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 
 	r.Info("node refresh not required", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
 	return false
+}
+
+func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
+	r.Info("checking if rolling upgrade is completed", "name", rollingUpgrade.NamespacedName())
+	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+	for _, instance := range scalingGroup.Instances {
+		if r.IsInstanceDrifted(rollingUpgrade, instance) {
+			return false
+		}
+	}
+	return true
 }
