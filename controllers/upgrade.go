@@ -69,7 +69,7 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
 
 	// check if all instances are rotated.
-	if !r.IsScalingGroupDrifted(rollingUpgrade) {
+	if r.IsScalingGroupDrifted(rollingUpgrade) {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
 		return nil
 	}
@@ -92,8 +92,8 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		for _, target := range batch {
 			targetID := aws.StringValue(target.InstanceId)
 			// Add in-progress tag
-			if err := r.Auth.TagEC2instance(targetID, instanceStateTagKey, inProgressTagValue); err != nil {
-				r.Error(err, "failed to add in-progress tag", "name", rollingUpgrade.NamespacedName(), "instance", targetID)
+			if err := r.Auth.TagEC2instance(aws.StringValue(target.InstanceId), instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
 			}
 
 			// Standby
@@ -121,11 +121,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Is drained?
 
 			// Terminate - set lastTerminateTime
-			r.Info("terminating the instance", "name", rollingUpgrade.NamespacedName(), "instance", targetID)
 			if err := r.Auth.TerminateInstance(target); err != nil {
-				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", targetID, "message", err)
+				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId), "message", err)
+				return true, nil
 			}
-			rollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
@@ -296,8 +295,8 @@ func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha
 	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
 		if r.IsInstanceDrifted(rollingUpgrade, instance) {
-			return true
+			return false
 		}
 	}
-	return false
+	return true
 }
