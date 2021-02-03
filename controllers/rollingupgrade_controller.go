@@ -123,11 +123,11 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	r.Info("admitted new rollingupgrade", "name", req.NamespacedName, "scalingGroup", scalingGroupName)
-	r.AdmissionMap.Store(req.NamespacedName, scalingGroupName)
+	r.AdmissionMap.Store(rollingUpgrade.NamespacedName(), scalingGroupName)
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
 
-	discoveredState := NewDiscoveredState(r.Auth, r.Logger)
-	if err := discoveredState.Discover(); err != nil {
+	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
+	if err := r.Cloud.Discover(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		return ctrl.Result{}, err
 	}
