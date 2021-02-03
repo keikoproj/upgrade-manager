@@ -109,7 +109,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 			// Terminate - set lastTerminateTime
 			if err := r.Auth.TerminateInstance(target); err != nil {
-				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
+				r.Error(err, "failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
 				return true, nil
 			}
 		}
