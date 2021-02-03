@@ -21,6 +21,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 )
 
+var (
+	TerminatingInstanceStates = []string{
+		autoscaling.LifecycleStateTerminating,
+		autoscaling.LifecycleStateTerminatingWait,
+		autoscaling.LifecycleStateTerminatingProceed,
+	}
+)
+
 func (a *AmazonClientSet) DescribeScalingGroups() ([]*autoscaling.Group, error) {
 	scalingGroups := []*autoscaling.Group{}
 	err := a.AsgClient.DescribeAutoScalingGroupsPages(&autoscaling.DescribeAutoScalingGroupsInput{}, func(page *autoscaling.DescribeAutoScalingGroupsOutput, lastPage bool) bool {
