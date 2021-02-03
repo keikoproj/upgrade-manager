@@ -89,7 +89,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		for _, target := range batch {
 			_ = target
 			// Add in-progress tag
-			r.SetInstanceTag(rollingUpgrade, target, instanceStateTagKey, inProgressTagValue)
+			r.Auth.TagEC2instance(aws.StringValue(target.InstanceId), instanceStateTagKey, inProgressTagValue)
 
 			// Standby
 
@@ -109,10 +109,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 			// Terminate - set lastTerminateTime
 			if err := r.Auth.TerminateInstance(target); err != nil {
-				r.Info("Instance termination failed. Will retry in next reconcile", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
+				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
 				return true, nil
 			}
-			r.SetInstanceTag(rollingUpgrade, target, instanceStateTagKey, completedTagValue)
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
@@ -127,10 +126,6 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		}
 	}
 	return true, nil
-}
-
-func (r *RollingUpgradeReconciler) SetInstanceTag(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance, tagKey string, tagVal string) error {
-	return r.Auth.TagEC2instance(aws.StringValue(instance.InstanceId), tagKey, tagVal)
 }
 
 func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
@@ -164,9 +159,6 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	if rollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
-				if common.ContainsEqualFold(v1alpha1.ASGTerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
-					continue
-				}
 				targets = append(targets, instance)
 			}
 		}
@@ -178,9 +170,6 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	} else if rollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(rollingUpgrade, instance) {
-				if common.ContainsEqualFold(v1alpha1.ASGTerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
-					continue
-				}
 				targets = append(targets, instance)
 			}
 		}
@@ -213,6 +202,10 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 		instanceID       = aws.StringValue(instance.InstanceId)
 	)
 
+	// if an instance is in terminating state, ignore.
+	if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+		return false
+	}
 	// check if there is atleast one node that meets the force-referesh criteria
 	if rollingUpgrade.IsForceRefresh() {
 		var (
