@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,21 +117,14 @@ const (
 )
 
 var (
-	FiniteStates                = []string{StatusComplete, StatusError}
-	AllowedStrategyType         = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
-	AllowedStrategyMode         = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
-	ASGNonRunningInstanceStates = []string{Pending, PendingWait, PendingProceed, Terminating, TerminatingWait, TerminatingProceed}
-)
-
-//ASG Instance states
-const (
-	InService          = "InService"
-	Pending            = "Pending"
-	PendingWait        = "Pending:Wait"
-	PendingProceed     = "Pending:Proceed"
-	Terminating        = "Terminating"
-	TerminatingWait    = "Terminating:Wait"
-	TerminatingProceed = "Terminating:Proceed"
+	FiniteStates                 = []string{StatusComplete, StatusError}
+	AllowedStrategyType          = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
+	AllowedStrategyMode          = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
+	ASGTerminatingInstanceStates = []string{
+		autoscaling.LifecycleStateTerminating,
+		autoscaling.LifecycleStateTerminatingWait,
+		autoscaling.LifecycleStateTerminatingProceed,
+	}
 )
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade
