@@ -138,11 +138,6 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// check if all instances are rotated.
-	if r.IsRollingUpgradeCompleted(rollingUpgrade) {
-		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
-	}
-
 	return reconcile.Result{RequeueAfter: time.Second * 10}, nil
 }
 
@@ -165,19 +160,4 @@ func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.Rolling
 	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
 		r.Error(err, "failed to update status", "name", rollingUpgrade.NamespacedName())
 	}
-}
-
-func (r *RollingUpgradeReconciler) IsRollingUpgradeCompleted(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
-	r.Info("checking if rolling upgrade is completed", "name", rollingUpgrade.NamespacedName())
-	if err := r.Cloud.Discover(); err != nil {
-		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
-		return false
-	}
-	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
-	for _, instance := range scalingGroup.Instances {
-		if r.IsInstanceDrifted(rollingUpgrade, instance) {
-			return false
-		}
-	}
-	return true
 }
