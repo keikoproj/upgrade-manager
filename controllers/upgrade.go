@@ -95,15 +95,15 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		for _, target := range batch {
 
 			var (
-				instanceID = aws.StringValue(target.InstanceId)
-				node       = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+				instanceID   = aws.StringValue(target.InstanceId)
+				node         = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+				nodeName     = node.GetName()
+				scriptTarget = ScriptTarget{
+					InstanceID:    instanceID,
+					NodeName:      nodeName,
+					UpgradeObject: rollingUpgrade,
+				}
 			)
-
-			scriptTarget := ScriptTarget{
-				InstanceID:    instanceID,
-				NodeName:      node.GetName(),
-				UpgradeObject: rollingUpgrade,
-			}
 
 			// Add in-progress tag
 			if err := r.Auth.TagEC2instance(instanceID, instanceStateTagKey, inProgressTagValue); err != nil {
