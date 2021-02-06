@@ -86,6 +86,16 @@ func GetScalingAZs(instances []*autoscaling.Instance) []string {
 	return AZs
 }
 
+func GetInstanceIDs(instances []*autoscaling.Instance) []string {
+	IDs := make([]string, 0)
+	for _, instance := range instances {
+		ID := aws.StringValue(instance.InstanceId)
+		IDs = append(IDs, ID)
+	}
+	sort.Strings(IDs)
+	return IDs
+}
+
 // func SelectInstancesByAZ(instances []*autoscaling.Group) *autoscaling.Instance {
 // 	for _, instance := range group.Instances {
 // 		selectedID := aws.StringValue(instance.InstanceId)
