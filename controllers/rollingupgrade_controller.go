@@ -25,7 +25,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
@@ -48,6 +47,7 @@ type RollingUpgradeReconciler struct {
 	Cloud        *DiscoveredState
 	EventWriter  *kubeprovider.EventWriter
 	maxParallel  int
+	ScriptRunner ScriptRunner
 }
 
 type RollingUpgradeAuthenticator struct {
@@ -67,7 +67,7 @@ type RollingUpgradeAuthenticator struct {
 // Reconcile reads that state of the cluster for a RollingUpgrade object and makes changes based on the state read
 // and the details in the RollingUpgrade.Spec
 func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	rollingUpgrade := &upgrademgrv1alpha1.RollingUpgrade{}
+	rollingUpgrade := &v1alpha1.RollingUpgrade{}
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
@@ -144,7 +144,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // SetupWithManager sets up the controller with the Manager.
 func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&upgrademgrv1alpha1.RollingUpgrade{}).
+		For(&v1alpha1.RollingUpgrade{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
 }
