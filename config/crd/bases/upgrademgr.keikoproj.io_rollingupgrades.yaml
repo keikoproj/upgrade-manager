@@ -133,6 +133,12 @@ spec:
                 type: string
               endTime:
                 type: string
+              lastDrainTime:
+                format: date-time
+                type: string
+              lastTerminationTime:
+                format: date-time
+                type: string
               nodesProcessed:
                 type: integer
               startTime:
