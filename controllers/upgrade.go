@@ -87,13 +87,30 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		mode = rollingUpgrade.StrategyMode()
 	)
 
+	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDs(batch), "name", rollingUpgrade.NamespacedName())
+
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
+
+		// TODO: THE BELOW LOOP IS A TEMPORARY PLACEHOLDER FOR TESTING PURPOSES
+		// WE SHOULD SWITCH TO PARALLEL PROCESSING OF TARGETS IN A BATCH VIA GOROUTINES
+
 		for _, target := range batch {
-			targetID := aws.StringValue(target.InstanceId)
+
+			var (
+				instanceID   = aws.StringValue(target.InstanceId)
+				node         = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+				nodeName     = node.GetName()
+				scriptTarget = ScriptTarget{
+					InstanceID:    instanceID,
+					NodeName:      nodeName,
+					UpgradeObject: rollingUpgrade,
+				}
+			)
+
 			// Add in-progress tag
-			if err := r.Auth.TagEC2instance(aws.StringValue(target.InstanceId), instanceStateTagKey, inProgressTagValue); err != nil {
-				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
+			if err := r.Auth.TagEC2instance(instanceID, instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
 			}
 
 			// Standby
@@ -101,6 +118,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Wait for desired nodes
 
 			// predrain script
+			if err := r.ScriptRunner.PreDrain(scriptTarget); err != nil {
+				return false, err
+			}
 
 			// Issue drain concurrently - set lastDrainTime
 			if node := kubeprovider.SelectNodeByInstanceID(targetID, r.Cloud.ClusterNodes); !reflect.DeepEqual(node, corev1.Node{}) {
@@ -113,6 +133,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			rollingUpgrade.SetLastNodeDrainTime(metav1.Time{Time: time.Now()})
 
 			// post drain script
+			if err := r.ScriptRunner.PostDrain(scriptTarget); err != nil {
+				return false, err
+			}
 
 			// Wait for desired nodes
 
@@ -120,10 +143,20 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 			// Is drained?
 
+			// Post Wait Script
+			if err := r.ScriptRunner.PostWait(scriptTarget); err != nil {
+				return false, err
+			}
+
 			// Terminate - set lastTerminateTime
 			if err := r.Auth.TerminateInstance(target); err != nil {
-				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId), "message", err)
+				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", instanceID, "message", err)
 				return true, nil
+			}
+
+			// Post Wait Script
+			if err := r.ScriptRunner.PostTerminate(scriptTarget); err != nil {
+				return false, err
 			}
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
