@@ -44,6 +44,10 @@ func (a *AmazonClientSet) DescribeTaggedInstanceIDs(tagKey, tagValue string) ([]
 				Name:   aws.String(key),
 				Values: aws.StringSlice([]string{tagValue}),
 			},
+			{
+				Name:   aws.String("instance-state-name"),
+				Values: aws.StringSlice([]string{"pending", "running"}),
+			},
 		},
 	}
 
