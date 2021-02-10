@@ -189,6 +189,9 @@ func main() {
 			KubernetesClientSet: kubeClient,
 		},
 		EventWriter: kubeprovider.NewEventWriter(kubeClient, logger),
+		ScriptRunner: controllers.ScriptRunner{
+			Logger: logger,
+		},
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
