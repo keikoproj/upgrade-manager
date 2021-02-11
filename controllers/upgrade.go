@@ -123,10 +123,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			}
 
 			// Issue drain concurrently - set lastDrainTime
-			if node := kubeprovider.SelectNodeByInstanceID(targetID, r.Cloud.ClusterNodes); !reflect.DeepEqual(node, corev1.Node{}) {
-				r.Info("draining the node", "name", rollingUpgrade.NamespacedName(), "instance", targetID, "node name", node.Name)
-				if err := r.Auth.DrainNode(&node, time.Duration(rollingUpgrade.PostDrainDelaySeconds()), r.Auth.Kubernetes); err != nil {
-					r.Error(err, "failed to drain node", "name", rollingUpgrade.NamespacedName(), "instance", targetID, "node name", node.Name)
+			if node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes); !reflect.DeepEqual(node, corev1.Node{}) {
+				r.Info("draining the node", "name", rollingUpgrade.NamespacedName(), "instance", instanceID, "node name", node.Name)
+				if err := r.Auth.DrainNode(&node, time.Duration(rollingUpgrade.PostDrainDelaySeconds()), rollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
+					r.Error(err, "failed to drain node", "name", rollingUpgrade.NamespacedName(), "instance", instanceID, "node name", node.Name)
 					return false, err
 				}
 			}

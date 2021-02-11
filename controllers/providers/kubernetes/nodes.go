@@ -40,7 +40,7 @@ func (k *KubernetesClientSet) ListClusterNodes() (*corev1.NodeList, error) {
 }
 
 // DrainNode cordons and drains a node.
-func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds time.Duration, client kubernetes.Interface) error {
+func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds time.Duration, DrainTimeout int, client kubernetes.Interface) error {
 	if client == nil {
 		return fmt.Errorf("K8sClient not set")
 	}
@@ -57,7 +57,7 @@ func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds
 		Out:                 os.Stdout,
 		ErrOut:              os.Stdout,
 		DeleteEmptyDirData:  true,
-		Timeout:             time.Duration(120) * time.Second,
+		Timeout:             time.Duration(DrainTimeout) * time.Second,
 	}
 
 	if err := drain.RunCordonOrUncordon(helper, node, true); err != nil {
@@ -73,10 +73,5 @@ func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds
 		}
 		return fmt.Errorf("error draining node: %v", err)
 	}
-
-	if PostDrainDelaySeconds > 0 {
-		time.Sleep(PostDrainDelaySeconds)
-	}
-
 	return nil
 }
