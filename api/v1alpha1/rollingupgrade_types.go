@@ -171,6 +171,10 @@ func (r *RollingUpgrade) ScalingGroupName() string {
 	return r.Spec.AsgName
 }
 
+func (r *RollingUpgrade) DrainTimeout() int {
+	return r.Spec.Strategy.DrainTimeout
+}
+
 func (r *RollingUpgrade) PostTerminateScript() string {
 	return r.Spec.PostTerminate.Script
 }
