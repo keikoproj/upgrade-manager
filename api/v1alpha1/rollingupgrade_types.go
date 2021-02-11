@@ -171,6 +171,10 @@ func (r *RollingUpgrade) ScalingGroupName() string {
 	return r.Spec.AsgName
 }
 
+func (r *RollingUpgrade) DrainTimeout() int {
+	return r.Spec.Strategy.DrainTimeout
+}
+
 func (r *RollingUpgrade) PostTerminateScript() string {
 	return r.Spec.PostTerminate.Script
 }
@@ -203,8 +207,16 @@ func (r *RollingUpgrade) LastNodeTerminationTime() metav1.Time {
 	return r.Status.LastNodeTerminationTime
 }
 
+func (r *RollingUpgrade) SetLastNodeTerminationTime(t metav1.Time) {
+	r.Status.LastNodeTerminationTime = t
+}
+
 func (r *RollingUpgrade) LastNodeDrainTime() metav1.Time {
 	return r.Status.LastNodeDrainTime
+}
+
+func (r *RollingUpgrade) SetLastNodeDrainTime(t metav1.Time) {
+	r.Status.LastNodeDrainTime = t
 }
 
 func (r *RollingUpgrade) NodeIntervalSeconds() int {
