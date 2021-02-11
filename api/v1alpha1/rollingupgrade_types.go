@@ -54,6 +54,17 @@ type RollingUpgradeStatus struct {
 	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
 }
 
+func (s *RollingUpgradeStatus) SetCondition(cond RollingUpgradeCondition) {
+	// if condition exists, overwrite, otherwise append
+	for ix, c := range s.Conditions {
+		if c.Type == cond.Type {
+			s.Conditions[ix] = cond
+			return
+		}
+	}
+	s.Conditions = append(s.Conditions, cond)
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=rollingupgrades,scope=Namespaced,shortName=ru
@@ -160,6 +171,22 @@ func (r *RollingUpgrade) ScalingGroupName() string {
 	return r.Spec.AsgName
 }
 
+func (r *RollingUpgrade) PostTerminateScript() string {
+	return r.Spec.PostTerminate.Script
+}
+
+func (r *RollingUpgrade) PostWaitScript() string {
+	return r.Spec.PostDrain.PostWaitScript
+}
+
+func (r *RollingUpgrade) PreDrainScript() string {
+	return r.Spec.PreDrain.Script
+}
+
+func (r *RollingUpgrade) PostDrainScript() string {
+	return r.Spec.PostDrain.Script
+}
+
 func (r *RollingUpgrade) CurrentStatus() string {
 	return r.Status.CurrentStatus
 }
@@ -224,6 +251,10 @@ func (r *RollingUpgrade) SetNodesProcessed(n int) {
 	r.Status.NodesProcessed = n
 }
 
+func (r *RollingUpgrade) GetStatus() RollingUpgradeStatus {
+	return r.Status
+}
+
 func (r *RollingUpgrade) IsForceRefresh() bool {
 	return r.Spec.ForceRefresh
 }
@@ -231,6 +262,7 @@ func (r *RollingUpgrade) IsForceRefresh() bool {
 func (r *RollingUpgrade) StrategyMode() UpdateStrategyMode {
 	return r.Spec.Strategy.Mode
 }
+
 func (r *RollingUpgrade) Validate() (bool, error) {
 	strategy := r.Spec.Strategy
 
