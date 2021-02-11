@@ -69,7 +69,7 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
 
 	// check if all instances are rotated.
-	if r.IsScalingGroupDrifted(rollingUpgrade) {
+	if !r.IsScalingGroupDrifted(rollingUpgrade) {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
 		return nil
 	}
@@ -329,8 +329,8 @@ func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha
 	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
 		if r.IsInstanceDrifted(rollingUpgrade, instance) {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
