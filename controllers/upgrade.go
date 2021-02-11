@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"reflect"
 	"strings"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -66,7 +69,7 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
 
 	// check if all instances are rotated.
-	if r.IsScalingGroupDrifted(rollingUpgrade) {
+	if !r.IsScalingGroupDrifted(rollingUpgrade) {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
 		return nil
 	}
@@ -87,10 +90,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
 		for _, target := range batch {
-			_ = target
+			targetID := aws.StringValue(target.InstanceId)
 			// Add in-progress tag
-			if err := r.Auth.TagEC2instance(aws.StringValue(target.InstanceId), instanceStateTagKey, inProgressTagValue); err != nil {
-				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId))
+			if err := r.Auth.TagEC2instance(targetID, instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to add in-progress tag", "name", rollingUpgrade.NamespacedName(), "instance", targetID)
 			}
 
 			// Standby
@@ -99,7 +102,15 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 			// predrain script
 
-			// Issue drain/scripts concurrently - set lastDrainTime
+			// Issue drain concurrently - set lastDrainTime
+			if node := kubeprovider.SelectNodeByInstanceID(targetID, r.Cloud.ClusterNodes); !reflect.DeepEqual(node, corev1.Node{}) {
+				r.Info("draining the node", "name", rollingUpgrade.NamespacedName(), "instance", targetID, "node name", node.Name)
+				if err := r.Auth.DrainNode(&node, time.Duration(rollingUpgrade.PostDrainDelaySeconds()), r.Auth.Kubernetes); err != nil {
+					r.Error(err, "failed to drain node", "name", rollingUpgrade.NamespacedName(), "instance", targetID, "node name", node.Name)
+					return false, err
+				}
+			}
+			rollingUpgrade.SetLastNodeDrainTime(metav1.Time{Time: time.Now()})
 
 			// post drain script
 
@@ -110,10 +121,11 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Is drained?
 
 			// Terminate - set lastTerminateTime
+			r.Info("terminating the instance", "name", rollingUpgrade.NamespacedName(), "instance", targetID)
 			if err := r.Auth.TerminateInstance(target); err != nil {
-				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", aws.StringValue(target.InstanceId), "message", err)
-				return true, nil
+				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", targetID, "message", err)
 			}
+			rollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
@@ -284,8 +296,8 @@ func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha
 	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
 		if r.IsInstanceDrifted(rollingUpgrade, instance) {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
