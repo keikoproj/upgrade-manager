@@ -154,6 +154,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				r.Info("failed to terminate instance", "name", rollingUpgrade.NamespacedName(), "instance", instanceID, "message", err)
 				return true, nil
 			}
+			rollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
 
 			// Post Wait Script
 			if err := r.ScriptRunner.PostTerminate(scriptTarget); err != nil {
