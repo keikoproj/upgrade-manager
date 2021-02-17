@@ -125,6 +125,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 			// Wait for desired nodes
 			if !r.DesiredNodesReady(rollingUpgrade) {
+				r.Info("new node is yet to join the cluster")
 				return true, nil
 			}
 
@@ -351,7 +352,6 @@ func (r *RollingUpgradeReconciler) DesiredNodesReady(rollingUpgrade *v1alpha1.Ro
 	// wait for desired instances
 	inServiceInstances := awsprovider.GetInServiceInstances(scalingGroup)
 	if len(inServiceInstances) != int(desiredInstances) {
-		r.Info("new instance is yet to join the scaling group")
 		return false
 	}
 
@@ -363,7 +363,6 @@ func (r *RollingUpgradeReconciler) DesiredNodesReady(rollingUpgrade *v1alpha1.Ro
 		}
 	}
 	if readyNodes != int(desiredInstances) {
-		r.Info("new node is yet to join the cluster")
 		return false
 	}
 
