@@ -115,9 +115,12 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			}
 
 			// Standby
-			if err := r.SetInstanceStandBy(target, rollingUpgrade); err != nil {
-				r.Error(err, "couldn't set the instance to stand-by", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
-				return false, err
+			if aws.StringValue(target.LifecycleState) == autoscaling.LifecycleStateInService {
+				r.Info("setting instance to stand-by", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
+				if err := r.Auth.SetInstanceStandBy(target, rollingUpgrade.Spec.AsgName); err != nil {
+					r.Error(err, "couldn't set the instance to stand-by", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
+					return false, err
+				}
 			}
 
 			// Wait for desired nodes
@@ -336,30 +339,6 @@ func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha
 		}
 	}
 	return false
-}
-
-func (r *RollingUpgradeReconciler) SetInstanceStandBy(instance *autoscaling.Instance, rollingUpgrade *v1alpha1.RollingUpgrade) error {
-	var (
-		instanceID    = aws.StringValue(instance.InstanceId)
-		instanceState = aws.StringValue(instance.LifecycleState)
-	)
-
-	if instanceState != autoscaling.LifecycleStateInService {
-		return nil
-	}
-	r.Info("setting instance to stand-by", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
-
-	input := &autoscaling.EnterStandbyInput{
-		AutoScalingGroupName:           aws.String(rollingUpgrade.Spec.AsgName),
-		InstanceIds:                    aws.StringSlice([]string{instanceID}),
-		ShouldDecrementDesiredCapacity: aws.Bool(false),
-	}
-
-	if _, err := r.Auth.AsgClient.EnterStandby(input); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (r *RollingUpgradeReconciler) DesiredNodesReady(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
