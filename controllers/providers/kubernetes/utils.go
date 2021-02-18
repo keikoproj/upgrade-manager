@@ -24,6 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -87,11 +88,39 @@ func GetKubernetesLocalConfig() (*rest.Config, error) {
 
 func SelectNodeByInstanceID(instanceID string, nodes *corev1.NodeList) corev1.Node {
 	for _, node := range nodes.Items {
-		tokens := strings.Split(node.Spec.ProviderID, "/")
-		nodeID := tokens[len(tokens)-1]
+		nodeID := GetNodeInstanceID(node)
 		if strings.EqualFold(instanceID, nodeID) {
 			return node
 		}
 	}
 	return corev1.Node{}
+}
+
+func GetNodeInstanceID(node corev1.Node) string {
+	tokens := strings.Split(node.Spec.ProviderID, "/")
+	nodeInstanceID := tokens[len(tokens)-1]
+	return nodeInstanceID
+}
+
+func IsNodeReady(node corev1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func IsNodePassesReadinessGates(node corev1.Node, requiredReadinessGates []v1alpha1.NodeReadinessGate) bool {
+	if len(requiredReadinessGates) == 0 {
+		return true
+	}
+	for _, gate := range requiredReadinessGates {
+		for key, value := range gate.MatchLabels {
+			if node.Labels[key] != value {
+				return false
+			}
+		}
+	}
+	return true
 }
