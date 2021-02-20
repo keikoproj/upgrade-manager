@@ -195,6 +195,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	select {
 	case <-ctx.Done():
 		r.error(ruObj, ctx.Err(), "Kubectl drain timed out for node", "nodeName", nodeName)
+		return ctx.Err()
 	case err := <-errChan:
 		if err != nil {
 			r.error(ruObj, err, "Kubectl drain errored for node", "nodeName", nodeName)
