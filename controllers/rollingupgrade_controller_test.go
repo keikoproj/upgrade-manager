@@ -106,22 +106,22 @@ func TestMarkObjForCleanupNothingHappens(t *testing.T) {
 func TestPreDrainScriptSuccess(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	instance := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	instance.Spec.PreDrain.Script = "echo 'Predrain script ran without error'"
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	ruObj.Spec.PreDrain.Script = "echo 'Predrain script ran without error'"
 
 	rcRollingUpgrade := createReconciler()
-	err := rcRollingUpgrade.preDrainHelper("test-instance-id", "test", instance)
+	err := rcRollingUpgrade.preDrainHelper("test-instance-id", "test", ruObj)
 	g.Expect(err).To(gomega.BeNil())
 }
 
 func TestPreDrainScriptError(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	instance := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
-	instance.Spec.PreDrain.Script = "exit 1"
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	ruObj.Spec.PreDrain.Script = "exit 1"
 
 	rcRollingUpgrade := createReconciler()
-	err := rcRollingUpgrade.preDrainHelper("test-instance-id", "test", instance)
+	err := rcRollingUpgrade.preDrainHelper("test-instance-id", "test", ruObj)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Failed to run preDrain script"))
 }
 
@@ -251,7 +251,10 @@ func TestDrainNodeSuccess(t *testing.T) {
 	mockNode := "some-node-name"
 	mockKubeCtlCall := "echo"
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true},
+	}
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
@@ -308,7 +311,10 @@ func TestDrainNodePostDrainFailureToDrainNotFound(t *testing.T) {
 	// Force quit from the rest of the command
 	mockKubeCtlCall := "echo 'Error from server (NotFound)'; exit 1;"
 
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{IgnoreDrainFailures: true},
+	}
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
@@ -1006,7 +1012,7 @@ func TestRunRestackSuccessOneNode(t *testing.T) {
 	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy},
+		Spec:       upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy, IgnoreDrainFailures: true},
 	}
 
 	mgr, err := buildManager()
@@ -1059,7 +1065,7 @@ func TestRunRestackSuccessMultipleNodes(t *testing.T) {
 
 	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy}}
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: someAsg, Strategy: strategy, IgnoreDrainFailures: true}}
 
 	mgr, err := buildManager()
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -1324,10 +1330,9 @@ func TestRunRestackTerminateNodeFail(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
-			AsgName: someAsg,
-			Strategy: upgrademgrv1alpha1.UpdateStrategy{
-				Mode: "lazy",
-			},
+			AsgName:             someAsg,
+			Strategy:            upgrademgrv1alpha1.UpdateStrategy{Mode: "lazy"},
+			IgnoreDrainFailures: true,
 		},
 	}
 	// Error flag set, should return error
@@ -1405,6 +1410,7 @@ func TestUniformAcrossAzUpdateSuccessMultipleNodes(t *testing.T) {
 				Mode: "lazy",
 				Type: upgrademgrv1alpha1.UniformAcrossAzUpdateStrategy,
 			},
+			IgnoreDrainFailures: true,
 		},
 	}
 
@@ -1477,10 +1483,9 @@ func TestUpdateInstances(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
-			AsgName: someAsg,
-			Strategy: upgrademgrv1alpha1.UpdateStrategy{
-				Mode: "lazy",
-			},
+			AsgName:             someAsg,
+			Strategy:            upgrademgrv1alpha1.UpdateStrategy{Mode: "lazy"},
+			IgnoreDrainFailures: true,
 		},
 	}
 
@@ -1663,10 +1668,9 @@ func TestUpdateInstancesPartialError(t *testing.T) {
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
 		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
-			AsgName: someAsg,
-			Strategy: upgrademgrv1alpha1.UpdateStrategy{
-				Mode: "lazy",
-			},
+			AsgName:             someAsg,
+			Strategy:            upgrademgrv1alpha1.UpdateStrategy{Mode: "lazy"},
+			IgnoreDrainFailures: true,
 		},
 	}
 
@@ -2730,8 +2734,7 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	mockNode := "some-node-name"
 
-	// Force quit from the rest of the command
-	mockKubeCtlCall := "exit 1;"
+	mockKubeCtlCall := ""
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
