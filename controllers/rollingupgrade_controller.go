@@ -169,7 +169,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	drainTimeout int) error {
 	// Running kubectl drain node.
 	err := r.preDrainHelper(instanceID, nodeName, ruObj)
-	if err != nil {
+	if err != nil && !ruObj.Spec.IgnoreDrainFailures {
 		return fmt.Errorf("%s: pre-drain script failed: %w", ruObj.NamespacedName(), err)
 	}
 
@@ -199,7 +199,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 			return ctx.Err()
 		}
 	case err := <-errChan:
-		if err != nil {
+		if err != nil && !ruObj.Spec.IgnoreDrainFailures {
 			r.error(ruObj, err, "Kubectl drain errored for node", "nodeName", nodeName)
 			return err
 		}
