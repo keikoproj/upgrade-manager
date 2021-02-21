@@ -2734,7 +2734,7 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	mockNode := "some-node-name"
 
-	mockKubeCtlCall := "echo 'Predrain script ran without error'"
+	mockKubeCtlCall := ""
 
 	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
 		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
