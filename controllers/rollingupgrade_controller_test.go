@@ -2766,6 +2766,36 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 
 }
 
+func TestPreDrainFailureWhenIgnoreDrainFailuresSet(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	mockNode := "some-node-name"
+
+	mockKubeCtlCall := "exit 1;"
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{
+			Strategy:            upgrademgrv1alpha1.UpdateStrategy{DrainTimeout: -1},
+			IgnoreDrainFailures: true,
+			PreDrain: upgrademgrv1alpha1.PreDrainSpec{
+				Script: mockKubeCtlCall,
+			},
+		},
+	}
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		ClusterState: NewClusterState(),
+		Log:          log2.NullLogger{},
+		EC2Client:    MockEC2{},
+		ASGClient: MockAutoscalingGroup{
+			errorFlag: false,
+			awsErr:    nil,
+		},
+		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
+	}
+
+	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode)
+	g.Expect(err).To(gomega.Not(gomega.BeNil())) // expect error, as the predrain failure shouldn't be masked when IgnoreDrainFailures is set.
+}
 func TestUpdateInstancesNotExists(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
