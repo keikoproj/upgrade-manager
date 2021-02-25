@@ -108,6 +108,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				}
 			)
 
+			//Add statistics
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
+
 			// Add in-progress tag
 			if err := r.Auth.TagEC2instance(instanceID, instanceStateTagKey, inProgressTagValue); err != nil {
 				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
@@ -123,11 +126,17 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				}
 			}
 
+			// Turns onto desired nodes
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady)
+
 			// Wait for desired nodes
 			if !r.DesiredNodesReady(rollingUpgrade) {
 				r.Info("new node is yet to join the cluster")
 				return true, nil
 			}
+
+			// Turns onto PreDrain script
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
 
 			// Predrain script
 			if err := r.ScriptRunner.PreDrain(scriptTarget); err != nil {
@@ -137,6 +146,10 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			// Issue drain concurrently - set lastDrainTime
 			if node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes); !reflect.DeepEqual(node, corev1.Node{}) {
 				r.Info("draining the node", "name", rollingUpgrade.NamespacedName(), "instance", instanceID, "node name", node.Name)
+
+				// Turns onto NodeRotationDrain
+				rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
+
 				if err := r.Auth.DrainNode(&node, time.Duration(rollingUpgrade.PostDrainDelaySeconds()), rollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
 					r.Error(err, "failed to drain node", "name", rollingUpgrade.NamespacedName(), "instance", instanceID, "node name", node.Name)
 					return false, err
@@ -144,15 +157,24 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			}
 			rollingUpgrade.SetLastNodeDrainTime(metav1.Time{Time: time.Now()})
 
+			// Turns onto NodeRotationPostdrainScript
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript)
+
 			// post drain script
 			if err := r.ScriptRunner.PostDrain(scriptTarget); err != nil {
 				return false, err
 			}
 
+			// Turns onto NodeRotationPostWait
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait)
+
 			// Post Wait Script
 			if err := r.ScriptRunner.PostWait(scriptTarget); err != nil {
 				return false, err
 			}
+
+			// Turns onto NodeRotationTerminate
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate)
 
 			// Terminate - set lastTerminateTime
 			r.Info("terminating instance", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
@@ -162,10 +184,16 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			}
 			rollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
 
+			// Turns onto NodeRotationTerminate
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate)
+
 			// Post Terminate Script
 			if err := r.ScriptRunner.PostTerminate(scriptTarget); err != nil {
 				return false, err
 			}
+
+			// Turns onto NodeRotationCompleted
+			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
 		}
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
