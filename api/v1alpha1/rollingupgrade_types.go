@@ -86,7 +86,7 @@ func (s *RollingUpgradeStatus) addStepDuration(asgName string, stepName RollingU
 			return
 		}
 	}
-	s.Statistics = append(s.Statistics, &RollingUpgradeStatistics{
+	s.Statistics = append(s.Statistics, RollingUpgradeStatistics{
 		StepName: stepName,
 		DurationSum: metav1.Duration{
 			Duration: duration,
@@ -99,7 +99,7 @@ func (s *RollingUpgradeStatus) addStepDuration(asgName string, stepName RollingU
 }
 
 // Node turns onto step
-func (s *RollingUpgradeStatus) NodeStep(asgName string, nodeName string, stepName RollingUpgradeStep) {
+func (s *RollingUpgradeStatus) NodeTurnsOntoStep(asgName string, nodeName string, stepName RollingUpgradeStep) {
 	if s.InProcessingNodes == nil {
 		s.InProcessingNodes = make(map[string]*NodeInProcessing)
 	}
@@ -207,8 +207,7 @@ const (
 	// Conditions
 	UpgradeComplete UpgradeConditionType = "Complete"
 
-	NodeRotationTotal RollingUpgradeStep = "total"
-
+	NodeRotationTotal            RollingUpgradeStep = "total"
 	NodeRotationKickoff          RollingUpgradeStep = "kickoff"
 	NodeRotationDesiredNodeReady RollingUpgradeStep = "desired_node_ready"
 	NodeRotationPredrainScript   RollingUpgradeStep = "predrain_script"
