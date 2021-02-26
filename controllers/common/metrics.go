@@ -17,6 +17,7 @@ var nodeRotationTotal = prometheus.NewHistogram(
 		Name:      "rotation_total_seconds",
 		Help:      "Node rotation total",
 		Buckets: []float64{
+			10.0,
 			30.0,
 			60.0,
 			90.0,
