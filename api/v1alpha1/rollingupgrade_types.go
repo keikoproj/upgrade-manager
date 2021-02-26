@@ -207,7 +207,8 @@ const (
 	// Conditions
 	UpgradeComplete UpgradeConditionType = "Complete"
 
-	NodeRotationTotal            RollingUpgradeStep = "total"
+	NodeRotationTotal RollingUpgradeStep = "total"
+
 	NodeRotationKickoff          RollingUpgradeStep = "kickoff"
 	NodeRotationDesiredNodeReady RollingUpgradeStep = "desired_node_ready"
 	NodeRotationPredrainScript   RollingUpgradeStep = "predrain_script"
