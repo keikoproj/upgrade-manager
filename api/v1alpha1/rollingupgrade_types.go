@@ -86,7 +86,7 @@ func (s *RollingUpgradeStatus) addStepDuration(asgName string, stepName RollingU
 			return
 		}
 	}
-	s.Statistics = append(s.Statistics, RollingUpgradeStatistics{
+	s.Statistics = append(s.Statistics, &RollingUpgradeStatistics{
 		StepName: stepName,
 		DurationSum: metav1.Duration{
 			Duration: duration,
