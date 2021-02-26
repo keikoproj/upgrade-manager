@@ -121,10 +121,14 @@ func (s *RollingUpgradeStatus) NodeTurnsOntoStep(asgName string, nodeName string
 			s.addStepDuration(asgName, NodeRotationTotal, total)
 			delete(s.InProcessingNodes, nodeName)
 		} else if inProcessingNode.StepName != stepName { //Still same step
-			var duration = n.StepEndTime.Sub(n.StepStartTime.Time)
-			s.addStepDuration(asgName, stepName, duration)
-			n.StepStartTime = metav1.Now()
-			inProcessingNode.StepName = stepName
+			var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
+			var newOrder = NodeRotationStepOrders[stepName]
+			if newOrder > oldOrder { //Make sure the steps running in order
+				var duration = n.StepEndTime.Sub(n.StepStartTime.Time)
+				s.addStepDuration(asgName, stepName, duration)
+				n.StepStartTime = metav1.Now()
+				inProcessingNode.StepName = stepName
+			}
 		}
 	}
 }
@@ -202,7 +206,8 @@ const (
 	// Conditions
 	UpgradeComplete UpgradeConditionType = "Complete"
 
-	NodeRotationTotal            RollingUpgradeStep = "total"
+	NodeRotationTotal RollingUpgradeStep = "total"
+
 	NodeRotationKickoff          RollingUpgradeStep = "kickoff"
 	NodeRotationDesiredNodeReady RollingUpgradeStep = "desired_node_ready"
 	NodeRotationPredrainScript   RollingUpgradeStep = "predrain_script"
@@ -213,6 +218,18 @@ const (
 	NodeRotationPostTerminate    RollingUpgradeStep = "post_terminate"
 	NodeRotationCompleted        RollingUpgradeStep = "completed"
 )
+
+var NodeRotationStepOrders = map[RollingUpgradeStep]int{
+	NodeRotationKickoff:          10,
+	NodeRotationDesiredNodeReady: 20,
+	NodeRotationPredrainScript:   30,
+	NodeRotationDrain:            40,
+	NodeRotationPostdrainScript:  50,
+	NodeRotationPostWait:         60,
+	NodeRotationTerminate:        70,
+	NodeRotationPostTerminate:    80,
+	NodeRotationCompleted:        1000,
+}
 
 var (
 	FiniteStates        = []string{StatusComplete, StatusError}
