@@ -59,7 +59,7 @@ func AddRollingUpgradeStepDuration(asgName string, stepName string, duration tim
 				})
 			err := metrics.Registry.Register(summary)
 			if err != nil {
-				if reflect.TypeOf(err).String() == "AlreadyRegisteredError" {
+				if reflect.TypeOf(err).String() == "prometheus.AlreadyRegisteredError" {
 					log.Warnf("summary was registered again, ASG: %s, step: %s", asgName, stepName)
 				} else {
 					log.Errorf("register summary error, ASG: %s, step: %s, %v", asgName, stepName, err)
