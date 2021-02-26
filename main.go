@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	"os"
 	"time"
 
@@ -67,6 +68,8 @@ func init() {
 
 	utilruntime.Must(upgrademgrv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
+
+	common.InitMetrics()
 }
 
 func main() {
@@ -211,6 +214,8 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+
+	setupLog.Info("registering prometheus")
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
