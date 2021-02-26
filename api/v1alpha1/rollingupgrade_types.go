@@ -115,16 +115,17 @@ func (s *RollingUpgradeStatus) NodeTurnsOntoStep(asgName string, nodeName string
 	} else {
 		inProcessingNode = n
 		n.StepEndTime = metav1.Now()
+		var duration = n.StepEndTime.Sub(n.StepStartTime.Time)
 		if stepName == NodeRotationCompleted {
 			//Add overall and remove the node from in-processing map
 			var total = n.StepEndTime.Sub(n.UpgradeStartTime.Time)
+			s.addStepDuration(asgName, inProcessingNode.StepName, duration)
 			s.addStepDuration(asgName, NodeRotationTotal, total)
 			delete(s.InProcessingNodes, nodeName)
 		} else if inProcessingNode.StepName != stepName { //Still same step
 			var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
 			var newOrder = NodeRotationStepOrders[stepName]
 			if newOrder > oldOrder { //Make sure the steps running in order
-				var duration = n.StepEndTime.Sub(n.StepStartTime.Time)
 				s.addStepDuration(asgName, inProcessingNode.StepName, duration)
 				n.StepStartTime = metav1.Now()
 				inProcessingNode.StepName = stepName
