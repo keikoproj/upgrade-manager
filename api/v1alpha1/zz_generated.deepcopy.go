@@ -237,8 +237,14 @@ func (in *RollingUpgradeStatus) DeepCopyInto(out *RollingUpgradeStatus) {
 	in.LastNodeDrainTime.DeepCopyInto(&out.LastNodeDrainTime)
 	if in.Statistics != nil {
 		in, out := &in.Statistics, &out.Statistics
-		*out = make([]RollingUpgradeStatistics, len(*in))
-		copy(*out, *in)
+		*out = make([]*RollingUpgradeStatistics, len(*in))
+		for i := range *in {
+			if (*in)[i] != nil {
+				in, out := &(*in)[i], &(*out)[i]
+				*out = new(RollingUpgradeStatistics)
+				**out = **in
+			}
+		}
 	}
 	if in.InProcessingNodes != nil {
 		in, out := &in.InProcessingNodes, &out.InProcessingNodes
