@@ -20,4 +20,13 @@ func TestAddRollingUpgradeStepDuration(t *testing.T) {
 	//Test duplicate
 	AddRollingUpgradeStepDuration("test-asg", "kickoff", 1)
 	g.Expect(stepSummaries["test-asg"]["kickoff"]).NotTo(gomega.BeNil())
+
+	//Test duplicate
+	delete(stepSummaries["test-asg"], "kickoff")
+	AddRollingUpgradeStepDuration("test-asg", "kickoff", 1)
+	g.Expect(stepSummaries["test-asg"]["kickoff"]).NotTo(gomega.BeNil())
+
+	//Test total
+	AddRollingUpgradeStepDuration("test-asg", "total", 1)
+	g.Expect(stepSummaries["test-asg"]["kickoff"]).NotTo(gomega.BeNil())
 }
