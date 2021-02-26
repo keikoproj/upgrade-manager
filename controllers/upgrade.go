@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"github.com/keikoproj/upgrade-manager/controllers/common/log"
 	"reflect"
 	"strings"
 	"time"
@@ -107,6 +108,11 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 					UpgradeObject: rollingUpgrade,
 				}
 			)
+
+			if nodeName == "" {
+				log.Warnf("The instance doesn't have node name, instanceId: %s", instanceID)
+				continue
+			}
 
 			//Add statistics
 			rollingUpgrade.Status.NodeTurnsOntoStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
