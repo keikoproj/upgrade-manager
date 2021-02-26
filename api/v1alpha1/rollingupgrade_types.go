@@ -125,7 +125,7 @@ func (s *RollingUpgradeStatus) NodeTurnsOntoStep(asgName string, nodeName string
 			var newOrder = NodeRotationStepOrders[stepName]
 			if newOrder > oldOrder { //Make sure the steps running in order
 				var duration = n.StepEndTime.Sub(n.StepStartTime.Time)
-				s.addStepDuration(asgName, stepName, duration)
+				s.addStepDuration(asgName, inProcessingNode.StepName, duration)
 				n.StepStartTime = metav1.Now()
 				inProcessingNode.StepName = stepName
 			}
