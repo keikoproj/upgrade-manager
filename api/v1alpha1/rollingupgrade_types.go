@@ -99,7 +99,7 @@ func (s *RollingUpgradeStatus) addStepDuration(asgName string, stepName RollingU
 }
 
 // Node turns onto step
-func (s *RollingUpgradeStatus) NodeTurnsOntoStep(asgName string, nodeName string, stepName RollingUpgradeStep) {
+func (s *RollingUpgradeStatus) NodeStep(asgName string, nodeName string, stepName RollingUpgradeStep) {
 	if s.InProcessingNodes == nil {
 		s.InProcessingNodes = make(map[string]*NodeInProcessing)
 	}
