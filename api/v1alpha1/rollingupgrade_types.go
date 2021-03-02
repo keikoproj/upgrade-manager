@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	corev1 "k8s.io/api/core/v1"
@@ -52,6 +53,85 @@ type RollingUpgradeStatus struct {
 	Conditions              []RollingUpgradeCondition `json:"conditions,omitempty"`
 	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
 	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
+
+	Statistics        []*RollingUpgradeStatistics  `json:"statistics,omitempty"`
+	InProcessingNodes map[string]*NodeInProcessing `json:"inProcessingNodes,omitempty"`
+}
+
+// RollingUpgrade Statistics, includes summary(sum/count) from each step
+type RollingUpgradeStatistics struct {
+	StepName      RollingUpgradeStep `json:"stepName,omitempty"`
+	DurationSum   metav1.Duration    `json:"durationSum,omitempty"`
+	DurationCount int32              `json:"durationCount,omitempty"`
+}
+
+// Node In-processing
+type NodeInProcessing struct {
+	NodeName         string             `json:"nodeName,omitempty"`
+	StepName         RollingUpgradeStep `json:"stepName,omitempty"`
+	UpgradeStartTime metav1.Time        `json:"upgradeStartTime,omitempty"`
+	StepStartTime    metav1.Time        `json:"stepStartTime,omitempty"`
+	StepEndTime      metav1.Time        `json:"stepEndTime,omitempty"`
+}
+
+// Add one step duration
+func (s *RollingUpgradeStatus) addStepDuration(asgName string, stepName RollingUpgradeStep, duration time.Duration) {
+	// if step exists, add count and sum, otherwise append
+	for _, s := range s.Statistics {
+		if s.StepName == stepName {
+			s.DurationSum = metav1.Duration{
+				Duration: s.DurationSum.Duration + duration,
+			}
+			s.DurationCount += 1
+			return
+		}
+	}
+	s.Statistics = append(s.Statistics, &RollingUpgradeStatistics{
+		StepName: stepName,
+		DurationSum: metav1.Duration{
+			Duration: duration,
+		},
+		DurationCount: 1,
+	})
+
+	//Add to system level statistics
+	common.AddRollingUpgradeStepDuration(asgName, string(stepName), duration)
+}
+
+// Node turns onto step
+func (s *RollingUpgradeStatus) NodeStep(asgName string, nodeName string, stepName RollingUpgradeStep) {
+	if s.InProcessingNodes == nil {
+		s.InProcessingNodes = make(map[string]*NodeInProcessing)
+	}
+	var inProcessingNode *NodeInProcessing
+	if n, ok := s.InProcessingNodes[nodeName]; !ok {
+		inProcessingNode = &NodeInProcessing{
+			NodeName:         nodeName,
+			StepName:         stepName,
+			UpgradeStartTime: metav1.Now(),
+			StepStartTime:    metav1.Now(),
+		}
+		s.InProcessingNodes[nodeName] = inProcessingNode
+	} else {
+		inProcessingNode = n
+		n.StepEndTime = metav1.Now()
+		var duration = n.StepEndTime.Sub(n.StepStartTime.Time)
+		if stepName == NodeRotationCompleted {
+			//Add overall and remove the node from in-processing map
+			var total = n.StepEndTime.Sub(n.UpgradeStartTime.Time)
+			s.addStepDuration(asgName, inProcessingNode.StepName, duration)
+			s.addStepDuration(asgName, NodeRotationTotal, total)
+			delete(s.InProcessingNodes, nodeName)
+		} else if inProcessingNode.StepName != stepName { //Still same step
+			var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
+			var newOrder = NodeRotationStepOrders[stepName]
+			if newOrder > oldOrder { //Make sure the steps running in order
+				s.addStepDuration(asgName, inProcessingNode.StepName, duration)
+				n.StepStartTime = metav1.Now()
+				inProcessingNode.StepName = stepName
+			}
+		}
+	}
 }
 
 func (s *RollingUpgradeStatus) SetCondition(cond RollingUpgradeCondition) {
@@ -115,6 +195,8 @@ type NodeReadinessGate struct {
 	MatchLabels map[string]string `json:"matchLabels,omitempty" protobuf:"bytes,1,rep,name=matchLabels"`
 }
 
+type RollingUpgradeStep string
+
 const (
 	// Status
 	StatusInit     = "init"
@@ -124,7 +206,31 @@ const (
 
 	// Conditions
 	UpgradeComplete UpgradeConditionType = "Complete"
+
+	NodeRotationTotal RollingUpgradeStep = "total"
+
+	NodeRotationKickoff          RollingUpgradeStep = "kickoff"
+	NodeRotationDesiredNodeReady RollingUpgradeStep = "desired_node_ready"
+	NodeRotationPredrainScript   RollingUpgradeStep = "predrain_script"
+	NodeRotationDrain            RollingUpgradeStep = "drain"
+	NodeRotationPostdrainScript  RollingUpgradeStep = "postdrain_script"
+	NodeRotationPostWait         RollingUpgradeStep = "post_wait"
+	NodeRotationTerminate        RollingUpgradeStep = "terminate"
+	NodeRotationPostTerminate    RollingUpgradeStep = "post_terminate"
+	NodeRotationCompleted        RollingUpgradeStep = "completed"
 )
+
+var NodeRotationStepOrders = map[RollingUpgradeStep]int{
+	NodeRotationKickoff:          10,
+	NodeRotationDesiredNodeReady: 20,
+	NodeRotationPredrainScript:   30,
+	NodeRotationDrain:            40,
+	NodeRotationPostdrainScript:  50,
+	NodeRotationPostWait:         60,
+	NodeRotationTerminate:        70,
+	NodeRotationPostTerminate:    80,
+	NodeRotationCompleted:        1000,
+}
 
 var (
 	FiniteStates        = []string{StatusComplete, StatusError}
