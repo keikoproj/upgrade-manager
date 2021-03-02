@@ -133,6 +133,25 @@ spec:
                 type: string
               endTime:
                 type: string
+              inProcessingNodes:
+                additionalProperties:
+                  description: Node In-processing
+                  properties:
+                    nodeName:
+                      type: string
+                    stepEndTime:
+                      format: date-time
+                      type: string
+                    stepName:
+                      type: string
+                    stepStartTime:
+                      format: date-time
+                      type: string
+                    upgradeStartTime:
+                      format: date-time
+                      type: string
+                  type: object
+                type: object
               lastDrainTime:
                 format: date-time
                 type: string
@@ -143,6 +162,20 @@ spec:
                 type: integer
               startTime:
                 type: string
+              statistics:
+                items:
+                  description: RollingUpgrade Statistics, includes summary(sum/count)
+                    from each step
+                  properties:
+                    durationCount:
+                      format: int32
+                      type: integer
+                    durationSum:
+                      type: string
+                    stepName:
+                      type: string
+                  type: object
+                type: array
               totalNodes:
                 type: integer
               totalProcessingTime:
