@@ -158,6 +158,10 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 
 func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.RollingUpgrade) {
 	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
+
+		//TODO check the error and merge the result and do it again
+		//rollingUpgrade.MergeFromCurrentVersion(current)
+
 		r.Error(err, "failed to update status", "name", rollingUpgrade.NamespacedName())
 	}
 }

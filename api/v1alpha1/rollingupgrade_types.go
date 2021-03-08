@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"github.com/keikoproj/upgrade-manager/controllers/common/log"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +57,17 @@ type RollingUpgradeStatus struct {
 
 	Statistics        []*RollingUpgradeStatistics  `json:"statistics,omitempty"`
 	InProcessingNodes map[string]*NodeInProcessing `json:"inProcessingNodes,omitempty"`
+
+	//Map to hold which field is changed
+	changedMap map[string]bool `json:"-"`
 }
+
+//// RollingUpgradeBatch Status, this object is to hold the changes in one batch, so that
+//// it can be applied to the status multiple times when upgrade conflicts occured.
+//type RollingUpgradeBatchStatus struct {
+//	Statistics        []*RollingUpgradeStatistics  `json:"statistics,omitempty"`
+//	InProcessingNodes map[string]*NodeInProcessing `json:"inProcessingNodes,omitempty"`
+//}
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
 type RollingUpgradeStatistics struct {
@@ -74,8 +85,129 @@ type NodeInProcessing struct {
 	StepEndTime      metav1.Time        `json:"stepEndTime,omitempty"`
 }
 
+// RollingUpgrade Status merge, when API server upgrade conflicts occured, merge the changes into new version of RollingUpgrade
+// And try again
+func (s *RollingUpgrade) MergeFromCurrentVersion(current *RollingUpgrade) {
+	for key, _ := range s.Status.changedMap {
+		switch key {
+		case "StartTime":
+			if current.StartTime() == "" {
+				current.SetStartTime(s.StartTime())
+			}
+		case "EndTime":
+			current.SetEndTime(s.EndTime())
+		case "CurrentStatus":
+			//TODO ?
+			current.SetCurrentStatus(s.CurrentStatus())
+		case "TotalNodes":
+			if current.Status.TotalNodes != s.Status.TotalNodes {
+				log.Warnf("Why the total nodes is different? current %d, desired:%d", current.Status.TotalNodes, s.Status.TotalNodes)
+			}
+		case "Conditions":
+			//TODO Merge
+		case "LastNodeTerminationTime":
+			//Which one should we pick, if we run concurrently?
+			//TODO
+		case "LastNodeDrainTime":
+			//Which one should we pick, if we run concurrently?
+			//TODO
+		case "Statistics":
+			//Merge
+			if current.Status.Statistics == nil {
+				current.Status.Statistics = s.Status.Statistics
+			} else if s.Status.Statistics != nil {
+				current.Status.Statistics = s.Status.mergeStatisticsArray(current.Status.Statistics, s.Status.Statistics)
+			}
+		case "InProcessingNodes":
+			//Merge
+			if current.Status.InProcessingNodes == nil {
+				current.Status.InProcessingNodes = s.Status.InProcessingNodes
+			} else if s.Status.InProcessingNodes != nil {
+				s.Status.mergeInProcessingNodes(current.Status.InProcessingNodes, s.Status.InProcessingNodes)
+			}
+		}
+	}
+}
+
+//Try to merge InProcessingNodes
+func (s *RollingUpgradeStatus) mergeStatisticsArray(current, desired []*RollingUpgradeStatistics) []*RollingUpgradeStatistics {
+	//M * N, since the order might be changed by different batch
+	for _, d := range desired {
+		found := false
+		for _, c := range current {
+			if c.StepName == d.StepName {
+				s.mergeStatistics(c, d)
+				found = true
+				break
+			}
+		}
+		if !found {
+			current = append(current, d)
+		}
+	}
+	return current
+}
+
+// Merge Statistics
+func (s *RollingUpgradeStatus) mergeStatistics(current, desired *RollingUpgradeStatistics) {
+	if current.DurationCount > desired.DurationCount {
+		//One might have more changes than other, might lose this
+		return
+	} else if current.DurationCount == desired.DurationCount { //Could be both change or no change
+		if current.DurationSum == desired.DurationSum { //No change
+			return
+		} else {
+			current.DurationCount += 1
+			avg := int64(desired.DurationSum.Duration.Seconds() / float64(desired.DurationCount))
+			current.DurationSum = metav1.Duration{
+				Duration: current.DurationSum.Duration + time.Duration(avg),
+			}
+		}
+	} else {
+		current.DurationCount = desired.DurationCount
+		current.DurationSum = desired.DurationSum
+	}
+
+}
+
+//Try to merge InProcessingNodes
+func (s *RollingUpgradeStatus) mergeInProcessingNodes(current, desired map[string]*NodeInProcessing) {
+	for key, value := range desired {
+		if c, ok := current[key]; ok {
+			s.mergeNodeInProcessing(c, value)
+		} else {
+			current[key] = value
+		}
+	}
+}
+
+//Try to merge the NodeInProcessing
+func (s *RollingUpgradeStatus) mergeNodeInProcessing(current, desired *NodeInProcessing) {
+	if current.StepName == desired.StepName {
+		if current.UpgradeStartTime.Unix() < desired.UpgradeStartTime.Unix() {
+			current.UpgradeStartTime = desired.UpgradeStartTime
+		}
+		if current.StepStartTime.Unix() < desired.StepStartTime.Unix() {
+			current.StepStartTime = desired.StepStartTime
+		}
+		if current.StepEndTime.Unix() < desired.StepEndTime.Unix() {
+			current.StepEndTime = desired.StepEndTime
+		}
+	} else { //Check which is higher order
+		currentStepOrder := NodeRotationStepOrders[current.StepName]
+		desiredStepOrder := NodeRotationStepOrders[desired.StepName]
+		if desiredStepOrder > currentStepOrder {
+			current.UpgradeStartTime = desired.UpgradeStartTime
+			current.StepStartTime = desired.StepStartTime
+			current.StepEndTime = desired.StepEndTime
+		}
+	}
+}
+
 // Add one step duration
 func (s *RollingUpgradeStatus) addStepDuration(asgName string, stepName RollingUpgradeStep, duration time.Duration) {
+	s.changedMap["Statistics"] = true
+
 	// if step exists, add count and sum, otherwise append
 	for _, s := range s.Statistics {
 		if s.StepName == stepName {
@@ -103,6 +235,9 @@ func (s *RollingUpgradeStatus) NodeStep(asgName string, nodeName string, stepNam
 	if s.InProcessingNodes == nil {
 		s.InProcessingNodes = make(map[string]*NodeInProcessing)
 	}
+
+	s.changedMap["InProcessingNode"] = true
+
 	var inProcessingNode *NodeInProcessing
 	if n, ok := s.InProcessingNodes[nodeName]; !ok {
 		inProcessingNode = &NodeInProcessing{
@@ -135,6 +270,8 @@ func (s *RollingUpgradeStatus) NodeStep(asgName string, nodeName string, stepNam
 }
 
 func (s *RollingUpgradeStatus) SetCondition(cond RollingUpgradeCondition) {
+	s.changedMap["Conditions"] = true
+
 	// if condition exists, overwrite, otherwise append
 	for ix, c := range s.Conditions {
 		if c.Type == cond.Type {
@@ -314,6 +451,7 @@ func (r *RollingUpgrade) LastNodeTerminationTime() metav1.Time {
 }
 
 func (r *RollingUpgrade) SetLastNodeTerminationTime(t metav1.Time) {
+	r.Status.changedMap["LastNodeTerminationTime"] = true
 	r.Status.LastNodeTerminationTime = t
 }
 
@@ -322,6 +460,7 @@ func (r *RollingUpgrade) LastNodeDrainTime() metav1.Time {
 }
 
 func (r *RollingUpgrade) SetLastNodeDrainTime(t metav1.Time) {
+	r.Status.changedMap["LastNodeDrainTime"] = true
 	r.Status.LastNodeDrainTime = t
 }
 
@@ -334,10 +473,12 @@ func (r *RollingUpgrade) PostDrainDelaySeconds() int {
 }
 
 func (r *RollingUpgrade) SetCurrentStatus(status string) {
+	r.Status.changedMap["CurrentStatus"] = true
 	r.Status.CurrentStatus = status
 }
 
 func (r *RollingUpgrade) SetStartTime(t string) {
+	r.Status.changedMap["StartTime"] = true
 	r.Status.StartTime = t
 }
 
@@ -346,6 +487,7 @@ func (r *RollingUpgrade) StartTime() string {
 }
 
 func (r *RollingUpgrade) SetEndTime(t string) {
+	r.Status.changedMap["EndTime"] = true
 	r.Status.EndTime = t
 }
 
@@ -354,10 +496,12 @@ func (r *RollingUpgrade) EndTime() string {
 }
 
 func (r *RollingUpgrade) SetTotalNodes(n int) {
+	r.Status.changedMap["TotalNodes"] = true
 	r.Status.TotalNodes = n
 }
 
 func (r *RollingUpgrade) SetNodesProcessed(n int) {
+	r.Status.changedMap["NodesProcessed"] = true
 	r.Status.NodesProcessed = n
 }
 
