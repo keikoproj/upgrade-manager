@@ -17,6 +17,8 @@ limitations under the License.
 package controllers
 
 import (
+	"reflect"
+
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-logr/logr"
@@ -68,7 +70,7 @@ func (d *DiscoveredState) Discover() error {
 	d.InProgressInstances = inProgressInstances
 
 	nodes, err := d.KubernetesClientSet.ListClusterNodes()
-	if err != nil {
+	if err != nil || reflect.DeepEqual(nodes, &corev1.NodeList{}) || nodes == nil {
 		return errors.Wrap(err, "failed to discover cluster nodes")
 	}
 	d.ClusterNodes = nodes

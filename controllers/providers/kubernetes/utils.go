@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"reflect"
 	"strings"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -34,6 +36,12 @@ import (
 
 type KubernetesClientSet struct {
 	Kubernetes kubernetes.Interface
+}
+
+// DrainManager holds the information to perform drain operation in parallel.
+type DrainManagerStruct struct {
+	DrainErrors chan error
+	DrainGroup  *sync.WaitGroup
 }
 
 func GetKubernetesClient() (kubernetes.Interface, error) {
@@ -99,9 +107,12 @@ func SelectNodeByInstanceID(instanceID string, nodes *corev1.NodeList) corev1.No
 }
 
 func GetNodeInstanceID(node corev1.Node) string {
-	tokens := strings.Split(node.Spec.ProviderID, "/")
-	nodeInstanceID := tokens[len(tokens)-1]
-	return nodeInstanceID
+	if !reflect.DeepEqual(node, &corev1.Node{}) {
+		tokens := strings.Split(node.Spec.ProviderID, "/")
+		nodeInstanceID := tokens[len(tokens)-1]
+		return nodeInstanceID
+	}
+	return ""
 }
 
 func IsNodeReady(node corev1.Node) bool {
