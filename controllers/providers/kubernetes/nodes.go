@@ -33,8 +33,8 @@ import (
 func (k *KubernetesClientSet) ListClusterNodes() (*corev1.NodeList, error) {
 	var nodes *corev1.NodeList
 	nodes, err := k.Kubernetes.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return nodes, err
+	if err != nil || nodes == nil {
+		return &corev1.NodeList{}, err
 	}
 	return nodes, nil
 }

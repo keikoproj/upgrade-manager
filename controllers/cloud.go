@@ -68,7 +68,7 @@ func (d *DiscoveredState) Discover() error {
 	d.InProgressInstances = inProgressInstances
 
 	nodes, err := d.KubernetesClientSet.ListClusterNodes()
-	if err != nil {
+	if err != nil || nodes == nil || nodes.Size() == 0 {
 		return errors.Wrap(err, "failed to discover cluster nodes")
 	}
 	d.ClusterNodes = nodes
