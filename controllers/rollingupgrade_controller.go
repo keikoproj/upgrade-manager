@@ -50,7 +50,6 @@ type RollingUpgradeReconciler struct {
 	ScriptRunner     ScriptRunner
 	DrainGroupMapper sync.Map
 	DrainErrorMapper sync.Map
-	DrainManager     kubeprovider.DrainManagerStruct
 }
 
 type RollingUpgradeAuthenticator struct {
@@ -133,13 +132,6 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.Cloud.Discover(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		return ctrl.Result{}, err
-	}
-
-	drainGroup, _ := r.DrainGroupMapper.LoadOrStore(rollingUpgrade.NamespacedName(), &sync.WaitGroup{})
-	drainErrs, _ := r.DrainErrorMapper.LoadOrStore(rollingUpgrade.NamespacedName(), make(chan error))
-	r.DrainManager = kubeprovider.DrainManagerStruct{
-		DrainErrors: drainErrs.(chan error),
-		DrainGroup:  drainGroup.(*sync.WaitGroup),
 	}
 
 	// process node rotation

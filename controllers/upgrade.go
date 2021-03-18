@@ -39,6 +39,12 @@ var (
 	DefaultWaitGroupTimeout = time.Second * 5
 )
 
+// DrainManager holds the information to perform drain operation in parallel.
+type DrainManager struct {
+	DrainErrors chan error      `json:"-"`
+	DrainGroup  *sync.WaitGroup `json:"-"`
+}
+
 // TODO: main node rotation logic
 func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingUpgrade) error {
 	var (
@@ -91,10 +97,19 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 
 func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.RollingUpgrade, batch []*autoscaling.Instance) (bool, error) {
 	var (
-		mode = rollingUpgrade.StrategyMode()
+		mode         = rollingUpgrade.StrategyMode()
+		drainManager = &DrainManager{}
 	)
 
 	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDs(batch), "name", rollingUpgrade.NamespacedName())
+
+	// load the appropriate waitGroup and Error channel for the DrainManager from reconciler object
+	drainGroup, _ := r.DrainGroupMapper.LoadOrStore(rollingUpgrade.NamespacedName(), &sync.WaitGroup{})
+	drainErrs, _ := r.DrainErrorMapper.LoadOrStore(rollingUpgrade.NamespacedName(), make(chan error))
+	drainManager = &DrainManager{
+		DrainErrors: drainErrs.(chan error),
+		DrainGroup:  drainGroup.(*sync.WaitGroup),
+	}
 
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
@@ -152,7 +167,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		}
 	}
 
-	if reflect.DeepEqual(r.DrainManager.DrainGroup, &sync.WaitGroup{}) {
+	if reflect.DeepEqual(drainManager.DrainGroup, &sync.WaitGroup{}) {
 		for _, target := range batch {
 			var (
 				instanceID   = aws.StringValue(target.InstanceId)
@@ -164,17 +179,17 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 					UpgradeObject: rollingUpgrade,
 				}
 			)
-			r.DrainManager.DrainGroup.Add(1)
+			drainManager.DrainGroup.Add(1)
 
 			go func() {
-				defer r.DrainManager.DrainGroup.Done()
+				defer drainManager.DrainGroup.Done()
 
 				// Turns onto PreDrain script
 				//rollingUpgrade.Status.NodeStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
 
 				// Predrain script
 				if err := r.ScriptRunner.PreDrain(scriptTarget); err != nil {
-					r.DrainManager.DrainErrors <- errors.Errorf("PreDrain failed: instanceID - %v, %v", instanceID, err.Error())
+					drainManager.DrainErrors <- errors.Errorf("PreDrain failed: instanceID - %v, %v", instanceID, err.Error())
 				}
 
 				// Issue drain concurrently - set lastDrainTime
@@ -185,7 +200,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 					//rollingUpgrade.Status.NodeStep(rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
 					if err := r.Auth.DrainNode(&node, time.Duration(rollingUpgrade.PostDrainDelaySeconds()), rollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
-						r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
+						drainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
 					}
 				}
 
@@ -194,7 +209,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 				// post drain script
 				if err := r.ScriptRunner.PostDrain(scriptTarget); err != nil {
-					r.DrainManager.DrainErrors <- errors.Errorf("PostDrain failed: instanceID - %v, %v", instanceID, err.Error())
+					drainManager.DrainErrors <- errors.Errorf("PostDrain failed: instanceID - %v, %v", instanceID, err.Error())
 				}
 
 				// Turns onto NodeRotationPostWait
@@ -202,7 +217,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 				// Post Wait Script
 				if err := r.ScriptRunner.PostWait(scriptTarget); err != nil {
-					r.DrainManager.DrainErrors <- errors.Errorf("PostWait failed: instanceID - %v, %v", instanceID, err.Error())
+					drainManager.DrainErrors <- errors.Errorf("PostWait failed: instanceID - %v, %v", instanceID, err.Error())
 				}
 			}()
 		}
@@ -211,11 +226,11 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 	timeout := make(chan struct{})
 	go func() {
 		defer close(timeout)
-		r.DrainManager.DrainGroup.Wait()
+		drainManager.DrainGroup.Wait()
 	}()
 
 	select {
-	case err := <-r.DrainManager.DrainErrors:
+	case err := <-drainManager.DrainErrors:
 		r.Error(err, "failed to rotate the node", "name", rollingUpgrade.NamespacedName())
 		return false, err
 
