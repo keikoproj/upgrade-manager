@@ -22,7 +22,6 @@ import (
 	"os/user"
 	"reflect"
 	"strings"
-	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -36,12 +35,6 @@ import (
 
 type KubernetesClientSet struct {
 	Kubernetes kubernetes.Interface
-}
-
-// DrainManager holds the information to perform drain operation in parallel.
-type DrainManagerStruct struct {
-	DrainErrors chan error
-	DrainGroup  *sync.WaitGroup
 }
 
 func GetKubernetesClient() (kubernetes.Interface, error) {
