@@ -54,8 +54,8 @@ type RollingUpgradeStatus struct {
 	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
 	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
 
-	Statistics        []*RollingUpgradeStatistics     `json:"statistics,omitempty"`
-	LastBatchNodes    []string                        `json:"lastBatchNodes,omitempty"`
+	Statistics     []*RollingUpgradeStatistics `json:"statistics,omitempty"`
+	LastBatchNodes []string                    `json:"lastBatchNodes,omitempty"`
 }
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
@@ -67,10 +67,10 @@ type RollingUpgradeStatistics struct {
 
 // RollingUpgrade Node step information
 type NodeStepDuration struct {
-	GroupName     string             `json:"groupName,omitempty"`
-	NodeName      string             `json:"nodeName,omitempty"`
-	StepName      RollingUpgradeStep `json:"stepName,omitempty"`
-	Duration      metav1.Duration    `json:"duration,omitempty"`
+	GroupName string             `json:"groupName,omitempty"`
+	NodeName  string             `json:"nodeName,omitempty"`
+	StepName  RollingUpgradeStep `json:"stepName,omitempty"`
+	Duration  metav1.Duration    `json:"duration,omitempty"`
 }
 
 // Node In-processing
@@ -92,7 +92,7 @@ func (s *RollingUpgradeStatus) UpdateLastBatchNodes(batchNodes map[string]*NodeI
 }
 
 // Update Node Statistics
-func (s *RollingUpgradeStatus) UpdateStatistics(nodeSteps map[string] []NodeStepDuration) {
+func (s *RollingUpgradeStatus) UpdateStatistics(nodeSteps map[string][]NodeStepDuration) {
 	for _, v := range nodeSteps {
 		for _, step := range v {
 			s.AddNodeStepDuration(step)
@@ -106,16 +106,16 @@ func (s *RollingUpgradeStatus) ToStepDuration(groupName, nodeName string, stepNa
 	common.AddStepDuration(groupName, string(stepName), duration)
 	return NodeStepDuration{
 		GroupName: groupName,
-		NodeName: nodeName,
-		StepName: stepName,
-		Duration: metav1.Duration {
+		NodeName:  nodeName,
+		StepName:  stepName,
+		Duration: metav1.Duration{
 			Duration: duration,
 		},
 	}
 }
 
 // Add one step duration
-func (s *RollingUpgradeStatus) AddNodeStepDuration(nsd NodeStepDuration) () {
+func (s *RollingUpgradeStatus) AddNodeStepDuration(nsd NodeStepDuration) {
 	// if step exists, add count and sum, otherwise append
 	for _, s := range s.Statistics {
 		if s.StepName == nsd.StepName {
@@ -137,7 +137,7 @@ func (s *RollingUpgradeStatus) AddNodeStepDuration(nsd NodeStepDuration) () {
 
 // Node turns onto step
 func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProcessing,
-	nodeSteps map[string] []NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep) {
+	nodeSteps map[string][]NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep) {
 
 	var inProcessingNode *NodeInProcessing
 	if n, ok := InProcessingNodes[nodeName]; !ok {
@@ -173,9 +173,9 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 	}
 }
 
-func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string] []NodeStepDuration, nodeName string, nsd NodeStepDuration) {
-	if  stepDuration, ok := steps[nodeName]; !ok {
-		steps[nodeName] = [] NodeStepDuration {
+func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDuration, nodeName string, nsd NodeStepDuration) {
+	if stepDuration, ok := steps[nodeName]; !ok {
+		steps[nodeName] = []NodeStepDuration{
 			nsd,
 		}
 	} else {

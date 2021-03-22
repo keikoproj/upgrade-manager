@@ -112,7 +112,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 	}
 
 	//A map to retain the steps for multiple nodes
-	nodeSteps := make(map[string] []v1alpha1.NodeStepDuration)
+	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
 
 	inProcessingNodes := make(map[string]*v1alpha1.NodeInProcessing)
 
