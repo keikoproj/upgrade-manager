@@ -54,8 +54,8 @@ type RollingUpgradeStatus struct {
 	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
 	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
 
-	Statistics        []*RollingUpgradeStatistics  `json:"statistics,omitempty"`
-	InProcessingNodes map[string]*NodeInProcessing `json:"inProcessingNodes,omitempty"`
+	Statistics        []*RollingUpgradeStatistics     `json:"statistics,omitempty"`
+	LastBatchNodes    []string                        `json:"lastBatchNodes,omitempty"`
 }
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
@@ -80,6 +80,24 @@ type NodeInProcessing struct {
 	UpgradeStartTime metav1.Time        `json:"upgradeStartTime,omitempty"`
 	StepStartTime    metav1.Time        `json:"stepStartTime,omitempty"`
 	StepEndTime      metav1.Time        `json:"stepEndTime,omitempty"`
+}
+
+// Update last batch nodes
+func (s *RollingUpgradeStatus) UpdateLastBatchNodes(batchNodes map[string]*NodeInProcessing) {
+	keys := make([]string, 0, len(batchNodes))
+	for k := range batchNodes {
+		keys = append(keys, k)
+	}
+	s.LastBatchNodes = keys
+}
+
+// Update Node Statistics
+func (s *RollingUpgradeStatus) UpdateStatistics(nodeSteps map[string] []NodeStepDuration) {
+	for _, v := range nodeSteps {
+		for _, step := range v {
+			s.AddNodeStepDuration(step)
+		}
+	}
 }
 
 // Add one step duration
@@ -141,7 +159,6 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 		var total = inProcessingNode.StepEndTime.Sub(inProcessingNode.UpgradeStartTime.Time)
 		duration1 := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
 		duration2 := s.ToStepDuration(groupName, nodeName, NodeRotationTotal, total)
-		delete(s.InProcessingNodes, nodeName)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration1)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration2)
 	} else if inProcessingNode.StepName != stepName { //Still same step

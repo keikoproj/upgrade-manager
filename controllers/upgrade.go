@@ -236,6 +236,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 	select {
 	case err := <-drainManager.DrainErrors:
+		rollingUpgrade.Status.UpdateStatistics(nodeSteps)
+		rollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+
 		r.Error(err, "failed to rotate the node", "name", rollingUpgrade.NamespacedName())
 		return false, err
 
@@ -280,8 +283,15 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
 		}
 
+		rollingUpgrade.Status.UpdateStatistics(nodeSteps)
+		rollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+
 	case <-time.After(DefaultWaitGroupTimeout):
 		// goroutines timed out - requeue
+
+		rollingUpgrade.Status.UpdateStatistics(nodeSteps)
+		rollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+
 		r.Info("instances are still draining", "name", rollingUpgrade.NamespacedName())
 		return true, nil
 	}
