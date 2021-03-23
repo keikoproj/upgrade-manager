@@ -2863,7 +2863,7 @@ func TestValidateNodesLaunchDefinitionSameLaunchConfig(t *testing.T) {
 
 	someLaunchConfig := "some-launch-config"
 	az := "az-1"
-	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LifecycleState: aws.String("InService"), LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
 	mockAsg := &autoscaling.Group{
 		AutoScalingGroupName:    aws.String("my-asg"),
 		LaunchConfigurationName: &someLaunchConfig,
@@ -2902,7 +2902,7 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchConfig(t *testing.T) {
 	someLaunchConfig := "some-launch-config"
 	someOtherLaunchConfig := "some-other-launch-config"
 	az := "az-1"
-	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LifecycleState: aws.String("InService"), LaunchConfigurationName: &someLaunchConfig, AvailabilityZone: &az}
 	mockAsg := &autoscaling.Group{
 		AutoScalingGroupName:    aws.String("my-asg"),
 		LaunchConfigurationName: &someOtherLaunchConfig,
@@ -2938,7 +2938,7 @@ func TestValidateNodesLaunchDefinitionSameLaunchTemplate(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	someLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v1")}
 	az := "az-1"
-	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LifecycleState: aws.String("InService"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
 	mockAsg := &autoscaling.Group{
 		AutoScalingGroupName: aws.String("my-asg"),
 		LaunchTemplate:       someLaunchTemplate,
@@ -2975,7 +2975,7 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchTemplate(t *testing.T) {
 	someLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v1")}
 	someOtherLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v2")}
 	az := "az-1"
-	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
+	mockInstance := autoscaling.Instance{InstanceId: aws.String("some-id"), LifecycleState: aws.String("InService"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
 	mockAsg := &autoscaling.Group{
 		AutoScalingGroupName: aws.String("my-asg"),
 		LaunchTemplate:       someOtherLaunchTemplate,
