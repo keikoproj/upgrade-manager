@@ -55,14 +55,14 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 					Namespace:   "node",
 					Name:        stepName + "_seconds",
 					Help:        "Summary for node " + stepName,
-					ConstLabels: prometheus.Labels{"asg": groupName},
+					ConstLabels: prometheus.Labels{"group": groupName},
 				})
 			err := metrics.Registry.Register(summary)
 			if err != nil {
 				if reflect.TypeOf(err).String() == "prometheus.AlreadyRegisteredError" {
-					log.Warnf("summary was registered again, ASG: %s, step: %s", groupName, stepName)
+					log.Warnf("summary was registered again, group: %s, step: %s", groupName, stepName)
 				} else {
-					log.Errorf("register summary error, ASG: %s, step: %s, %v", groupName, stepName, err)
+					log.Errorf("register summary error, group: %s, step: %s, %v", groupName, stepName, err)
 				}
 			}
 			steps[stepName] = summary
