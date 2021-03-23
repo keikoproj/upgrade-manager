@@ -2892,7 +2892,6 @@ func TestValidateNodesLaunchDefinitionSameLaunchConfig(t *testing.T) {
 	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
-	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -2931,7 +2930,6 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchConfig(t *testing.T) {
 	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
-	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 }
@@ -2968,7 +2966,6 @@ func TestValidateNodesLaunchDefinitionSameLaunchTemplate(t *testing.T) {
 	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
-	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -3006,7 +3003,46 @@ func TestValidateNodesLaunchDefinitionDifferentLaunchTemplate(t *testing.T) {
 	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
 	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
 
-	// This execution should not perform drain or termination, but should pass
 	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
+}
+
+func TestValidateNodesLaunchDefinitionMixedInstanceState(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	someLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v1")}
+	someOtherLaunchTemplate := &autoscaling.LaunchTemplateSpecification{LaunchTemplateId: aws.String("launch-template-id-v2")}
+	az := "az-1"
+	mockInstance1 := autoscaling.Instance{InstanceId: aws.String("some-id-1"), LifecycleState: aws.String("InService"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
+	mockInstance2 := autoscaling.Instance{InstanceId: aws.String("some-id-2"), LifecycleState: aws.String("Pending"), LaunchTemplate: someOtherLaunchTemplate, AvailabilityZone: &az}
+	mockInstance3 := autoscaling.Instance{InstanceId: aws.String("some-id-3"), LifecycleState: aws.String("Terminating"), LaunchTemplate: someOtherLaunchTemplate, AvailabilityZone: &az}
+	mockInstance4 := autoscaling.Instance{InstanceId: aws.String("some-id-4"), LifecycleState: aws.String("InService"), LaunchTemplate: someLaunchTemplate, AvailabilityZone: &az}
+	mockAsg := &autoscaling.Group{
+		AutoScalingGroupName: aws.String("my-asg"),
+		LaunchTemplate:       someLaunchTemplate,
+		Instances:            []*autoscaling.Instance{&mockInstance1, &mockInstance2, &mockInstance3, &mockInstance4}}
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{AsgName: "my-asg"}}
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	mockAsgClient := MockAutoscalingGroup{
+		autoScalingGroups: []*autoscaling.Group{mockAsg},
+	}
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{
+		Client:          mgr.GetClient(),
+		Log:             log2.NullLogger{},
+		ASGClient:       mockAsgClient,
+		EC2Client:       MockEC2{},
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		ClusterState:    NewClusterState(),
+		CacheConfig:     cache.NewConfig(0*time.Second, 0, 0),
+	}
+	rcRollingUpgrade.admissionMap.Store(ruObj.NamespacedName(), "processing")
+	rcRollingUpgrade.ruObjNameToASG.Store(ruObj.NamespacedName(), mockAsg)
+
+	err = rcRollingUpgrade.validateNodesLaunchDefinition(ruObj)
+	g.Expect(err).To((gomega.BeNil()))
 }
