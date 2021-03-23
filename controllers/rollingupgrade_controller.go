@@ -719,7 +719,7 @@ func (r *RollingUpgradeReconciler) validateNodesLaunchDefinition(ruObj *upgradem
 	ec2instances := asg.Instances
 	for _, ec2Instance := range ec2instances {
 		ec2InstanceID, ec2InstanceLaunchConfig, ec2InstanceLaunchTemplate := ec2Instance.InstanceId, ec2Instance.LaunchConfigurationName, ec2Instance.LaunchTemplate
-		if aws.StringValue(ec2Instance.LifecycleState) == InService {
+		if aws.StringValue(ec2Instance.LifecycleState) != InService {
 			continue
 		}
 		if aws.StringValue(launchConfigASG) != aws.StringValue(ec2InstanceLaunchConfig) {
