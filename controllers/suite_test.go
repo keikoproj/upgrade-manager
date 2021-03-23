@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -24,17 +23,10 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 	// var err error
 	// g := gomega.NewGomegaWithT(t)
 
-	// k8s client
-	// kubeClient (fake client)
-	mockNode := corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: "mock-node"},
-		Spec:       corev1.NodeSpec{ProviderID: "foo-bar/9213851"},
-	}
-	fmt.Println(&mockNode)
+	// k8s client (fake client)
 	kubeClient := &kubeprovider.KubernetesClientSet{
-		Kubernetes: fake.NewSimpleClientset(&corev1.NodeList{Items: []corev1.Node{mockNode}}),
+		Kubernetes: fake.NewSimpleClientset(createNodeList()),
 	}
-	// k8sManager, kubeClient := getKubernetesClient(t)
 
 	// logger
 	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
@@ -114,5 +106,40 @@ func getKubernetesClient(t *testing.T) (manager.Manager, *kubeprovider.Kubernete
 }
 
 func createRollingUpgrade() *v1alpha1.RollingUpgrade {
-	return &v1alpha1.RollingUpgrade{}
+	return &v1alpha1.RollingUpgrade{
+		ObjectMeta: metav1.ObjectMeta{Name: "mock-rollup", Namespace: "default"},
+		Spec: v1alpha1.RollingUpgradeSpec{
+			PostDrainDelaySeconds: 30,
+			Strategy: v1alpha1.UpdateStrategy{
+				Type:         v1alpha1.RandomUpdateStrategy,
+				DrainTimeout: 30,
+			},
+		},
+	}
+}
+
+func createNodeList() *corev1.NodeList {
+	return &corev1.NodeList{
+		Items: []corev1.Node{
+			corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "mock-node-1"},
+				Spec:       corev1.NodeSpec{ProviderID: "foo-bar/9213851"},
+			},
+			corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "mock-node-2"},
+				Spec:       corev1.NodeSpec{ProviderID: "foo-bar/9213852"},
+			},
+			corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "mock-node-3"},
+				Spec:       corev1.NodeSpec{ProviderID: "foo-bar/9213853"},
+			},
+		},
+	}
+}
+
+func createNode() *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "mock-node-1", Namespace: "default"},
+		Spec:       corev1.NodeSpec{ProviderID: "foo-bar/9213851"},
+	}
 }
