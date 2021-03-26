@@ -81,3 +81,8 @@ func TestListClusterNodes(t *testing.T) {
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(reflect.DeepEqual(actual, expected)).To(gomega.BeTrue())
 }
+
+func TestRotateNodes(t *testing.T) {
+	// var err error
+	// g := gomega.NewGomegaWithT(t)
+}

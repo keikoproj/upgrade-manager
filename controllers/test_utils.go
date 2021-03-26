@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	v1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,6 +13,9 @@ import (
 )
 
 func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
+	// amazon client
+	amazonClient := createAmazonClient(t)
+
 	// k8s client (fake client)
 	kubeClient := &kubeprovider.KubernetesClientSet{
 		Kubernetes: fake.NewSimpleClientset(createNodeList()),
@@ -23,6 +27,7 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 	// authenticator
 	auth := &RollingUpgradeAuthenticator{
 		KubernetesClientSet: kubeClient,
+		AmazonClientSet:     amazonClient,
 	}
 
 	// reconciler object
@@ -37,6 +42,10 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 	}
 	return reconciler
 
+}
+
+func createAmazonClient(t *testing.T) *awsprovider.AmazonClientSet {
+	return &awsprovider.AmazonClientSet{}
 }
 
 func createRollingUpgrade() *v1alpha1.RollingUpgrade {
