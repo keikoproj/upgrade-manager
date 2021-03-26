@@ -54,8 +54,8 @@ type RollingUpgradeStatus struct {
 	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
 	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
 
-	Statistics        []*RollingUpgradeStatistics  `json:"statistics,omitempty"`
-	InProcessingNodes map[string]*NodeInProcessing `json:"inProcessingNodes,omitempty"`
+	Statistics     []*RollingUpgradeStatistics `json:"statistics,omitempty"`
+	LastBatchNodes []string                    `json:"lastBatchNodes,omitempty"`
 }
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
@@ -63,6 +63,14 @@ type RollingUpgradeStatistics struct {
 	StepName      RollingUpgradeStep `json:"stepName,omitempty"`
 	DurationSum   metav1.Duration    `json:"durationSum,omitempty"`
 	DurationCount int32              `json:"durationCount,omitempty"`
+}
+
+// RollingUpgrade Node step information
+type NodeStepDuration struct {
+	GroupName string             `json:"groupName,omitempty"`
+	NodeName  string             `json:"nodeName,omitempty"`
+	StepName  RollingUpgradeStep `json:"stepName,omitempty"`
+	Duration  metav1.Duration    `json:"duration,omitempty"`
 }
 
 // Node In-processing
@@ -74,63 +82,105 @@ type NodeInProcessing struct {
 	StepEndTime      metav1.Time        `json:"stepEndTime,omitempty"`
 }
 
+// Update last batch nodes
+func (s *RollingUpgradeStatus) UpdateLastBatchNodes(batchNodes map[string]*NodeInProcessing) {
+	keys := make([]string, 0, len(batchNodes))
+	for k := range batchNodes {
+		keys = append(keys, k)
+	}
+	s.LastBatchNodes = keys
+}
+
+// Update Node Statistics
+func (s *RollingUpgradeStatus) UpdateStatistics(nodeSteps map[string][]NodeStepDuration) {
+	for _, v := range nodeSteps {
+		for _, step := range v {
+			s.AddNodeStepDuration(step)
+		}
+	}
+}
+
 // Add one step duration
-func (s *RollingUpgradeStatus) addStepDuration(asgName string, stepName RollingUpgradeStep, duration time.Duration) {
+func (s *RollingUpgradeStatus) ToStepDuration(groupName, nodeName string, stepName RollingUpgradeStep, duration time.Duration) NodeStepDuration {
+	//Add to system level statistics
+	common.AddStepDuration(groupName, string(stepName), duration)
+	return NodeStepDuration{
+		GroupName: groupName,
+		NodeName:  nodeName,
+		StepName:  stepName,
+		Duration: metav1.Duration{
+			Duration: duration,
+		},
+	}
+}
+
+// Add one step duration
+func (s *RollingUpgradeStatus) AddNodeStepDuration(nsd NodeStepDuration) {
 	// if step exists, add count and sum, otherwise append
 	for _, s := range s.Statistics {
-		if s.StepName == stepName {
+		if s.StepName == nsd.StepName {
 			s.DurationSum = metav1.Duration{
-				Duration: s.DurationSum.Duration + duration,
+				Duration: s.DurationSum.Duration + nsd.Duration.Duration,
 			}
 			s.DurationCount += 1
 			return
 		}
 	}
 	s.Statistics = append(s.Statistics, &RollingUpgradeStatistics{
-		StepName: stepName,
+		StepName: nsd.StepName,
 		DurationSum: metav1.Duration{
-			Duration: duration,
+			Duration: nsd.Duration.Duration,
 		},
 		DurationCount: 1,
 	})
-
-	//Add to system level statistics
-	common.AddRollingUpgradeStepDuration(asgName, string(stepName), duration)
 }
 
 // Node turns onto step
-func (s *RollingUpgradeStatus) NodeStep(asgName string, nodeName string, stepName RollingUpgradeStep) {
-	if s.InProcessingNodes == nil {
-		s.InProcessingNodes = make(map[string]*NodeInProcessing)
-	}
+func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProcessing,
+	nodeSteps map[string][]NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep) {
+
 	var inProcessingNode *NodeInProcessing
-	if n, ok := s.InProcessingNodes[nodeName]; !ok {
+	if n, ok := InProcessingNodes[nodeName]; !ok {
 		inProcessingNode = &NodeInProcessing{
 			NodeName:         nodeName,
 			StepName:         stepName,
 			UpgradeStartTime: metav1.Now(),
 			StepStartTime:    metav1.Now(),
 		}
-		s.InProcessingNodes[nodeName] = inProcessingNode
+		InProcessingNodes[nodeName] = inProcessingNode
 	} else {
 		inProcessingNode = n
-		n.StepEndTime = metav1.Now()
-		var duration = n.StepEndTime.Sub(n.StepStartTime.Time)
-		if stepName == NodeRotationCompleted {
-			//Add overall and remove the node from in-processing map
-			var total = n.StepEndTime.Sub(n.UpgradeStartTime.Time)
-			s.addStepDuration(asgName, inProcessingNode.StepName, duration)
-			s.addStepDuration(asgName, NodeRotationTotal, total)
-			delete(s.InProcessingNodes, nodeName)
-		} else if inProcessingNode.StepName != stepName { //Still same step
-			var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
-			var newOrder = NodeRotationStepOrders[stepName]
-			if newOrder > oldOrder { //Make sure the steps running in order
-				s.addStepDuration(asgName, inProcessingNode.StepName, duration)
-				n.StepStartTime = metav1.Now()
-				inProcessingNode.StepName = stepName
-			}
+	}
+
+	inProcessingNode.StepEndTime = metav1.Now()
+	var duration = inProcessingNode.StepEndTime.Sub(inProcessingNode.StepStartTime.Time)
+	if stepName == NodeRotationCompleted {
+		//Add overall and remove the node from in-processing map
+		var total = inProcessingNode.StepEndTime.Sub(inProcessingNode.UpgradeStartTime.Time)
+		duration1 := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
+		duration2 := s.ToStepDuration(groupName, nodeName, NodeRotationTotal, total)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration1)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration2)
+	} else if inProcessingNode.StepName != stepName { //Still same step
+		var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
+		var newOrder = NodeRotationStepOrders[stepName]
+		if newOrder > oldOrder { //Make sure the steps running in order
+			stepDuration := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
+			inProcessingNode.StepStartTime = metav1.Now()
+			inProcessingNode.StepName = stepName
+			s.addNodeStepDuration(nodeSteps, nodeName, stepDuration)
 		}
+	}
+}
+
+func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDuration, nodeName string, nsd NodeStepDuration) {
+	if stepDuration, ok := steps[nodeName]; !ok {
+		steps[nodeName] = []NodeStepDuration{
+			nsd,
+		}
+	} else {
+		stepDuration = append(stepDuration, nsd)
+		steps[nodeName] = stepDuration
 	}
 }
 
