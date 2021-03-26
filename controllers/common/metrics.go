@@ -36,14 +36,14 @@ func InitMetrics() {
 }
 
 // Add rolling update step duration when the step is completed
-func AddRollingUpgradeStepDuration(asgName string, stepName string, duration time.Duration) {
+func AddStepDuration(groupName string, stepName string, duration time.Duration) {
 	if strings.EqualFold(stepName, "total") { //Histogram
 		nodeRotationTotal.Observe(duration.Seconds())
 	} else { //Summary
 		var steps map[string]prometheus.Summary
-		if m, ok := stepSummaries[asgName]; !ok {
+		if m, ok := stepSummaries[groupName]; !ok {
 			steps = make(map[string]prometheus.Summary)
-			stepSummaries[asgName] = steps
+			stepSummaries[groupName] = steps
 		} else {
 			steps = m
 		}
@@ -55,14 +55,14 @@ func AddRollingUpgradeStepDuration(asgName string, stepName string, duration tim
 					Namespace:   "node",
 					Name:        stepName + "_seconds",
 					Help:        "Summary for node " + stepName,
-					ConstLabels: prometheus.Labels{"asg": asgName},
+					ConstLabels: prometheus.Labels{"group": groupName},
 				})
 			err := metrics.Registry.Register(summary)
 			if err != nil {
 				if reflect.TypeOf(err).String() == "prometheus.AlreadyRegisteredError" {
-					log.Warnf("summary was registered again, ASG: %s, step: %s", asgName, stepName)
+					log.Warnf("summary was registered again, group: %s, step: %s", groupName, stepName)
 				} else {
-					log.Errorf("register summary error, ASG: %s, step: %s, %v", asgName, stepName, err)
+					log.Errorf("register summary error, group: %s, step: %s, %v", groupName, stepName, err)
 				}
 			}
 			steps[stepName] = summary
