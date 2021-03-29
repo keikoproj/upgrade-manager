@@ -91,7 +91,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	currentStatus := rollingUpgrade.CurrentStatus()
 	if common.ContainsEqualFold(v1alpha1.FiniteStates, currentStatus) {
 		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
-		r.Info("rolling upgrade ended", "name", req.NamespacedName, "status", currentStatus, "admission map", r.printSyncMap())
+		r.Info("rolling upgrade ended", "name", req.NamespacedName, "status", currentStatus)
 		return reconcile.Result{}, nil
 	}
 
