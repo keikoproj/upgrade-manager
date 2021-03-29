@@ -73,7 +73,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.AdmissionMap.Delete(req.NamespacedName)
+			r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
 			r.Info("deleted object from admission map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -82,7 +82,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// If the resource is being deleted, remove it from the admissionMap
 	if !rollingUpgrade.DeletionTimestamp.IsZero() {
-		r.AdmissionMap.Delete(req.NamespacedName)
+		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
 		r.Info("rolling upgrade deleted", "name", req.NamespacedName)
 		return reconcile.Result{}, nil
 	}
@@ -90,8 +90,8 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Stop processing upgrades which are in finite state
 	currentStatus := rollingUpgrade.CurrentStatus()
 	if common.ContainsEqualFold(v1alpha1.FiniteStates, currentStatus) {
-		r.AdmissionMap.Delete(req.NamespacedName)
-		r.Info("rolling upgrade ended", "name", req.NamespacedName, "status", currentStatus)
+		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
+		r.Info("rolling upgrade ended", "name", req.NamespacedName, "status", currentStatus, "admission map", r.printSyncMap())
 		return reconcile.Result{}, nil
 	}
 

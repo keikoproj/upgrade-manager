@@ -111,14 +111,11 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 		DrainGroup:  drainGroup.(*sync.WaitGroup),
 	}
 
-<<<<<<< HEAD
-=======
 	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
 
 	inProcessingNodes := make(map[string]*v1alpha1.NodeInProcessing)
 
->>>>>>> upstream/controller-v2
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
 		for _, target := range batch {
@@ -239,12 +236,9 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 	select {
 	case err := <-drainManager.DrainErrors:
-<<<<<<< HEAD
-=======
 		rollingUpgrade.Status.UpdateStatistics(nodeSteps)
 		rollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
 
->>>>>>> upstream/controller-v2
 		r.Error(err, "failed to rotate the node", "name", rollingUpgrade.NamespacedName())
 		return false, err
 
