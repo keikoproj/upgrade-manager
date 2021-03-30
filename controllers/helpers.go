@@ -65,14 +65,14 @@ func getInServiceCount(instances []*autoscaling.Instance) int64 {
 	return count
 }
 
-func getInServiceIds(instances []*autoscaling.Instance) []string {
-	list := []string{}
-	for _, instance := range instances {
+func inServiceIdMap(instances []*autoscaling.Instance) map[string]*autoscaling.Instance {
+	m := make(map[string]*autoscaling.Instance)
+	for i, instance := range instances {
 		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
-			list = append(list, aws.StringValue(instance.InstanceId))
+			m[aws.StringValue(instance.InstanceId)] = instances[i]
 		}
 	}
-	return list
+	return m
 }
 
 func getInstanceStateInASG(group *autoscaling.Group, instanceID string) (string, error) {
