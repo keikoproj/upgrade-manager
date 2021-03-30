@@ -361,6 +361,10 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 	if err != nil {
 		r.error(ruObj, err, "Failed to enter standby", "instanceID", instanceID)
 	}
+
+	// we modified the asg, so our cache is now invalid
+	r.ruObjNameToASG.Delete(ruObj.NamespacedName())
+
 	return nil
 }
 
