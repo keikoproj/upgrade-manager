@@ -250,6 +250,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 	return fmt.Errorf("%s: WaitForDesiredInstances timed out while waiting for instance to be added: %w", ruObj.NamespacedName(), err)
 }
 
+// we put old instances in standby and then wait for new instances to be InService so that desired instances is met
 func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
 	var err error
 	var ieb *iebackoff.IEBackoff
@@ -270,15 +271,13 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 		}
 
 		// get list of inService instance IDs
-		inServiceInstances := getInServiceIds(asg.Instances)
+		inServiceInstanceIds := getInServiceIds(asg.Instances)
 		desiredCapacity := aws.Int64Value(asg.DesiredCapacity)
 
-		// check all of them are nodes and are ready
+		// check all asg instances are ready nodes
 		var foundCount int64 = 0
 		for _, node := range r.NodeList.Items {
-			tokens := strings.Split(node.Spec.ProviderID, "/")
-			instanceID := tokens[len(tokens)-1]
-			if contains(inServiceInstances, instanceID) && isNodeReady(node) && IsNodePassesReadinessGates(node, ruObj.Spec.ReadinessGates) {
+			if contains(inServiceInstanceIds, r.instanceId(node)) && isNodeReady(node) && isNodePassingReadinessGates(node, ruObj.Spec.ReadinessGates) {
 				foundCount++
 			}
 		}
@@ -291,6 +290,12 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 		r.info(ruObj, "new node has not yet joined the cluster")
 	}
 	return fmt.Errorf("%s: WaitForDesiredNodes timed out while waiting for nodes to join: %w", ruObj.NamespacedName(), err)
+}
+
+// read aws instance id from nodes spec.providerID
+func (r *RollingUpgradeReconciler) instanceId(node corev1.Node) string {
+	tokens := strings.Split(node.Spec.ProviderID, "/")
+	return tokens[len(tokens)-1]
 }
 
 func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
@@ -471,6 +476,7 @@ func (r *RollingUpgradeReconciler) populateLaunchTemplates(ruObj *upgrademgrv1al
 	return nil
 }
 
+// store all nodes in a cache to avoid fetching them multiple times
 func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInterface v1.NodeInterface) error {
 	nodeList, err := nodeInterface.List(metav1.ListOptions{})
 	if err != nil {
@@ -1114,6 +1120,7 @@ func (r *RollingUpgradeReconciler) getTemplateLatestVersion(templateName string)
 	return "0"
 }
 
+// is the instance not using expected launch template ?
 func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
 	definition *launchDefinition) bool {
 
