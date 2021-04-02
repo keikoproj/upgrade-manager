@@ -40,8 +40,7 @@ func isNodeReady(node corev1.Node) bool {
 	return false
 }
 
-func IsNodePassesReadinessGates(node corev1.Node, requiredReadinessGates []upgrademgrv1alpha1.NodeReadinessGate) bool {
-
+func isNodePassingReadinessGates(node corev1.Node, requiredReadinessGates []upgrademgrv1alpha1.NodeReadinessGate) bool {
 	if len(requiredReadinessGates) == 0 {
 		return true
 	}
