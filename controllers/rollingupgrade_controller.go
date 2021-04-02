@@ -250,7 +250,8 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 	return fmt.Errorf("%s: WaitForDesiredInstances timed out while waiting for instance to be added: %w", ruObj.NamespacedName(), err)
 }
 
-func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
+// we put old instances in standby and then wait for new instances to be InService so that desired instances is met
+func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade, launchDefinition *launchDefinition) error {
 	var err error
 	var ieb *iebackoff.IEBackoff
 	for ieb, err = iebackoff.NewIEBackoff(WaiterMaxDelay, WaiterMinDelay, 0.5, WaiterMaxAttempts); err == nil; err = ieb.Next() {
@@ -269,16 +270,19 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
 
-		// get list of inService instance IDs
-		inServiceInstances := getInServiceIds(asg.Instances)
+		asgInServiceInstances := inServiceIdMap(asg.Instances)
 		desiredCapacity := aws.Int64Value(asg.DesiredCapacity)
 
-		// check all of them are nodes and are ready
+		// check all asg instances are ready nodes
 		var foundCount int64 = 0
 		for _, node := range r.NodeList.Items {
-			tokens := strings.Split(node.Spec.ProviderID, "/")
-			instanceID := tokens[len(tokens)-1]
-			if contains(inServiceInstances, instanceID) && isNodeReady(node) && IsNodePassesReadinessGates(node, ruObj.Spec.ReadinessGates) {
+			instance := asgInServiceInstances[r.instanceID(node)]
+			ready :=
+				instance != nil &&
+					!r.requiresRefresh(ruObj, instance, launchDefinition) &&
+					isNodeReady(node) &&
+					IsNodePassesReadinessGates(node, ruObj.Spec.ReadinessGates)
+			if ready {
 				foundCount++
 			}
 		}
@@ -471,6 +475,7 @@ func (r *RollingUpgradeReconciler) populateLaunchTemplates(ruObj *upgrademgrv1al
 	return nil
 }
 
+// store all nodes in a cache to avoid fetching them multiple times
 func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInterface v1.NodeInterface) error {
 	nodeList, err := nodeInterface.List(metav1.ListOptions{})
 	if err != nil {
@@ -958,7 +963,8 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
-	targetInstanceID string) error {
+	targetInstanceID string,
+	launchDefinition *launchDefinition) error {
 
 	// Set instance to standby
 	err := r.SetStandby(ruObj, targetInstanceID)
@@ -973,7 +979,7 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	}
 
 	// Wait for in-service nodes to be ready and match desired
-	err = r.WaitForDesiredNodes(ruObj)
+	err = r.WaitForDesiredNodes(ruObj, launchDefinition)
 	if err != nil {
 		return err
 	}
@@ -1052,7 +1058,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	mode := ruObj.Spec.Strategy.Mode.String()
 	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
 		r.info(ruObj, "starting replacement with eager mode", "mode", mode)
-		err = r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID)
+		err = r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, launchDefinition)
 	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
 		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
 		err = r.DrainTerminate(ruObj, nodeName, targetInstanceID)
@@ -1114,6 +1120,7 @@ func (r *RollingUpgradeReconciler) getTemplateLatestVersion(templateName string)
 	return "0"
 }
 
+// is the instance not using expected launch template ?
 func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
 	definition *launchDefinition) bool {
 
@@ -1184,4 +1191,9 @@ func (r *RollingUpgradeReconciler) info(ruObj *upgrademgrv1alpha1.RollingUpgrade
 // error logs message with Error level for the specified rolling upgrade.
 func (r *RollingUpgradeReconciler) error(ruObj *upgrademgrv1alpha1.RollingUpgrade, err error, msg string, keysAndValues ...interface{}) {
 	r.logger(ruObj).Error(err, msg, keysAndValues...)
+}
+
+func (r *RollingUpgradeReconciler) instanceID(node corev1.Node) string {
+	tokens := strings.Split(node.Spec.ProviderID, "/")
+	return tokens[len(tokens)-1]
 }

@@ -174,20 +174,21 @@ func TestGetInServiceCount(t *testing.T) {
 
 func TestGetInServiceIds(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	tt := map[*autoscaling.Instance][]string{
-		&autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}:           {"i-1"},
-		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:            {},
-		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:           {},
-		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}:     {},
-		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:             {},
-		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:      {},
-		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:         {},
-		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:         {},
-		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:             {},
-		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:         {},
-		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:        {},
-		&autoscaling.Instance{InstanceId: aws.String("i-12"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingProceed)}: {},
-		&autoscaling.Instance{InstanceId: aws.String("i-13"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingWait)}:    {},
+	instance := &autoscaling.Instance{InstanceId: aws.String("i-1"), LifecycleState: aws.String(autoscaling.LifecycleStateInService)}
+	tt := map[*autoscaling.Instance]map[string]*autoscaling.Instance{
+		instance: map[string]*autoscaling.Instance{"i-1": instance},
+		&autoscaling.Instance{InstanceId: aws.String("i-2"), LifecycleState: aws.String(autoscaling.LifecycleStateDetached)}:            map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-3"), LifecycleState: aws.String(autoscaling.LifecycleStateDetaching)}:           map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-4"), LifecycleState: aws.String(autoscaling.LifecycleStateEnteringStandby)}:     map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-5"), LifecycleState: aws.String(autoscaling.LifecycleStatePending)}:             map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-6"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingProceed)}:      map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-7"), LifecycleState: aws.String(autoscaling.LifecycleStatePendingWait)}:         map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-8"), LifecycleState: aws.String(autoscaling.LifecycleStateQuarantined)}:         map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-9"), LifecycleState: aws.String(autoscaling.LifecycleStateStandby)}:             map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-10"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminated)}:         map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-11"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminating)}:        map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-12"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingProceed)}: map[string]*autoscaling.Instance{},
+		&autoscaling.Instance{InstanceId: aws.String("i-13"), LifecycleState: aws.String(autoscaling.LifecycleStateTerminatingWait)}:    map[string]*autoscaling.Instance{},
 	}
 
 	// test every condition
@@ -195,15 +196,15 @@ func TestGetInServiceIds(t *testing.T) {
 		instances := []*autoscaling.Instance{
 			instance,
 		}
-		g.Expect(getInServiceIds(instances)).To(gomega.Equal(expectedList))
+		g.Expect(inServiceIdMap(instances)).To(gomega.Equal(expectedList))
 	}
 
-	// test all instances
+	// test only the first is found when running against conditions
 	instances := []*autoscaling.Instance{}
 	for instance := range tt {
 		instances = append(instances, instance)
 	}
-	g.Expect(getInServiceIds(instances)).To(gomega.Equal([]string{"i-1"}))
+	g.Expect(inServiceIdMap(instances)).To(gomega.Equal(tt[instance]))
 }
 
 func TestGetMaxUnavailableWithPercentageValue33(t *testing.T) {
