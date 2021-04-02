@@ -270,16 +270,13 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
 		}
 
-		// get list of inService instance IDs
-		inServiceInstances := inServiceIdMap(asg.Instances)
+		asgInServiceInstances := inServiceIdMap(asg.Instances)
 		desiredCapacity := aws.Int64Value(asg.DesiredCapacity)
 
-		// check all of them are nodes and are ready
+		// check all asg instances are ready nodes
 		var foundCount int64 = 0
 		for _, node := range r.NodeList.Items {
-			tokens := strings.Split(node.Spec.ProviderID, "/")
-			instanceID := tokens[len(tokens)-1]
-			instance := inServiceInstances[instanceID]
+			instance := asgInServiceInstances[r.instanceID(node)]
 			ready :=
 				instance != nil &&
 					!r.requiresRefresh(ruObj, instance, launchDefinition) &&
@@ -478,6 +475,7 @@ func (r *RollingUpgradeReconciler) populateLaunchTemplates(ruObj *upgrademgrv1al
 	return nil
 }
 
+// store all nodes in a cache to avoid fetching them multiple times
 func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInterface v1.NodeInterface) error {
 	nodeList, err := nodeInterface.List(metav1.ListOptions{})
 	if err != nil {
@@ -1193,4 +1191,9 @@ func (r *RollingUpgradeReconciler) info(ruObj *upgrademgrv1alpha1.RollingUpgrade
 // error logs message with Error level for the specified rolling upgrade.
 func (r *RollingUpgradeReconciler) error(ruObj *upgrademgrv1alpha1.RollingUpgrade, err error, msg string, keysAndValues ...interface{}) {
 	r.logger(ruObj).Error(err, msg, keysAndValues...)
+}
+
+func (r *RollingUpgradeReconciler) instanceID(node corev1.Node) string {
+	tokens := strings.Split(node.Spec.ProviderID, "/")
+	return tokens[len(tokens)-1]
 }
