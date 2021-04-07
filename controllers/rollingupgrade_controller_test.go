@@ -1138,28 +1138,6 @@ func TestRunRestackSameLaunchConfig(t *testing.T) {
 	g.Expect(err).To(gomega.BeNil())
 }
 
-func TestRunRestackRollingUpgradeNotInMap(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-
-	strategy := upgrademgrv1alpha1.UpdateStrategy{Mode: upgrademgrv1alpha1.UpdateStrategyModeLazy}
-	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
-		Spec: upgrademgrv1alpha1.RollingUpgradeSpec{Strategy: strategy},
-	}
-	rcRollingUpgrade := &RollingUpgradeReconciler{
-		Log:          log2.NullLogger{},
-		ClusterState: NewClusterState(),
-		ASGClient:    MockAutoscalingGroup{},
-		EC2Client:    MockEC2{},
-	}
-	ctx := context.TODO()
-
-	g.Expect(rcRollingUpgrade.ruObjNameToASG.Load(ruObj.NamespacedName())).To(gomega.BeNil())
-	int, err := rcRollingUpgrade.runRestack(&ctx, ruObj)
-	g.Expect(int).To(gomega.Equal(0))
-	g.Expect(err).To(gomega.Not(gomega.BeNil()))
-	g.Expect(err.Error()).To(gomega.HavePrefix("Unable to load ASG with name: foo"))
-}
-
 func TestRunRestackRollingUpgradeNodeNameNotFound(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
