@@ -499,6 +499,10 @@ func (r *RollingUpgradeReconciler) getInProgressInstances(instances []*autoscali
 // runRestack performs rollout of new nodes.
 // returns number of processed instances and optional error.
 func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgrademgrv1alpha1.RollingUpgrade) (int, error) {
+	err := r.populateAsg(ruObj)
+	if err != nil {
+		return 0, fmt.Errorf("%s: Unable to populate the ASG object: %w", ruObj.NamespacedName(), err)
+	}
 
 	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
