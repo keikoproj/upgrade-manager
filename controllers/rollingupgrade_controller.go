@@ -73,7 +73,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
+			r.AdmissionMap.Delete(req.NamespacedName)
 			r.Info("deleted object from admission map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -83,7 +83,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// If the resource is being deleted, remove it from the admissionMap
 	if !rollingUpgrade.DeletionTimestamp.IsZero() {
 		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
-		r.Info("rolling upgrade deleted", "name", req.NamespacedName)
+		r.Info("rolling upgrade deleted", "name", rollingUpgrade.NamespacedName())
 		return reconcile.Result{}, nil
 	}
 
@@ -91,7 +91,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	currentStatus := rollingUpgrade.CurrentStatus()
 	if common.ContainsEqualFold(v1alpha1.FiniteStates, currentStatus) {
 		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
-		r.Info("rolling upgrade ended", "name", req.NamespacedName, "status", currentStatus)
+		r.Info("rolling upgrade ended", "name", rollingUpgrade.NamespacedName(), "status", currentStatus)
 		return reconcile.Result{}, nil
 	}
 
@@ -124,7 +124,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	r.Info("admitted new rollingupgrade", "name", req.NamespacedName, "scalingGroup", scalingGroupName)
+	r.Info("admitted new rollingupgrade", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
 	r.AdmissionMap.Store(rollingUpgrade.NamespacedName(), scalingGroupName)
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
 
