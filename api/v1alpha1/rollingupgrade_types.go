@@ -17,7 +17,9 @@ package v1alpha1
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -71,8 +73,22 @@ type RollingUpgradeStatus struct {
 	NodesProcessed      int    `json:"nodesProcessed,omitempty"`
 	TotalNodes          int    `json:"totalNodes,omitempty"`
 
-	Conditions []RollingUpgradeCondition `json:"conditions,omitempty"`
+	Conditions              []RollingUpgradeCondition `json:"conditions,omitempty"`
+	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
+	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
+
+	Statistics     []*RollingUpgradeStatistics `json:"statistics,omitempty"`
+	LastBatchNodes []string                    `json:"lastBatchNodes,omitempty"`
 }
+
+// RollingUpgrade Statistics, includes summary(sum/count) from each step
+type RollingUpgradeStatistics struct {
+	StepName      RollingUpgradeStep `json:"stepName,omitempty"`
+	DurationSum   metav1.Duration    `json:"durationSum,omitempty"`
+	DurationCount int32              `json:"durationCount,omitempty"`
+}
+
+type RollingUpgradeStep string
 
 const (
 	// StatusRunning marks the CR to be running.
@@ -81,12 +97,155 @@ const (
 	StatusComplete = "completed"
 	// StatusError marks the CR as errored out.
 	StatusError = "error"
+
+	NodeRotationTotal RollingUpgradeStep = "total"
+
+	NodeRotationKickoff          RollingUpgradeStep = "kickoff"
+	NodeRotationDesiredNodeReady RollingUpgradeStep = "desired_node_ready"
+	NodeRotationPredrainScript   RollingUpgradeStep = "predrain_script"
+	NodeRotationDrain            RollingUpgradeStep = "drain"
+	NodeRotationPostdrainScript  RollingUpgradeStep = "postdrain_script"
+	NodeRotationPostWait         RollingUpgradeStep = "post_wait"
+	NodeRotationTerminate        RollingUpgradeStep = "terminate"
+	NodeRotationPostTerminate    RollingUpgradeStep = "post_terminate"
+	NodeRotationCompleted        RollingUpgradeStep = "completed"
 )
+
+var NodeRotationStepOrders = map[RollingUpgradeStep]int{
+	NodeRotationKickoff:          10,
+	NodeRotationDesiredNodeReady: 20,
+	NodeRotationPredrainScript:   30,
+	NodeRotationDrain:            40,
+	NodeRotationPostdrainScript:  50,
+	NodeRotationPostWait:         60,
+	NodeRotationTerminate:        70,
+	NodeRotationPostTerminate:    80,
+	NodeRotationCompleted:        1000,
+}
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade
 type RollingUpgradeCondition struct {
 	Type   UpgradeConditionType   `json:"type,omitempty"`
 	Status corev1.ConditionStatus `json:"status,omitempty"`
+}
+
+// RollingUpgrade Node step information
+type NodeStepDuration struct {
+	GroupName string             `json:"groupName,omitempty"`
+	NodeName  string             `json:"nodeName,omitempty"`
+	StepName  RollingUpgradeStep `json:"stepName,omitempty"`
+	Duration  metav1.Duration    `json:"duration,omitempty"`
+}
+
+// Node In-processing
+type NodeInProcessing struct {
+	NodeName         string             `json:"nodeName,omitempty"`
+	StepName         RollingUpgradeStep `json:"stepName,omitempty"`
+	UpgradeStartTime metav1.Time        `json:"upgradeStartTime,omitempty"`
+	StepStartTime    metav1.Time        `json:"stepStartTime,omitempty"`
+	StepEndTime      metav1.Time        `json:"stepEndTime,omitempty"`
+}
+
+// Update last batch nodes
+func (s *RollingUpgradeStatus) UpdateLastBatchNodes(batchNodes map[string]*NodeInProcessing) {
+	keys := make([]string, 0, len(batchNodes))
+	for k := range batchNodes {
+		keys = append(keys, k)
+	}
+	s.LastBatchNodes = keys
+}
+
+// Update Node Statistics
+func (s *RollingUpgradeStatus) UpdateStatistics(nodeSteps map[string][]NodeStepDuration) {
+	for _, v := range nodeSteps {
+		for _, step := range v {
+			s.AddNodeStepDuration(step)
+		}
+	}
+}
+
+// Add one step duration
+func (s *RollingUpgradeStatus) AddNodeStepDuration(nsd NodeStepDuration) {
+	// if step exists, add count and sum, otherwise append
+	for _, s := range s.Statistics {
+		if s.StepName == nsd.StepName {
+			s.DurationSum = metav1.Duration{
+				Duration: s.DurationSum.Duration + nsd.Duration.Duration,
+			}
+			s.DurationCount += 1
+			return
+		}
+	}
+	s.Statistics = append(s.Statistics, &RollingUpgradeStatistics{
+		StepName: nsd.StepName,
+		DurationSum: metav1.Duration{
+			Duration: nsd.Duration.Duration,
+		},
+		DurationCount: 1,
+	})
+}
+
+// Node turns onto step
+func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProcessing,
+	nodeSteps map[string][]NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep) {
+
+	var inProcessingNode *NodeInProcessing
+	if n, ok := InProcessingNodes[nodeName]; !ok {
+		inProcessingNode = &NodeInProcessing{
+			NodeName:         nodeName,
+			StepName:         stepName,
+			UpgradeStartTime: metav1.Now(),
+			StepStartTime:    metav1.Now(),
+		}
+		InProcessingNodes[nodeName] = inProcessingNode
+	} else {
+		inProcessingNode = n
+	}
+
+	inProcessingNode.StepEndTime = metav1.Now()
+	var duration = inProcessingNode.StepEndTime.Sub(inProcessingNode.StepStartTime.Time)
+	if stepName == NodeRotationCompleted {
+		//Add overall and remove the node from in-processing map
+		var total = inProcessingNode.StepEndTime.Sub(inProcessingNode.UpgradeStartTime.Time)
+		duration1 := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
+		duration2 := s.ToStepDuration(groupName, nodeName, NodeRotationTotal, total)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration1)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration2)
+	} else if inProcessingNode.StepName != stepName { //Still same step
+		var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
+		var newOrder = NodeRotationStepOrders[stepName]
+		if newOrder > oldOrder { //Make sure the steps running in order
+			stepDuration := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
+			inProcessingNode.StepStartTime = metav1.Now()
+			inProcessingNode.StepName = stepName
+			s.addNodeStepDuration(nodeSteps, nodeName, stepDuration)
+		}
+	}
+}
+
+func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDuration, nodeName string, nsd NodeStepDuration) {
+	if stepDuration, ok := steps[nodeName]; !ok {
+		steps[nodeName] = []NodeStepDuration{
+			nsd,
+		}
+	} else {
+		stepDuration = append(stepDuration, nsd)
+		steps[nodeName] = stepDuration
+	}
+}
+
+// Add one step duration
+func (s *RollingUpgradeStatus) ToStepDuration(groupName, nodeName string, stepName RollingUpgradeStep, duration time.Duration) NodeStepDuration {
+	//Add to system level statistics
+	common.AddStepDuration(groupName, string(stepName), duration)
+	return NodeStepDuration{
+		GroupName: groupName,
+		NodeName:  nodeName,
+		StepName:  stepName,
+		Duration: metav1.Duration{
+			Duration: duration,
+		},
+	}
 }
 
 // +kubebuilder:object:root=true
