@@ -51,6 +51,9 @@ spec:
           requests:
             cpu: 100m
             memory: 300Mi
+        ports:
+          - containerPort: 8080
+            name: metrics
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
       dnsPolicy: ClusterFirst
@@ -65,3 +68,19 @@ spec:
       serviceAccount: rolling-upgrade-sa
       serviceAccountName: rolling-upgrade-sa
       terminationGracePeriodSeconds: 30
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    iks-metric: http-metrics
+  name: rolling-upgrade-controller-service
+  namespace: kube-system
+spec:
+  ports:
+    - name: iks-metric
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: rolling-upgrade-controller
