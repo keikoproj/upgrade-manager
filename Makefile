@@ -54,7 +54,7 @@ generate: controller-gen
 # Build the docker image
 docker-build:
 	docker build . -t ${IMG}
-	docker tag ${IMG} keikoproj/rolling-upgrade-controller:latest
+	docker tag ${IMG} docker.intuit.com/personal/sbadla1/rolling-upgrade-controller:latest
 	@echo "updating kustomize image patch file for manager resource"
 	sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/manager_image_patch.yaml
 

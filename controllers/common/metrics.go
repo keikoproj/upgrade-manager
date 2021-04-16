@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/keikoproj/upgrade-manager/controllers/common/log"
+	"github.com/keikoproj/upgrade-manager/pkg/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
