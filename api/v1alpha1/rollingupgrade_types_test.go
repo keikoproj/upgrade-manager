@@ -126,4 +126,12 @@ func TestNodeTurnsOntoStep(t *testing.T) {
 
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-2", NodeRotationDesiredNodeReady)
 	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(3))
+
+	r.UpdateLastBatchNodes(inProcessingNodes)
+	g.Expect(len(r.LastBatchNodes)).To(gomega.Equal(2))
+
+	r.UpdateStatistics(nodeSteps)
+	g.Expect(r.Statistics).ToNot(gomega.BeEmpty())
+	g.Expect(len(r.Statistics)).To(gomega.Equal(3))
+
 }

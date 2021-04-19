@@ -1503,6 +1503,8 @@ func TestUpdateInstances(t *testing.T) {
 	err = rcRollingUpgrade.UpdateInstances(&ctx,
 		ruObj, mockAsg.Instances, &launchDefinition{launchConfigurationName: &lcName})
 	g.Expect(err).ShouldNot(gomega.HaveOccurred())
+	g.Expect(ruObj.Status.Statistics).ShouldNot(gomega.BeEmpty())
+	g.Expect(ruObj.Status.LastBatchNodes).ShouldNot(gomega.BeEmpty())
 }
 
 func TestUpdateInstancesError(t *testing.T) {
