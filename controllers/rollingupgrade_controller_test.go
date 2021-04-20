@@ -997,6 +997,31 @@ func TestFinishExecutionError(t *testing.T) {
 	))
 }
 
+func TestProcessCompleted(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	ruObj := &upgrademgrv1alpha1.RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"},
+		TypeMeta: metav1.TypeMeta{Kind: "RollingUpgrade", APIVersion: "v1alpha1"}}
+	startTime := time.Now()
+	ruObj.Status.StartTime = startTime.Format(time.RFC3339)
+	ruObj.Status.CurrentStatus = upgrademgrv1alpha1.StatusComplete
+
+	mgr, err := buildManager()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	rcRollingUpgrade := &RollingUpgradeReconciler{Client: mgr.GetClient(),
+		generatedClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+		Log:             log2.NullLogger{},
+		ClusterState:    NewClusterState(),
+	}
+	ctx := context.TODO()
+
+	rcRollingUpgrade.Process(&ctx, ruObj)
+
+	g.Expect(ruObj.Status.CurrentStatus).To(gomega.Equal(upgrademgrv1alpha1.StatusComplete))
+	g.Expect(ruObj.Status.Conditions).To(gomega.BeNil())
+}
+
 // RunRestack() goes through the entire process without errors
 func TestRunRestackSuccessOneNode(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
