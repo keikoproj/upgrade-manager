@@ -10,30 +10,45 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-//All cluster level node upgrade statistics
+var (
+	//All cluster level node upgrade statistics
+	nodeRotationTotal = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "node",
+			Name:      "rotation_total_seconds",
+			Help:      "Node rotation total",
+			Buckets: []float64{
+				10.0,
+				30.0,
+				60.0,
+				90.0,
+				120.0,
+				180.0,
+				300.0,
+				600.0,
+				900.0,
+			},
+		})
 
-var nodeRotationTotal = prometheus.NewHistogram(
-	prometheus.HistogramOpts{
-		Namespace: "node",
-		Name:      "rotation_total_seconds",
-		Help:      "Node rotation total",
-		Buckets: []float64{
-			10.0,
-			30.0,
-			60.0,
-			90.0,
-			120.0,
-			180.0,
-			300.0,
-			600.0,
-			900.0,
-		},
+	stepSummaries = make(map[string]map[string]prometheus.Summary)
+
+	// Add rolling update status when the Cr is completed or failed (upgrademgrv1alpha1.StatusComplete)
+	CRSuccesses = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "cr_success_total",
+		Help:        "Number of cr successes.",
+		ConstLabels: prometheus.Labels{"version": "1"},
 	})
-
-var stepSummaries = make(map[string]map[string]prometheus.Summary)
+	CRFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "cr_fails_total",
+		Help:        "Number of cr fails.",
+		ConstLabels: prometheus.Labels{"version": "1"},
+	})
+)
 
 func InitMetrics() {
 	metrics.Registry.MustRegister(nodeRotationTotal)
+	metrics.Registry.MustRegister(CRSuccesses)
+	metrics.Registry.MustRegister(CRFailures)
 }
 
 // Add rolling update step duration when the step is completed
