@@ -261,7 +261,7 @@ func TestIsScalingGroupDrifted(t *testing.T) {
 			false,
 		},
 		{
-			"All instances have different launch config as the ASG, expect false from IsScalingGroupDrifted",
+			"All instances have different launch config as the ASG, expect true from IsScalingGroupDrifted",
 			createRollingUpgradeReconciler(t),
 			createRollingUpgrade(),
 			func() *MockAutoscalingGroup {
@@ -279,6 +279,51 @@ func TestIsScalingGroupDrifted(t *testing.T) {
 		actualValue := test.Reconciler.IsScalingGroupDrifted(test.RollingUpgrade)
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
+		}
+	}
+
+}
+
+func TestRotateNodes(t *testing.T) {
+	var tests = []struct {
+		TestDescription     string
+		Reconciler          *RollingUpgradeReconciler
+		RollingUpgrade      *v1alpha1.RollingUpgrade
+		AsgClient           *MockAutoscalingGroup
+		ExpectedValue       bool
+		ExpectedStatusValue string
+	}{
+		{
+			"All instances have different launch config as the ASG, expect true from IsScalingGroupDrifted",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			func() *MockAutoscalingGroup {
+				newAsgClient := createASGClient()
+				newAsgClient.autoScalingGroups[0].LaunchConfigurationName = aws.String("different-launch-config")
+				return newAsgClient
+			}(),
+			true,
+			v1alpha1.StatusRunning,
+		},
+		{
+			"All instances have the same launch config as the ASG, expect false from IsScalingGroupDrifted",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			false,
+			v1alpha1.StatusComplete,
+		},
+	}
+	for _, test := range tests {
+		test.Reconciler.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		test.Reconciler.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		err := test.Reconciler.RotateNodes(test.RollingUpgrade)
+		if err != nil {
+			t.Errorf("Test Description: \n expected value: nil, actual value: %v", err)
+		}
+		if test.RollingUpgrade.CurrentStatus() != test.ExpectedStatusValue {
+			t.Errorf("Test Description: %s \n expected value: %s, actual value: %s", test.TestDescription, test.ExpectedStatusValue, test.RollingUpgrade.CurrentStatus())
 		}
 	}
 

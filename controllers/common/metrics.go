@@ -1,38 +1,59 @@
 package common
 
 import (
-	"github.com/keikoproj/upgrade-manager/controllers/common/log"
-	"github.com/prometheus/client_golang/prometheus"
 	"reflect"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"strings"
 	"time"
+
+	"github.com/keikoproj/upgrade-manager/controllers/common/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-//All cluster level node upgrade statistics
+var (
+	//All cluster level node upgrade statistics
+	nodeRotationTotal = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "node",
+			Name:      "rotation_total_seconds",
+			Help:      "Node rotation total",
+			Buckets: []float64{
+				10.0,
+				30.0,
+				60.0,
+				90.0,
+				120.0,
+				180.0,
+				300.0,
+				600.0,
+				900.0,
+			},
+		})
 
-var nodeRotationTotal = prometheus.NewHistogram(
-	prometheus.HistogramOpts{
-		Namespace: "node",
-		Name:      "rotation_total_seconds",
-		Help:      "Node rotation total",
-		Buckets: []float64{
-			10.0,
-			30.0,
-			60.0,
-			90.0,
-			120.0,
-			180.0,
-			300.0,
-			600.0,
-			900.0,
+	stepSummaries = make(map[string]map[string]prometheus.Summary)
+
+	CRStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "upgrade-manager",
+			Subsystem: "v2",
+			Name:      "cr_status",
+			Help:      "Rollup CR statistics, partitioned by name and type.",
 		},
-	})
+		[]string{
+			// name of the CR
+			"name",
+			// status stype of CR, currently only recording "completed" and "failed"
+			"type",
+		},
+	)
 
-var stepSummaries = make(map[string]map[string]prometheus.Summary)
+	CRStatusCompleted = "completed"
+	CRStatusFailed    = "failed"
+)
 
 func InitMetrics() {
 	metrics.Registry.MustRegister(nodeRotationTotal)
+	metrics.Registry.MustRegister(CRStatus)
 }
 
 // Add rolling update step duration when the step is completed
@@ -71,4 +92,12 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		}
 		summary.Observe(duration.Seconds())
 	}
+}
+
+func AddRollupCompletedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName, CRStatusCompleted).Add(1)
+}
+
+func AddRollupFailedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName, CRStatusFailed).Add(1)
 }

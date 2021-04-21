@@ -84,6 +84,8 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	// check if all instances are rotated.
 	if !r.IsScalingGroupDrifted(rollingUpgrade) {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
+		// Increment prometheus metric cr_status_completed
+		common.AddRollupCompletedStatus(rollingUpgrade.Name)
 		return nil
 	}
 
