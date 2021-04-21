@@ -64,8 +64,13 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		lastDrainTime       = r.RollingUpgrade.LastNodeDrainTime()
 		drainInterval       = r.RollingUpgrade.PostDrainDelaySeconds()
 	)
+<<<<<<< HEAD
 	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
 	common.SetRollupInitOrRunningStatus(r.RollingUpgrade.Name)
+=======
+	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+	common.SetRollupInitOrRunningStatus(rollingUpgrade.Name)
+>>>>>>> #2285: rollup CR statistic metrics in v2 (#218)
 
 	// set status start time
 	if r.RollingUpgrade.StartTime() == "" {
