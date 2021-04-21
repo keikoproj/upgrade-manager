@@ -32,23 +32,25 @@ var (
 
 	stepSummaries = make(map[string]map[string]prometheus.Summary)
 
-	// Add rolling update status when the Cr is completed or failed (upgrademgrv1alpha1.StatusComplete)
-	CRSuccesses = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "cr_success_total",
-		Help:        "Number of cr successes.",
-		ConstLabels: prometheus.Labels{"version": "1"},
-	})
-	CRFailures = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "cr_fails_total",
-		Help:        "Number of cr fails.",
-		ConstLabels: prometheus.Labels{"version": "1"},
-	})
+	CRStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "upgrade-manager",
+			Subsystem: "v1",
+			Name:      "cr_status",
+			Help:      "Rollup CR statistics, partitioned by name and type.",
+		},
+		[]string{
+			// name of the CR
+			"name",
+			// status stype of CR, currently only recording "completed" and "failed"
+			"type",
+		},
+	)
 )
 
 func InitMetrics() {
 	metrics.Registry.MustRegister(nodeRotationTotal)
-	metrics.Registry.MustRegister(CRSuccesses)
-	metrics.Registry.MustRegister(CRFailures)
+	metrics.Registry.MustRegister(CRStatus)
 }
 
 // Add rolling update step duration when the step is completed
@@ -87,4 +89,12 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		}
 		summary.Observe(duration.Seconds())
 	}
+}
+
+func AddRollupCompletedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName, "completed").Add(1)
+}
+
+func AddRollupFailedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName, "failed").Add(1)
 }

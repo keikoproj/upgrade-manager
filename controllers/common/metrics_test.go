@@ -29,11 +29,18 @@ func TestAddRollingUpgradeStepDuration(t *testing.T) {
 	g.Expect(stepSummaries["test-asg"]["kickoff"]).NotTo(gomega.BeNil())
 }
 
-func TestCRStatus(t *testing.T) {
+func TestCRStatusCompleted(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
+	AddRollupCompletedStatus("cr_test_1")
+	gauage, err := CRStatus.GetMetricWithLabelValues("cr_test_1", "completed")
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(gauage).ToNot(gomega.BeNil())
+}
 
-	CRSuccesses.Inc()
-	g.Expect(CRFailures).ToNot(gomega.BeNil())
-	CRFailures.Inc()
-	g.Expect(CRFailures).ToNot(gomega.BeNil())
+func TestCRStatusFailed(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	AddRollupFailedStatus("cr_test_2")
+	gauage, err := CRStatus.GetMetricWithLabelValues("cr_test_2", "failed")
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(gauage).ToNot(gomega.BeNil())
 }

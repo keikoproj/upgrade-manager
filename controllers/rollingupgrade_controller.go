@@ -599,12 +599,12 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 		finalStatus = upgrademgrv1alpha1.StatusComplete
 		level = EventLevelNormal
 		r.info(ruObj, "Marked object as", "finalStatus", finalStatus)
-		common.CRSuccesses.Inc()
+		common.AddRollupCompletedStatus(ruObj.Name)
 	} else {
 		finalStatus = upgrademgrv1alpha1.StatusError
 		level = EventLevelWarning
 		r.error(ruObj, err, "Marked object as", "finalStatus", finalStatus)
-		common.CRFailures.Inc()
+		common.AddRollupFailedStatus(ruObj.Name)
 	}
 
 	endTime := time.Now()
@@ -665,13 +665,6 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 
 		r.admissionMap.Delete(ruObj.NamespacedName())
 		r.info(ruObj, "Deleted object from admission map")
-
-		if ruObj.Status.CurrentStatus == upgrademgrv1alpha1.StatusComplete {
-			common.CRSuccesses.Inc()
-		} else {
-			common.CRFailures.Inc()
-		}
-
 		return
 	}
 	// start event
