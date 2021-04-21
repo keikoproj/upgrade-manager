@@ -10,30 +10,46 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-//All cluster level node upgrade statistics
+var (
+	metricNamespace = "upgrade_manager_v1"
 
-var nodeRotationTotal = prometheus.NewHistogram(
-	prometheus.HistogramOpts{
-		Namespace: "node",
-		Name:      "rotation_total_seconds",
-		Help:      "Node rotation total",
-		Buckets: []float64{
-			10.0,
-			30.0,
-			60.0,
-			90.0,
-			120.0,
-			180.0,
-			300.0,
-			600.0,
-			900.0,
+	//All cluster level node upgrade statistics
+	nodeRotationTotal = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "node_rotation_total_seconds",
+			Help:      "Node rotation total",
+			Buckets: []float64{
+				10.0,
+				30.0,
+				60.0,
+				90.0,
+				120.0,
+				180.0,
+				300.0,
+				600.0,
+				900.0,
+			},
+		})
+
+	stepSummaries = make(map[string]map[string]prometheus.Summary)
+
+	CRStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "resource_status",
+			Help:      "Rollup CR statistics, partitioned by name.",
 		},
-	})
-
-var stepSummaries = make(map[string]map[string]prometheus.Summary)
+		[]string{
+			// name of the CR
+			"resource_name",
+		},
+	)
+)
 
 func InitMetrics() {
 	metrics.Registry.MustRegister(nodeRotationTotal)
+	metrics.Registry.MustRegister(CRStatus)
 }
 
 // Add rolling update step duration when the step is completed
@@ -72,4 +88,16 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		}
 		summary.Observe(duration.Seconds())
 	}
+}
+
+func SetRollupInitOrRunningStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(0)
+}
+
+func SetRollupCompletedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(1)
+}
+
+func SetRollupFailedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(-1)
 }
