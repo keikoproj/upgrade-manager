@@ -599,12 +599,12 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 		finalStatus = upgrademgrv1alpha1.StatusComplete
 		level = EventLevelNormal
 		r.info(ruObj, "Marked object as", "finalStatus", finalStatus)
-		common.AddRollupCompletedStatus(ruObj.Name)
+		common.SetRollupCompletedStatus(ruObj.Name)
 	} else {
 		finalStatus = upgrademgrv1alpha1.StatusError
 		level = EventLevelWarning
 		r.error(ruObj, err, "Marked object as", "finalStatus", finalStatus)
-		common.AddRollupFailedStatus(ruObj.Name)
+		common.SetRollupFailedStatus(ruObj.Name)
 	}
 
 	endTime := time.Now()
@@ -705,6 +705,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj.Status.CurrentStatus = upgrademgrv1alpha1.StatusRunning
 	ruObj.Status.NodesProcessed = 0
 	ruObj.Status.TotalNodes = len(asg.Instances)
+	common.SetRollupInitOrRunningStatus(ruObj.Name)
 
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
 		r.error(ruObj, err, "failed to update status")

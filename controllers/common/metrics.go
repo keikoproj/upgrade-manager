@@ -11,11 +11,13 @@ import (
 )
 
 var (
+	metricNamespace = "upgrade_manager_v1"
+
 	//All cluster level node upgrade statistics
 	nodeRotationTotal = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
-			Namespace: "node",
-			Name:      "rotation_total_seconds",
+			Namespace: metricNamespace,
+			Name:      "node_rotation_total_seconds",
 			Help:      "Node rotation total",
 			Buckets: []float64{
 				10.0,
@@ -34,21 +36,15 @@ var (
 
 	CRStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Namespace: "upgrade-manager",
-			Subsystem: "v1",
-			Name:      "cr_status",
-			Help:      "Rollup CR statistics, partitioned by name and type.",
+			Namespace: metricNamespace,
+			Name:      "resource_status",
+			Help:      "Rollup CR statistics, partitioned by name.",
 		},
 		[]string{
 			// name of the CR
-			"name",
-			// status stype of CR, currently only recording "completed" and "failed"
-			"type",
+			"resource_name",
 		},
 	)
-
-	CRStatusCompleted = "completed"
-	CRStatusFailed    = "failed"
 )
 
 func InitMetrics() {
@@ -94,10 +90,14 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 	}
 }
 
-func AddRollupCompletedStatus(ruName string) {
-	CRStatus.WithLabelValues(ruName, CRStatusCompleted).Add(1)
+func SetRollupInitOrRunningStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(0)
 }
 
-func AddRollupFailedStatus(ruName string) {
-	CRStatus.WithLabelValues(ruName, CRStatusFailed).Add(1)
+func SetRollupCompletedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(1)
+}
+
+func SetRollupFailedStatus(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(-1)
 }
