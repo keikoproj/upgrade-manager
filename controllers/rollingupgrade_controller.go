@@ -45,6 +45,7 @@ import (
 
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 )
 
 const (
@@ -598,10 +599,12 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 		finalStatus = upgrademgrv1alpha1.StatusComplete
 		level = EventLevelNormal
 		r.info(ruObj, "Marked object as", "finalStatus", finalStatus)
+		common.AddRollupCompletedStatus(ruObj.Name)
 	} else {
 		finalStatus = upgrademgrv1alpha1.StatusError
 		level = EventLevelWarning
 		r.error(ruObj, err, "Marked object as", "finalStatus", finalStatus)
+		common.AddRollupFailedStatus(ruObj.Name)
 	}
 
 	endTime := time.Now()
