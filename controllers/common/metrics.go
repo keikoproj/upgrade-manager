@@ -90,7 +90,7 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 	}
 }
 
-func SetRollupInitStatus(ruName string) {
+func SetRollupInitOrRunningStatus(ruName string) {
 	CRStatus.WithLabelValues(ruName).Set(0)
 }
 

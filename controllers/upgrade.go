@@ -54,6 +54,7 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 		drainInterval       = rollingUpgrade.PostDrainDelaySeconds()
 	)
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+	common.SetRollupInitOrRunningStatus(rollingUpgrade.Name)
 
 	// set status start time
 	if rollingUpgrade.StartTime() == "" {

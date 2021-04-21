@@ -127,7 +127,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	r.Info("admitted new rollingupgrade", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
 	r.AdmissionMap.Store(rollingUpgrade.NamespacedName(), scalingGroupName)
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
-	common.SetRollupInitStatus(rollingUpgrade.Name)
+	common.SetRollupInitOrRunningStatus(rollingUpgrade.Name)
 
 	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
 	if err := r.Cloud.Discover(); err != nil {
