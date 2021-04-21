@@ -131,12 +131,16 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
 	if err := r.Cloud.Discover(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		// Increment prometheus metric cr_status_failed
+		common.AddRollupFailedStatus(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
 
 	// process node rotation
 	if err := r.RotateNodes(rollingUpgrade); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		// Increment prometheus metric cr_status_failed
+		common.AddRollupFailedStatus(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
 
