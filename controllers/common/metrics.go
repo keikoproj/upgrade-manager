@@ -46,6 +46,9 @@ var (
 			"type",
 		},
 	)
+
+	CRStatusCompleted = "completed"
+	CRStatusFailed    = "failed"
 )
 
 func InitMetrics() {
@@ -92,9 +95,9 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 }
 
 func AddRollupCompletedStatus(ruName string) {
-	CRStatus.WithLabelValues(ruName, "completed").Add(1)
+	CRStatus.WithLabelValues(ruName, CRStatusCompleted).Add(1)
 }
 
 func AddRollupFailedStatus(ruName string) {
-	CRStatus.WithLabelValues(ruName, "failed").Add(1)
+	CRStatus.WithLabelValues(ruName, CRStatusFailed).Add(1)
 }
