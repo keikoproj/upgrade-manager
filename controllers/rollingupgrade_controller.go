@@ -305,7 +305,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 			return nil
 		}
 
-		r.info(ruObj, "new node has not yet joined the cluster")
+		r.info(ruObj, "new node is not yet ready")
 	}
 	return fmt.Errorf("%s: WaitForDesiredNodes timed out while waiting for nodes to join: %w", ruObj.NamespacedName(), err)
 }
@@ -647,7 +647,7 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 	r.info(ruObj, "Deleted the entries of ASG in the cluster store", "asgName", ruObj.Spec.AsgName)
 	r.inProcessASGs.Delete(ruObj.Spec.AsgName)
 	r.admissionMap.Delete(ruObj.NamespacedName())
-	r.info(ruObj, "Deleted from admission map ", "admissionMap", &r.admissionMap)
+	r.info(ruObj, "Deleted from admission map", "admissionMap", &r.admissionMap)
 }
 
 // Process actually performs the ec2-instance restacking.
