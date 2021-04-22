@@ -69,8 +69,8 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		if s, ok := steps[stepName]; !ok {
 			summary = prometheus.NewSummary(
 				prometheus.SummaryOpts{
-					Namespace:   "node",
-					Name:        stepName + "_seconds",
+					Namespace:   metricNamespace,
+					Name:        "node_" + stepName + "_seconds",
 					Help:        "Summary for node " + stepName,
 					ConstLabels: prometheus.Labels{"group": groupName},
 				})
