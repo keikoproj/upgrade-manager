@@ -46,7 +46,11 @@ func TestMain(m *testing.M) {
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
 	}
 
-	cfg, _ = testEnv.Start()
+	var err error
+	cfg, err = testEnv.Start()
+	if err != nil {
+		panic(err)
+	}
 	os.Exit(m.Run())
 }
 
