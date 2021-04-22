@@ -133,7 +133,7 @@ func TestIsNodePassesReadinessGates(t *testing.T) {
 				Labels: tt.labels,
 			},
 		}
-		g.Expect(IsNodePassesReadinessGates(node, readinessGates)).To(gomega.Equal(tt.want))
+		g.Expect(isNodePassingReadinessGates(node, readinessGates)).To(gomega.Equal(tt.want))
 	}
 
 }
