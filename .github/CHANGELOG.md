@@ -1,6 +1,20 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.18] - 2021-03-23
+
+8b2d320 Fix for Launch definition validation. Consider only the "InService" instances. (#197)
+42f810c Fail the CR for drain failures, when IgnoreDrainFailures isn't set. (#185)
+f5c9457 output can contain other messages from API Server, so be more relaxed (#174)
+391b2fb Expose template list and other execution errors to logs (#166)
+757b669 Bump golang and busybox (#172)
+b8f69e8 Add instance id to the logs (#173)
+ac7be6b Fix namespaced name order (#170)
+51f469d use standard fmt.Errorf to format error message; unify error format (#171)
+b552c69 Bump dependencies. (#169)
+36a2784 Remove separate module for pkg/log (#168)
+237f93d Move constants to types so that they can be reused (#167)
+
 ## [v0.17] - 2020-12-11
 
 * aa2b73b - use NamespacedName (#160)

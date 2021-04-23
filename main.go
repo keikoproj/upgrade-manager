@@ -39,6 +39,7 @@ import (
 
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers"
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 	"github.com/keikoproj/upgrade-manager/pkg/log"
 	// +kubebuilder:scaffold:imports
 )
@@ -63,6 +64,7 @@ func init() {
 		panic(err)
 	}
 	// +kubebuilder:scaffold:scheme
+	common.InitMetrics()
 }
 
 func main() {
@@ -160,6 +162,8 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	setupLog.Info("registering prometheus")
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

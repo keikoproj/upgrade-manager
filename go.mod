@@ -11,6 +11,7 @@ require (
 	github.com/keikoproj/kubedog v0.0.1
 	github.com/onsi/ginkgo v1.14.2
 	github.com/onsi/gomega v1.10.4
+	github.com/prometheus/client_golang v1.0.0
 	github.com/sirupsen/logrus v1.6.0
 	go.uber.org/zap v1.16.0
 	golang.org/x/net v0.0.0-20201216054612-986b41b23924
@@ -21,4 +22,5 @@ require (
 	k8s.io/client-go v0.17.15
 	k8s.io/utils v0.0.0-20191218082557-f07c713de883 // indirect
 	sigs.k8s.io/controller-runtime v0.4.0
+	sigs.k8s.io/controller-tools v0.2.4 // indirect
 )
