@@ -131,6 +131,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
 	if err := r.Cloud.Discover(); err != nil {
+		r.Info("failed to discover the cloud", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		// Set prometheus metric cr_status_failed
 		common.SetRollupFailedStatus(rollingUpgrade.Name)
