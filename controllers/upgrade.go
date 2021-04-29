@@ -54,7 +54,7 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 		drainInterval       = rollingUpgrade.PostDrainDelaySeconds()
 	)
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
-	common.SetRollupInitOrRunningStatus(rollingUpgrade.Name)
+	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
 
 	// set status start time
 	if rollingUpgrade.StartTime() == "" {
@@ -86,7 +86,7 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	if !r.IsScalingGroupDrifted(rollingUpgrade) {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
 		// Set prometheus metric cr_status_completed
-		common.SetRollupCompletedStatus(rollingUpgrade.Name)
+		common.SetMetricRollupCompleted(rollingUpgrade.Name)
 		return nil
 	}
 
