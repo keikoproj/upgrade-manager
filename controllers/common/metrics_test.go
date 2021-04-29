@@ -32,17 +32,17 @@ func TestAddRollingUpgradeStepDuration(t *testing.T) {
 func TestCRStatusCompleted(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	SetRollupInitOrRunningStatus("cr_test_1")
+	SetMetricRollupInitOrRunning("cr_test_1")
 	gauage, err := CRStatus.GetMetricWithLabelValues("cr_test_1")
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(gauage).ToNot(gomega.BeNil())
 
-	SetRollupCompletedStatus("cr_test_2")
+	SetMetricRollupCompleted("cr_test_2")
 	gauage, err = CRStatus.GetMetricWithLabelValues("cr_test_2")
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(gauage).ToNot(gomega.BeNil())
 
-	SetRollupFailedStatus("cr_test_3")
+	SetMetricRollupFailed("cr_test_3")
 	gauage, err = CRStatus.GetMetricWithLabelValues("cr_test_3")
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(gauage).ToNot(gomega.BeNil())
