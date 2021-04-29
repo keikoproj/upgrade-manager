@@ -82,16 +82,16 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// If the resource is being deleted, remove it from the admissionMap
 	if !rollingUpgrade.DeletionTimestamp.IsZero() {
-		r.AdmissionMap.Delete(req.NamespacedName)
-		r.Info("rolling upgrade deleted", "name", req.NamespacedName)
+		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
+		r.Info("rolling upgrade deleted", "name", rollingUpgrade.NamespacedName())
 		return reconcile.Result{}, nil
 	}
 
 	// Stop processing upgrades which are in finite state
 	currentStatus := rollingUpgrade.CurrentStatus()
 	if common.ContainsEqualFold(v1alpha1.FiniteStates, currentStatus) {
-		r.AdmissionMap.Delete(req.NamespacedName)
-		r.Info("rolling upgrade ended", "name", req.NamespacedName, "status", currentStatus)
+		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
+		r.Info("rolling upgrade ended", "name", rollingUpgrade.NamespacedName(), "status", currentStatus)
 		return reconcile.Result{}, nil
 	}
 
@@ -124,19 +124,24 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	r.Info("admitted new rollingupgrade", "name", req.NamespacedName, "scalingGroup", scalingGroupName)
+	r.Info("admitted new rollingupgrade", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
 	r.AdmissionMap.Store(rollingUpgrade.NamespacedName(), scalingGroupName)
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
+	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
 
 	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
 	if err := r.Cloud.Discover(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		// Set prometheus metric cr_status_failed
+		common.SetMetricRollupFailed(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
 
 	// process node rotation
 	if err := r.RotateNodes(rollingUpgrade); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		// Set prometheus metric cr_status_failed
+		common.SetMetricRollupFailed(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
 

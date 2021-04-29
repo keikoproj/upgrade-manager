@@ -1,38 +1,55 @@
 package common
 
 import (
-	"github.com/keikoproj/upgrade-manager/controllers/common/log"
-	"github.com/prometheus/client_golang/prometheus"
 	"reflect"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"strings"
 	"time"
+
+	"github.com/keikoproj/upgrade-manager/controllers/common/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-//All cluster level node upgrade statistics
+var (
+	metricNamespace = "upgrade_manager_v2"
 
-var nodeRotationTotal = prometheus.NewHistogram(
-	prometheus.HistogramOpts{
-		Namespace: "node",
-		Name:      "rotation_total_seconds",
-		Help:      "Node rotation total",
-		Buckets: []float64{
-			10.0,
-			30.0,
-			60.0,
-			90.0,
-			120.0,
-			180.0,
-			300.0,
-			600.0,
-			900.0,
+	//All cluster level node upgrade statistics
+	nodeRotationTotal = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "node_rotation_total_seconds",
+			Help:      "Node rotation total",
+			Buckets: []float64{
+				10.0,
+				30.0,
+				60.0,
+				90.0,
+				120.0,
+				180.0,
+				300.0,
+				600.0,
+				900.0,
+			},
+		})
+
+	stepSummaries = make(map[string]map[string]prometheus.Summary)
+
+	CRStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "resource_status",
+			Help:      "Rollup CR statistics, partitioned by name.",
 		},
-	})
-
-var stepSummaries = make(map[string]map[string]prometheus.Summary)
+		[]string{
+			// name of the CR
+			"resource_name",
+		},
+	)
+)
 
 func InitMetrics() {
 	metrics.Registry.MustRegister(nodeRotationTotal)
+	metrics.Registry.MustRegister(CRStatus)
 }
 
 // Add rolling update step duration when the step is completed
@@ -52,8 +69,8 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		if s, ok := steps[stepName]; !ok {
 			summary = prometheus.NewSummary(
 				prometheus.SummaryOpts{
-					Namespace:   "node",
-					Name:        stepName + "_seconds",
+					Namespace:   metricNamespace,
+					Name:        "node_" + stepName + "_seconds",
 					Help:        "Summary for node " + stepName,
 					ConstLabels: prometheus.Labels{"group": groupName},
 				})
@@ -71,4 +88,16 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		}
 		summary.Observe(duration.Seconds())
 	}
+}
+
+func SetMetricRollupInitOrRunning(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(0)
+}
+
+func SetMetricRollupCompleted(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(1)
+}
+
+func SetMetricRollupFailed(ruName string) {
+	CRStatus.WithLabelValues(ruName).Set(-1)
 }
