@@ -3,6 +3,7 @@ package common
 import (
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/keikoproj/upgrade-manager/controllers/common/log"
@@ -34,6 +35,8 @@ var (
 
 	stepSummaries = make(map[string]map[string]prometheus.Summary)
 
+	stepSumMutex = sync.Mutex{}
+
 	CRStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -60,7 +63,9 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		var steps map[string]prometheus.Summary
 		if m, ok := stepSummaries[groupName]; !ok {
 			steps = make(map[string]prometheus.Summary)
+			stepSumMutex.Lock()
 			stepSummaries[groupName] = steps
+			stepSumMutex.Unlock()
 		} else {
 			steps = m
 		}
@@ -82,7 +87,9 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 					log.Errorf("register summary error, group: %s, step: %s, %v", groupName, stepName, err)
 				}
 			}
+			stepSumMutex.Lock()
 			steps[stepName] = summary
+			stepSumMutex.Unlock()
 		} else {
 			summary = s
 		}
