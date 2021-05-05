@@ -1,13 +1,12 @@
 package common
 
 import (
-	"reflect"
-	"strings"
-	"time"
-
 	"github.com/keikoproj/upgrade-manager/controllers/common/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"strings"
+	"time"
 )
 
 var (
