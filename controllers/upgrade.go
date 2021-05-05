@@ -24,6 +24,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/go-logr/logr"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
@@ -45,8 +46,17 @@ type DrainManager struct {
 	DrainGroup  *sync.WaitGroup `json:"-"`
 }
 
+type RollingUpgradeContext struct {
+	logr.Logger
+	ScriptRunner     ScriptRunner
+	Auth             *RollingUpgradeAuthenticator
+	Cloud            *DiscoveredState
+	DrainGroupMapper sync.Map
+	DrainErrorMapper sync.Map
+}
+
 // TODO: main node rotation logic
-func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingUpgrade) error {
+func (r *RollingUpgradeContext) RotateNodes(rollingUpgrade *v1alpha1.RollingUpgrade) error {
 	var (
 		lastTerminationTime = rollingUpgrade.LastNodeTerminationTime()
 		nodeInterval        = rollingUpgrade.NodeIntervalSeconds()
@@ -98,7 +108,7 @@ func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingU
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.RollingUpgrade, batch []*autoscaling.Instance) (bool, error) {
+func (r *RollingUpgradeContext) ReplaceNodeBatch(rollingUpgrade *v1alpha1.RollingUpgrade, batch []*autoscaling.Instance) (bool, error) {
 	var (
 		mode         = rollingUpgrade.StrategyMode()
 		drainManager = &DrainManager{}
@@ -301,7 +311,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 	return true, nil
 }
 
-func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
+func (r *RollingUpgradeContext) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
 	var (
 		batchSize  = rollingUpgrade.MaxUnavailable()
 		totalNodes = len(scalingGroup.Instances)
@@ -367,7 +377,7 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	return targets
 }
 
-func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance) bool {
+func (r *RollingUpgradeContext) IsInstanceDrifted(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance) bool {
 
 	var (
 		scalingGroupName = rollingUpgrade.ScalingGroupName()
@@ -450,8 +460,9 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 	return false
 }
 
-func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
+func (r *RollingUpgradeContext) IsScalingGroupDrifted(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
 	r.Info("checking if rolling upgrade is completed", "name", rollingUpgrade.NamespacedName())
+
 	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
 		if r.IsInstanceDrifted(rollingUpgrade, instance) {
@@ -461,7 +472,7 @@ func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha
 	return false
 }
 
-func (r *RollingUpgradeReconciler) DesiredNodesReady(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
+func (r *RollingUpgradeContext) DesiredNodesReady(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
 	var (
 		scalingGroup     = awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 		desiredInstances = aws.Int64Value(scalingGroup.DesiredCapacity)
