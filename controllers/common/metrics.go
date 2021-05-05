@@ -1,17 +1,16 @@
 package common
 
 import (
-	"reflect"
-	"strings"
-	"time"
-
 	"github.com/keikoproj/upgrade-manager/controllers/common/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"strings"
+	"time"
 )
 
 var (
-	metricNamespace = "upgrade_manager_v2"
+	metricNamespace = "upgrade_manager"
 
 	//All cluster level node upgrade statistics
 	nodeRotationTotal = prometheus.NewHistogram(
@@ -90,14 +89,14 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 	}
 }
 
-func SetRollupInitOrRunningStatus(ruName string) {
+func SetMetricRollupInitOrRunning(ruName string) {
 	CRStatus.WithLabelValues(ruName).Set(0)
 }
 
-func SetRollupCompletedStatus(ruName string) {
+func SetMetricRollupCompleted(ruName string) {
 	CRStatus.WithLabelValues(ruName).Set(1)
 }
 
-func SetRollupFailedStatus(ruName string) {
+func SetMetricRollupFailed(ruName string) {
 	CRStatus.WithLabelValues(ruName).Set(-1)
 }

@@ -124,7 +124,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	r.Info("admitted new rollingupgrade", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
 	r.AdmissionMap.Store(rollingUpgrade.NamespacedName(), scalingGroupName)
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
-	common.SetRollupInitOrRunningStatus(rollingUpgrade.Name)
+	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
 
 	rollupCtx := &RollingUpgradeContext{
 		Logger:       r.Logger,
@@ -136,7 +136,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		r.Info("failed to discover the cloud", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		// Set prometheus metric cr_status_failed
-		common.SetRollupFailedStatus(rollingUpgrade.Name)
+		common.SetMetricRollupFailed(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
 
@@ -144,7 +144,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := rollupCtx.RotateNodes(rollingUpgrade); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		// Set prometheus metric cr_status_failed
-		common.SetRollupFailedStatus(rollingUpgrade.Name)
+		common.SetMetricRollupFailed(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
 
