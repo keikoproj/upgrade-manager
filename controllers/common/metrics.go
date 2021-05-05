@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	metricNamespace = "upgrade_manager_v2"
+	metricNamespace = "upgrade_manager"
 
 	//All cluster level node upgrade statistics
 	nodeRotationTotal = prometheus.NewHistogram(
