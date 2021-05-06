@@ -35,7 +35,8 @@ func TestListClusterNodes(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		actual, err := test.Reconciler.Auth.ListClusterNodes()
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		actual, err := rollupCtx.Auth.ListClusterNodes()
 		expected := createNodeList()
 		if err != nil || !reflect.DeepEqual(actual, expected) {
 			t.Errorf("ListClusterNodes fail %v", err)
@@ -69,11 +70,12 @@ func TestDrainNode(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		err := test.Reconciler.Auth.DrainNode(
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		err := rollupCtx.Auth.DrainNode(
 			test.Node,
 			time.Duration(test.RollingUpgrade.PostDrainDelaySeconds()),
 			test.RollingUpgrade.DrainTimeout(),
-			test.Reconciler.Auth.Kubernetes,
+			rollupCtx.Auth.Kubernetes,
 		)
 		if (test.ExpectError && err == nil) || (!test.ExpectError && err != nil) {
 			t.Errorf("Test Description: %s \n expected error(bool): %v, Actual err: %v", test.TestDescription, test.ExpectError, err)
@@ -135,8 +137,9 @@ func TestRunCordonOrUncordon(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
 		helper := &drain.Helper{
-			Client:              test.Reconciler.Auth.Kubernetes,
+			Client:              rollupCtx.Auth.Kubernetes,
 			Force:               true,
 			GracePeriodSeconds:  -1,
 			IgnoreAllDaemonSets: true,
@@ -188,8 +191,9 @@ func TestRunDrainNode(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
 		helper := &drain.Helper{
-			Client:              test.Reconciler.Auth.Kubernetes,
+			Client:              rollupCtx.Auth.Kubernetes,
 			Force:               true,
 			GracePeriodSeconds:  -1,
 			IgnoreAllDaemonSets: true,
@@ -237,8 +241,9 @@ func TestIsInstanceDrifted(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test.Reconciler.Cloud.ScalingGroups = createASGs()
-		actualValue := test.Reconciler.IsInstanceDrifted(test.RollingUpgrade, test.Instance)
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.Cloud.ScalingGroups = createASGs()
+		actualValue := rollupCtx.IsInstanceDrifted(test.RollingUpgrade, test.Instance)
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
 		}
@@ -273,10 +278,11 @@ func TestIsScalingGroupDrifted(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test.Reconciler.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
-		test.Reconciler.Auth.AmazonClientSet.AsgClient = test.AsgClient
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
-		actualValue := test.Reconciler.IsScalingGroupDrifted(test.RollingUpgrade)
+		actualValue := rollupCtx.IsScalingGroupDrifted(test.RollingUpgrade)
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
 		}
@@ -315,10 +321,11 @@ func TestRotateNodes(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test.Reconciler.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
-		test.Reconciler.Auth.AmazonClientSet.AsgClient = test.AsgClient
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
-		err := test.Reconciler.RotateNodes(test.RollingUpgrade)
+		err := rollupCtx.RotateNodes(test.RollingUpgrade)
 		if err != nil {
 			t.Errorf("Test Description: \n expected value: nil, actual value: %v", err)
 		}
@@ -394,11 +401,12 @@ func TestDesiredNodesReady(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test.Reconciler.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
-		test.Reconciler.Cloud.ClusterNodes = test.ClusterNodes
-		test.Reconciler.Auth.AmazonClientSet.AsgClient = test.AsgClient
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
-		actualValue := test.Reconciler.DesiredNodesReady(test.RollingUpgrade)
+		actualValue := rollupCtx.DesiredNodesReady(test.RollingUpgrade)
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
 		}
