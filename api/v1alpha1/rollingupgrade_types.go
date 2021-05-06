@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/keikoproj/upgrade-manager/controllers/common"
@@ -71,6 +72,14 @@ type NodeStepDuration struct {
 	NodeName  string             `json:"nodeName,omitempty"`
 	StepName  RollingUpgradeStep `json:"stepName,omitempty"`
 	Duration  metav1.Duration    `json:"duration,omitempty"`
+}
+
+// https://qvault.io/golang/golang-mutex/
+
+type NodeStepMap struct {
+	mutex *sync.Mutex
+
+	nodeSteps map[string][]NodeStepDuration
 }
 
 // Node In-processing
@@ -137,8 +146,7 @@ func (s *RollingUpgradeStatus) AddNodeStepDuration(nsd NodeStepDuration) {
 
 // Node turns onto step
 func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProcessing,
-	nodeSteps map[string][]NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep) {
-
+	nodeSteps map[string][]NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep, mutex *sync.Mutex) {
 	var inProcessingNode *NodeInProcessing
 	if n, ok := InProcessingNodes[nodeName]; !ok {
 		inProcessingNode = &NodeInProcessing{
@@ -159,8 +167,9 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 		var total = inProcessingNode.StepEndTime.Sub(inProcessingNode.UpgradeStartTime.Time)
 		duration1 := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
 		duration2 := s.ToStepDuration(groupName, nodeName, NodeRotationTotal, total)
-		s.addNodeStepDuration(nodeSteps, nodeName, duration1)
-		s.addNodeStepDuration(nodeSteps, nodeName, duration2)
+    
+		s.addNodeStepDuration(nodeSteps, nodeName, duration1, mutex)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration2, mutex)
 	} else if inProcessingNode.StepName != stepName { //Still same step
 		var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
 		var newOrder = NodeRotationStepOrders[stepName]
@@ -168,20 +177,26 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 			stepDuration := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
 			inProcessingNode.StepStartTime = metav1.Now()
 			inProcessingNode.StepName = stepName
-			s.addNodeStepDuration(nodeSteps, nodeName, stepDuration)
+
+			s.addNodeStepDuration(nodeSteps, nodeName, stepDuration, mutex)
 		}
 	}
 }
 
-func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDuration, nodeName string, nsd NodeStepDuration) {
+
+func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDuration, nodeName string, nsd NodeStepDuration, mutex *sync.Mutex) {
+	mutex.Lock()
 	if stepDuration, ok := steps[nodeName]; !ok {
 		steps[nodeName] = []NodeStepDuration{
+
 			nsd,
 		}
 	} else {
 		stepDuration = append(stepDuration, nsd)
-		steps[nodeName] = stepDuration
+		m.nodeSteps[nodeName] = stepDuration
 	}
+
+	mutex.Unlock()
 }
 
 func (s *RollingUpgradeStatus) SetCondition(cond RollingUpgradeCondition) {
