@@ -55,10 +55,11 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 
 func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeContext {
 	return &RollingUpgradeContext{
-		Logger:       r.Logger,
-		Auth:         r.Auth,
-		ScriptRunner: r.ScriptRunner,
-		Cloud:        NewDiscoveredState(r.Auth, r.Logger),
+		Logger:         r.Logger,
+		Auth:           r.Auth,
+		ScriptRunner:   r.ScriptRunner,
+		Cloud:          NewDiscoveredState(r.Auth, r.Logger),
+		RollingUpgrade: createRollingUpgrade(),
 	}
 
 }
