@@ -40,16 +40,13 @@ import (
 type RollingUpgradeReconciler struct {
 	client.Client
 	logr.Logger
-	Scheme           *runtime.Scheme
-	AdmissionMap     sync.Map
-	CacheConfig      *cache.Config
-	Auth             *RollingUpgradeAuthenticator
-	Cloud            *DiscoveredState
-	EventWriter      *kubeprovider.EventWriter
-	maxParallel      int
-	ScriptRunner     ScriptRunner
-	DrainGroupMapper sync.Map
-	DrainErrorMapper sync.Map
+	Scheme       *runtime.Scheme
+	AdmissionMap sync.Map
+	CacheConfig  *cache.Config
+	EventWriter  *kubeprovider.EventWriter
+	maxParallel  int
+	ScriptRunner ScriptRunner
+	Auth         *RollingUpgradeAuthenticator
 }
 
 type RollingUpgradeAuthenticator struct {
@@ -129,8 +126,15 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
 	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
 
-	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
-	if err := r.Cloud.Discover(); err != nil {
+	rollupCtx := &RollingUpgradeContext{
+		Logger:         r.Logger,
+		Auth:           r.Auth,
+		ScriptRunner:   r.ScriptRunner,
+		RollingUpgrade: rollingUpgrade,
+	}
+	rollupCtx.Cloud = NewDiscoveredState(rollupCtx.Auth, rollupCtx.Logger)
+	if err := rollupCtx.Cloud.Discover(); err != nil {
+		r.Info("failed to discover the cloud", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		// Set prometheus metric cr_status_failed
 		common.SetMetricRollupFailed(rollingUpgrade.Name)
@@ -138,7 +142,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// process node rotation
-	if err := r.RotateNodes(rollingUpgrade); err != nil {
+	if err := rollupCtx.RotateNodes(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		// Set prometheus metric cr_status_failed
 		common.SetMetricRollupFailed(rollingUpgrade.Name)
