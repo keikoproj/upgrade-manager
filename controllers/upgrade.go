@@ -24,6 +24,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/go-logr/logr"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
@@ -45,70 +46,186 @@ type DrainManager struct {
 	DrainGroup  *sync.WaitGroup `json:"-"`
 }
 
+type RollingUpgradeContext struct {
+	logr.Logger
+	ScriptRunner     ScriptRunner
+	Auth             *RollingUpgradeAuthenticator
+	Cloud            *DiscoveredState
+	DrainGroupMapper sync.Map
+	DrainErrorMapper sync.Map
+	RollingUpgrade   *v1alpha1.RollingUpgrade
+
+	metricsMutex *sync.Mutex
+}
+
 // TODO: main node rotation logic
-func (r *RollingUpgradeReconciler) RotateNodes(rollingUpgrade *v1alpha1.RollingUpgrade) error {
+func (r *RollingUpgradeContext) RotateNodes() error {
 	var (
-		lastTerminationTime = rollingUpgrade.LastNodeTerminationTime()
-		nodeInterval        = rollingUpgrade.NodeIntervalSeconds()
-		lastDrainTime       = rollingUpgrade.LastNodeDrainTime()
-		drainInterval       = rollingUpgrade.PostDrainDelaySeconds()
+		lastTerminationTime = r.RollingUpgrade.LastNodeTerminationTime()
+		nodeInterval        = r.RollingUpgrade.NodeIntervalSeconds()
+		lastDrainTime       = r.RollingUpgrade.LastNodeDrainTime()
+		drainInterval       = r.RollingUpgrade.PostDrainDelaySeconds()
 	)
-	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
-	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
+	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
 
 	// set status start time
-	if rollingUpgrade.StartTime() == "" {
-		rollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
+	if r.RollingUpgrade.StartTime() == "" {
+		r.RollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
 	}
 
 	if !lastTerminationTime.IsZero() || !lastDrainTime.IsZero() {
 
 		// Check if we are still waiting on a termination delay
 		if time.Since(lastTerminationTime.Time).Seconds() < float64(nodeInterval) {
-			r.Info("reconcile requeue due to termination interval wait", "name", rollingUpgrade.NamespacedName())
+			r.Info("reconcile requeue due to termination interval wait", "name", r.RollingUpgrade.NamespacedName())
 			return nil
 		}
 
 		// Check if we are still waiting on a drain delay
 		if time.Since(lastDrainTime.Time).Seconds() < float64(drainInterval) {
-			r.Info("reconcile requeue due to drain interval wait", "name", rollingUpgrade.NamespacedName())
+			r.Info("reconcile requeue due to drain interval wait", "name", r.RollingUpgrade.NamespacedName())
 			return nil
 		}
 	}
 
 	var (
-		scalingGroup = awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+		scalingGroup = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	)
 
-	rollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
+	r.RollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
 
 	// check if all instances are rotated.
-	if !r.IsScalingGroupDrifted(rollingUpgrade) {
-		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
+	if !r.IsScalingGroupDrifted() {
+		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
 		// Set prometheus metric cr_status_completed
-		common.SetMetricRollupCompleted(rollingUpgrade.Name)
+		common.SetMetricRollupCompleted(r.RollingUpgrade.Name)
 		return nil
 	}
 
-	rotationTargets := r.SelectTargets(rollingUpgrade, scalingGroup)
-	if ok, err := r.ReplaceNodeBatch(rollingUpgrade, rotationTargets); !ok {
+	rotationTargets := r.SelectTargets(scalingGroup)
+	if ok, err := r.ReplaceNodeBatch(rotationTargets); !ok {
 		return err
 	}
 
 	return nil
 }
 
-func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.RollingUpgrade, batch []*autoscaling.Instance) (bool, error) {
+// Update last batch nodes
+func (s *RollingUpgradeContext) UpdateLastBatchNodes(batchNodes map[string]*v1alpha1.NodeInProcessing) {
+	keys := make([]string, 0, len(batchNodes))
+	for k := range batchNodes {
+		keys = append(keys, k)
+	}
+	s.RollingUpgrade.Status.LastBatchNodes = keys
+}
+
+// Update Node Statistics
+func (s *RollingUpgradeContext) UpdateStatistics(nodeSteps map[string][]v1alpha1.NodeStepDuration) {
+	for _, v := range nodeSteps {
+		for _, step := range v {
+			s.AddNodeStepDuration(step)
+		}
+	}
+}
+
+// Add one step duration
+func (s *RollingUpgradeContext) ToStepDuration(groupName, nodeName string, stepName v1alpha1.RollingUpgradeStep, duration time.Duration) v1alpha1.NodeStepDuration {
+	//Add to system level statistics
+	common.AddStepDuration(groupName, string(stepName), duration)
+	return v1alpha1.NodeStepDuration{
+		GroupName: groupName,
+		NodeName:  nodeName,
+		StepName:  stepName,
+		Duration: metav1.Duration{
+			Duration: duration,
+		},
+	}
+}
+
+// Add one step duration
+func (s *RollingUpgradeContext) AddNodeStepDuration(nsd v1alpha1.NodeStepDuration) {
+	// if step exists, add count and sum, otherwise append
+	for _, s := range s.RollingUpgrade.Status.Statistics {
+		if s.StepName == nsd.StepName {
+			s.DurationSum = metav1.Duration{
+				Duration: s.DurationSum.Duration + nsd.Duration.Duration,
+			}
+			s.DurationCount += 1
+			return
+		}
+	}
+	s.RollingUpgrade.Status.Statistics = append(s.RollingUpgrade.Status.Statistics, &v1alpha1.RollingUpgradeStatistics{
+		StepName: nsd.StepName,
+		DurationSum: metav1.Duration{
+			Duration: nsd.Duration.Duration,
+		},
+		DurationCount: 1,
+	})
+}
+
+// Node turns onto step
+func (s *RollingUpgradeContext) NodeStep(InProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	nodeSteps map[string][]v1alpha1.NodeStepDuration, groupName, nodeName string, stepName v1alpha1.RollingUpgradeStep) {
+
+	var inProcessingNode *v1alpha1.NodeInProcessing
+	if n, ok := InProcessingNodes[nodeName]; !ok {
+		inProcessingNode = &v1alpha1.NodeInProcessing{
+			NodeName:         nodeName,
+			StepName:         stepName,
+			UpgradeStartTime: metav1.Now(),
+			StepStartTime:    metav1.Now(),
+		}
+		InProcessingNodes[nodeName] = inProcessingNode
+	} else {
+		inProcessingNode = n
+	}
+
+	inProcessingNode.StepEndTime = metav1.Now()
+	var duration = inProcessingNode.StepEndTime.Sub(inProcessingNode.StepStartTime.Time)
+	if stepName == v1alpha1.NodeRotationCompleted {
+		//Add overall and remove the node from in-processing map
+		var total = inProcessingNode.StepEndTime.Sub(inProcessingNode.UpgradeStartTime.Time)
+		duration1 := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
+		duration2 := s.ToStepDuration(groupName, nodeName, v1alpha1.NodeRotationTotal, total)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration1)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration2)
+	} else if inProcessingNode.StepName != stepName { //Still same step
+		var oldOrder = v1alpha1.NodeRotationStepOrders[inProcessingNode.StepName]
+		var newOrder = v1alpha1.NodeRotationStepOrders[stepName]
+		if newOrder > oldOrder { //Make sure the steps running in order
+			stepDuration := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
+			inProcessingNode.StepStartTime = metav1.Now()
+			inProcessingNode.StepName = stepName
+			s.addNodeStepDuration(nodeSteps, nodeName, stepDuration)
+		}
+	}
+}
+
+func (s *RollingUpgradeContext) addNodeStepDuration(steps map[string][]v1alpha1.NodeStepDuration, nodeName string, nsd v1alpha1.NodeStepDuration) {
+	s.metricsMutex.Lock()
+	if stepDuration, ok := steps[nodeName]; !ok {
+		steps[nodeName] = []v1alpha1.NodeStepDuration{
+			nsd,
+		}
+	} else {
+		stepDuration = append(stepDuration, nsd)
+		steps[nodeName] = stepDuration
+	}
+	s.metricsMutex.Unlock()
+}
+
+func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) (bool, error) {
 	var (
-		mode         = rollingUpgrade.StrategyMode()
+		mode         = r.RollingUpgrade.StrategyMode()
 		drainManager = &DrainManager{}
 	)
 
-	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDs(batch), "name", rollingUpgrade.NamespacedName())
+	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
 
 	// load the appropriate waitGroup and Error channel for the DrainManager from reconciler object
-	drainGroup, _ := r.DrainGroupMapper.LoadOrStore(rollingUpgrade.NamespacedName(), &sync.WaitGroup{})
-	drainErrs, _ := r.DrainErrorMapper.LoadOrStore(rollingUpgrade.NamespacedName(), make(chan error))
+	drainGroup, _ := r.DrainGroupMapper.LoadOrStore(r.RollingUpgrade.NamespacedName(), &sync.WaitGroup{})
+	drainErrs, _ := r.DrainErrorMapper.LoadOrStore(r.RollingUpgrade.NamespacedName(), make(chan error))
 	drainManager = &DrainManager{
 		DrainErrors: drainErrs.(chan error),
 		DrainGroup:  drainGroup.(*sync.WaitGroup),
@@ -116,7 +233,6 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
-	mutex := &sync.Mutex{}
 
 	inProcessingNodes := make(map[string]*v1alpha1.NodeInProcessing)
 
@@ -129,31 +245,31 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				nodeName   = node.GetName()
 			)
 			//Add statistics
-			rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff, mutex)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 
 			// Add in-progress tag
 			if err := r.Auth.TagEC2instance(instanceID, instanceStateTagKey, inProgressTagValue); err != nil {
-				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
+				r.Error(err, "failed to set instance tag", "name", r.RollingUpgrade.NamespacedName(), "instance", instanceID)
 				return false, err
 			}
 
 			// Standby
 			if aws.StringValue(target.LifecycleState) == autoscaling.LifecycleStateInService {
-				r.Info("setting instance to stand-by", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
-				if err := r.Auth.SetInstanceStandBy(target, rollingUpgrade.Spec.AsgName); err != nil {
+				r.Info("setting instance to stand-by", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				if err := r.Auth.SetInstanceStandBy(target, r.RollingUpgrade.Spec.AsgName); err != nil {
 					// failure to set instance to standby are retryable
-					r.Info("failed to set instance to stand-by", "instance", instanceID, "message", err.Error(), "name", rollingUpgrade.NamespacedName())
+					r.Info("failed to set instance to stand-by", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 					return true, nil
 				}
 			}
 
 			// Turns onto desired nodes
-			rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady, mutex)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady)
 
 			// Wait for desired nodes
-			r.Info("waiting for desired nodes", "name", rollingUpgrade.NamespacedName())
-			if !r.DesiredNodesReady(rollingUpgrade) {
-				r.Info("new node is yet to join the cluster", "name", rollingUpgrade.NamespacedName())
+			r.Info("waiting for desired nodes", "name", r.RollingUpgrade.NamespacedName())
+			if !r.DesiredNodesReady() {
+				r.Info("new node is yet to join the cluster", "name", r.RollingUpgrade.NamespacedName())
 				return true, nil
 			}
 		}
@@ -166,11 +282,11 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				nodeName   = node.GetName()
 			)
 			//Add statistics
-			rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff, mutex)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 
 			// Add in-progress tag
 			if err := r.Auth.TagEC2instance(instanceID, instanceStateTagKey, inProgressTagValue); err != nil {
-				r.Error(err, "failed to set instance tag", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
+				r.Error(err, "failed to set instance tag", "name", r.RollingUpgrade.NamespacedName(), "instance", instanceID)
 				return false, err
 			}
 		}
@@ -185,7 +301,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				scriptTarget = ScriptTarget{
 					InstanceID:    instanceID,
 					NodeName:      nodeName,
-					UpgradeObject: rollingUpgrade,
+					UpgradeObject: r.RollingUpgrade,
 				}
 			)
 			drainManager.DrainGroup.Add(1)
@@ -194,7 +310,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				defer drainManager.DrainGroup.Done()
 
 				// Turns onto PreDrain script
-				rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript, mutex)
+				r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
 
 				// Predrain script
 				if err := r.ScriptRunner.PreDrain(scriptTarget); err != nil {
@@ -203,18 +319,18 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 				// Issue drain concurrently - set lastDrainTime
 				if node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes); !reflect.DeepEqual(node, corev1.Node{}) {
-					r.Info("draining the node", "instance", instanceID, "node name", node.Name, "name", rollingUpgrade.NamespacedName())
+					r.Info("draining the node", "instance", instanceID, "node name", node.Name, "name", r.RollingUpgrade.NamespacedName())
 
 					// Turns onto NodeRotationDrain
-					rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain, mutex)
+					r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
-					if err := r.Auth.DrainNode(&node, time.Duration(rollingUpgrade.PostDrainDelaySeconds()), rollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
+					if err := r.Auth.DrainNode(&node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
 						drainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
 					}
 				}
 
 				// Turns onto NodeRotationPostdrainScript
-				rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript, mutex)
+				r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript)
 
 				// post drain script
 				if err := r.ScriptRunner.PostDrain(scriptTarget); err != nil {
@@ -222,7 +338,7 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				}
 
 				// Turns onto NodeRotationPostWait
-				rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait, mutex)
+				r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait)
 
 				// Post Wait Script
 				if err := r.ScriptRunner.PostWait(scriptTarget); err != nil {
@@ -240,16 +356,16 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 
 	select {
 	case err := <-drainManager.DrainErrors:
-		rollingUpgrade.Status.UpdateStatistics(nodeSteps)
-		rollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateStatistics(nodeSteps)
+		r.UpdateLastBatchNodes(inProcessingNodes)
 
-		r.Error(err, "failed to rotate the node", "name", rollingUpgrade.NamespacedName())
+		r.Error(err, "failed to rotate the node", "name", r.RollingUpgrade.NamespacedName())
 		return false, err
 
 	case <-timeout:
 		// goroutines completed, terminate and requeue
-		rollingUpgrade.SetLastNodeDrainTime(metav1.Time{Time: time.Now()})
-		r.Info("instances drained successfully, terminating", "name", rollingUpgrade.NamespacedName())
+		r.RollingUpgrade.SetLastNodeDrainTime(metav1.Time{Time: time.Now()})
+		r.Info("instances drained successfully, terminating", "name", r.RollingUpgrade.NamespacedName())
 		for _, target := range batch {
 			var (
 				instanceID   = aws.StringValue(target.InstanceId)
@@ -258,25 +374,25 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 				scriptTarget = ScriptTarget{
 					InstanceID:    instanceID,
 					NodeName:      nodeName,
-					UpgradeObject: rollingUpgrade,
+					UpgradeObject: r.RollingUpgrade,
 				}
 			)
 
 			// Turns onto NodeRotationTerminate
-			rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate, mutex)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate)
 
 			// Terminate - set lastTerminateTime
-			r.Info("terminating instance", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("terminating instance", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 
 			if err := r.Auth.TerminateInstance(target); err != nil {
 				// terminate failures are retryable
-				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", rollingUpgrade.NamespacedName())
+				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 				return true, nil
 			}
-			rollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
+			r.RollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
 
 			// Turns onto NodeRotationTerminate
-			rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate, mutex)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate)
 
 			// Post Terminate Script
 			if err := r.ScriptRunner.PostTerminate(scriptTarget); err != nil {
@@ -284,27 +400,27 @@ func (r *RollingUpgradeReconciler) ReplaceNodeBatch(rollingUpgrade *v1alpha1.Rol
 			}
 
 			// Turns onto NodeRotationCompleted
-			rollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, rollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, mutex)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
 		}
 
-		rollingUpgrade.Status.UpdateStatistics(nodeSteps)
-		rollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateStatistics(nodeSteps)
+		r.UpdateLastBatchNodes(inProcessingNodes)
 
 	case <-time.After(DefaultWaitGroupTimeout):
 		// goroutines timed out - requeue
 
-		rollingUpgrade.Status.UpdateStatistics(nodeSteps)
-		rollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateStatistics(nodeSteps)
+		r.UpdateLastBatchNodes(inProcessingNodes)
 
-		r.Info("instances are still draining", "name", rollingUpgrade.NamespacedName())
+		r.Info("instances are still draining", "name", r.RollingUpgrade.NamespacedName())
 		return true, nil
 	}
 	return true, nil
 }
 
-func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.RollingUpgrade, scalingGroup *autoscaling.Group) []*autoscaling.Instance {
+func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) []*autoscaling.Instance {
 	var (
-		batchSize  = rollingUpgrade.MaxUnavailable()
+		batchSize  = r.RollingUpgrade.MaxUnavailable()
 		totalNodes = len(scalingGroup.Instances)
 		targets    = make([]*autoscaling.Instance, 0)
 	)
@@ -331,9 +447,9 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	}
 
 	// select via strategy if there are no in-progress instances
-	if rollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
+	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+			if r.IsInstanceDrifted(instance) {
 				targets = append(targets, instance)
 			}
 		}
@@ -342,9 +458,9 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 		}
 		return targets[:unavailableInt]
 
-	} else if rollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
+	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(rollingUpgrade, instance) {
+			if r.IsInstanceDrifted(instance) {
 				targets = append(targets, instance)
 			}
 		}
@@ -368,10 +484,10 @@ func (r *RollingUpgradeReconciler) SelectTargets(rollingUpgrade *v1alpha1.Rollin
 	return targets
 }
 
-func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.RollingUpgrade, instance *autoscaling.Instance) bool {
+func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance) bool {
 
 	var (
-		scalingGroupName = rollingUpgrade.ScalingGroupName()
+		scalingGroupName = r.RollingUpgrade.ScalingGroupName()
 		scalingGroup     = awsprovider.SelectScalingGroup(scalingGroupName, r.Cloud.ScalingGroups)
 		instanceID       = aws.StringValue(instance.InstanceId)
 	)
@@ -381,32 +497,32 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 		return false
 	}
 	// check if there is atleast one node that meets the force-referesh criteria
-	if rollingUpgrade.IsForceRefresh() {
+	if r.RollingUpgrade.IsForceRefresh() {
 		var (
 			node                = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 			nodeCreationTime    = node.CreationTimestamp.Time
-			upgradeCreationTime = rollingUpgrade.CreationTimestamp.Time
+			upgradeCreationTime = r.RollingUpgrade.CreationTimestamp.Time
 		)
 		if nodeCreationTime.Before(upgradeCreationTime) {
-			r.Info("rolling upgrade configured for forced refresh", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("rolling upgrade configured for forced refresh", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	}
 
 	if scalingGroup.LaunchConfigurationName != nil {
 		if instance.LaunchConfigurationName == nil {
-			r.Info("launch configuration name differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch configuration name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 		launchConfigName := aws.StringValue(scalingGroup.LaunchConfigurationName)
 		instanceConfigName := aws.StringValue(instance.LaunchConfigurationName)
 		if !strings.EqualFold(launchConfigName, instanceConfigName) {
-			r.Info("launch configuration name differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch configuration name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	} else if scalingGroup.LaunchTemplate != nil {
 		if instance.LaunchTemplate == nil {
-			r.Info("launch template name differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -418,16 +534,16 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
-			r.Info("launch template name differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
-			r.Info("launch template version differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch template version differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
 	} else if scalingGroup.MixedInstancesPolicy != nil {
 		if instance.LaunchTemplate == nil {
-			r.Info("launch template name differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -439,32 +555,33 @@ func (r *RollingUpgradeReconciler) IsInstanceDrifted(rollingUpgrade *v1alpha1.Ro
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
-			r.Info("launch template name differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
-			r.Info("launch template version differs", "instance", instanceID, "name", rollingUpgrade.NamespacedName())
+			r.Info("launch template version differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	}
 
-	r.Info("node refresh not required", "name", rollingUpgrade.NamespacedName(), "instance", instanceID)
+	r.Info("node refresh not required", "name", r.RollingUpgrade.NamespacedName(), "instance", instanceID)
 	return false
 }
 
-func (r *RollingUpgradeReconciler) IsScalingGroupDrifted(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
-	r.Info("checking if rolling upgrade is completed", "name", rollingUpgrade.NamespacedName())
-	scalingGroup := awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+func (r *RollingUpgradeContext) IsScalingGroupDrifted() bool {
+	r.Info("checking if rolling upgrade is completed", "name", r.RollingUpgrade.NamespacedName())
+
+	scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
-		if r.IsInstanceDrifted(rollingUpgrade, instance) {
+		if r.IsInstanceDrifted(instance) {
 			return true
 		}
 	}
 	return false
 }
 
-func (r *RollingUpgradeReconciler) DesiredNodesReady(rollingUpgrade *v1alpha1.RollingUpgrade) bool {
+func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 	var (
-		scalingGroup     = awsprovider.SelectScalingGroup(rollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+		scalingGroup     = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 		desiredInstances = aws.Int64Value(scalingGroup.DesiredCapacity)
 		readyNodes       = 0
 	)
@@ -479,7 +596,7 @@ func (r *RollingUpgradeReconciler) DesiredNodesReady(rollingUpgrade *v1alpha1.Ro
 	if r.Cloud.ClusterNodes != nil && !reflect.DeepEqual(r.Cloud.ClusterNodes, &corev1.NodeList{}) {
 		for _, node := range r.Cloud.ClusterNodes.Items {
 			instanceID := kubeprovider.GetNodeInstanceID(node)
-			if common.ContainsEqualFold(inServiceInstances, instanceID) && kubeprovider.IsNodeReady(node) && kubeprovider.IsNodePassesReadinessGates(node, rollingUpgrade.Spec.ReadinessGates) {
+			if common.ContainsEqualFold(inServiceInstances, instanceID) && kubeprovider.IsNodeReady(node) && kubeprovider.IsNodePassesReadinessGates(node, r.RollingUpgrade.Spec.ReadinessGates) {
 				readyNodes++
 			}
 		}
