@@ -64,6 +64,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		lastDrainTime       = r.RollingUpgrade.LastNodeDrainTime()
 		drainInterval       = r.RollingUpgrade.PostDrainDelaySeconds()
 	)
+  
 	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
 	common.SetRollupInitOrRunningStatus(r.RollingUpgrade.Name)
 
