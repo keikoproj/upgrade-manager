@@ -17,6 +17,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/keikoproj/upgrade-manager/controllers/common"
@@ -187,7 +188,7 @@ func (s *RollingUpgradeStatus) AddNodeStepDuration(nsd NodeStepDuration) {
 
 // Node turns onto step
 func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProcessing,
-	nodeSteps map[string][]NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep) {
+	nodeSteps map[string][]NodeStepDuration, groupName, nodeName string, stepName RollingUpgradeStep, mutex *sync.Mutex) {
 
 	var inProcessingNode *NodeInProcessing
 	if n, ok := InProcessingNodes[nodeName]; !ok {
@@ -209,8 +210,8 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 		var total = inProcessingNode.StepEndTime.Sub(inProcessingNode.UpgradeStartTime.Time)
 		duration1 := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
 		duration2 := s.ToStepDuration(groupName, nodeName, NodeRotationTotal, total)
-		s.addNodeStepDuration(nodeSteps, nodeName, duration1)
-		s.addNodeStepDuration(nodeSteps, nodeName, duration2)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration1, mutex)
+		s.addNodeStepDuration(nodeSteps, nodeName, duration2, mutex)
 	} else if inProcessingNode.StepName != stepName { //Still same step
 		var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
 		var newOrder = NodeRotationStepOrders[stepName]
@@ -218,12 +219,13 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 			stepDuration := s.ToStepDuration(groupName, nodeName, inProcessingNode.StepName, duration)
 			inProcessingNode.StepStartTime = metav1.Now()
 			inProcessingNode.StepName = stepName
-			s.addNodeStepDuration(nodeSteps, nodeName, stepDuration)
+			s.addNodeStepDuration(nodeSteps, nodeName, stepDuration, mutex)
 		}
 	}
 }
 
-func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDuration, nodeName string, nsd NodeStepDuration) {
+func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDuration, nodeName string, nsd NodeStepDuration, mutex *sync.Mutex) {
+	mutex.Lock()
 	if stepDuration, ok := steps[nodeName]; !ok {
 		steps[nodeName] = []NodeStepDuration{
 			nsd,
@@ -232,6 +234,7 @@ func (s *RollingUpgradeStatus) addNodeStepDuration(steps map[string][]NodeStepDu
 		stepDuration = append(stepDuration, nsd)
 		steps[nodeName] = stepDuration
 	}
+	mutex.Unlock()
 }
 
 // Add one step duration
