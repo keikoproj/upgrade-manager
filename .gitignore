@@ -28,4 +28,3 @@ config/default/manager_image_patch.yaml-e
 .vscode/
 cover.html
 .DS_Store
-/api/v1alpha1/zz_generated.deepcopy.go
