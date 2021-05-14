@@ -2770,11 +2770,11 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil()) // don't expect errors.
 
 	// nodeName is empty when node isn't part of the cluster. It must skip drain and terminate.
-	err = rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode, nodeSteps, inProcessingNodes)
+	err = rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil()) // don't expect errors.
 
 }
@@ -2806,7 +2806,7 @@ func TestPreDrainFailureWhenIgnoreDrainFailuresSet(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.Not(gomega.BeNil())) // expect error, as the predrain failure shouldn't be masked when IgnoreDrainFailures is set.
 }
 func TestUpdateInstancesNotExists(t *testing.T) {
@@ -2856,7 +2856,7 @@ func TestUpdateInstancesNotExists(t *testing.T) {
 	instChan := make(chan error)
 	mockInstanceName1 := "foo1"
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
-	go rcRollingUpgrade.UpdateInstance(&ctx, ruObj, &instance1, &launchDefinition{launchConfigurationName: &lcName}, instChan, nodeSteps, inProcessingNodes)
+	go rcRollingUpgrade.UpdateInstance(&ctx, ruObj, &instance1, &launchDefinition{launchConfigurationName: &lcName}, instChan, nodeSteps, inProcessingNodes, mutex)
 	processCount := 0
 	select {
 	case <-ctx.Done():
