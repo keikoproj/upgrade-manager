@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"sync"
 	"testing"
 
 	"k8s.io/client-go/kubernetes/fake"
@@ -60,6 +61,7 @@ func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeCon
 		ScriptRunner:   r.ScriptRunner,
 		Cloud:          NewDiscoveredState(r.Auth, r.Logger),
 		RollingUpgrade: createRollingUpgrade(),
+		metricsMutex:   &sync.Mutex{},
 	}
 
 }
