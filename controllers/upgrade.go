@@ -140,7 +140,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 		// Standby (requeue if any instance was set to stand-by)
 		r.Info("setting batch to stand-by", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
-		if n, err := r.Auth.SetInstanceStandBy(batch, r.RollingUpgrade.Spec.AsgName); n > 0 {
+		if ok, err := r.Auth.SetInstanceStandBy(batch, r.RollingUpgrade.Spec.AsgName); ok {
 			if err != nil {
 				r.Info("failed to set batch to stand-by", "instances", awsprovider.GetInstanceIDs(batch), "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
