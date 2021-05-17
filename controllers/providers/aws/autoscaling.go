@@ -54,17 +54,23 @@ func (a *AmazonClientSet) TerminateInstance(instance *autoscaling.Instance) erro
 	return nil
 }
 
-func (a *AmazonClientSet) SetInstanceStandBy(instance *autoscaling.Instance, scalingGroupName string) error {
-	instanceID := aws.StringValue(instance.InstanceId)
-	input := &autoscaling.EnterStandbyInput{
-		AutoScalingGroupName:           aws.String(scalingGroupName),
-		InstanceIds:                    aws.StringSlice([]string{instanceID}),
-		ShouldDecrementDesiredCapacity: aws.Bool(false),
+func (a *AmazonClientSet) SetInstanceStandBy(instances []*autoscaling.Instance, scalingGroupName string) (bool, error) {
+	var instanceIDs []string
+	for _, instance := range instances {
+		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
+			instanceIDs = append(instanceIDs, aws.StringValue(instance.InstanceId))
+		}
+	}
+	if len(instanceIDs) > 0 {
+		input := &autoscaling.EnterStandbyInput{
+			AutoScalingGroupName:           aws.String(scalingGroupName),
+			InstanceIds:                    aws.StringSlice(instanceIDs),
+			ShouldDecrementDesiredCapacity: aws.Bool(false),
+		}
+		if _, err := a.AsgClient.EnterStandby(input); err != nil {
+			return true, err
+		}
 	}
 
-	if _, err := a.AsgClient.EnterStandby(input); err != nil {
-		return err
-	}
-
-	return nil
+	return false, nil
 }
