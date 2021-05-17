@@ -54,7 +54,7 @@ func (a *AmazonClientSet) TerminateInstance(instance *autoscaling.Instance) erro
 	return nil
 }
 
-func (a *AmazonClientSet) SetInstanceStandBy(instances []*autoscaling.Instance, scalingGroupName string) (int, error) {
+func (a *AmazonClientSet) SetInstanceStandBy(instances []*autoscaling.Instance, scalingGroupName string) (bool, error) {
 	var instanceIDs []string
 	for _, instance := range instances {
 		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
@@ -68,9 +68,9 @@ func (a *AmazonClientSet) SetInstanceStandBy(instances []*autoscaling.Instance, 
 			ShouldDecrementDesiredCapacity: aws.Bool(false),
 		}
 		if _, err := a.AsgClient.EnterStandby(input); err != nil {
-			return len(instanceIDs), err
+			return true, err
 		}
 	}
 
-	return len(instanceIDs), nil
+	return false, nil
 }
