@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
@@ -63,25 +62,16 @@ func (a *AmazonClientSet) DescribeTaggedInstanceIDs(tagKey, tagValue string) ([]
 	return instances, err
 }
 
-func (a *AmazonClientSet) TagEC2instance(instances []*autoscaling.Instance, tagKey, tagValue string) error {
-	var instanceIDs []string
-	for _, instance := range instances {
-		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
-			instanceIDs = append(instanceIDs, aws.StringValue(instance.InstanceId))
-		}
-	}
-	if len(instanceIDs) > 0 {
-		input := &ec2.CreateTagsInput{
-			Resources: aws.StringSlice(instanceIDs),
-			Tags: []*ec2.Tag{
-				{
-					Key:   aws.String(tagKey),
-					Value: aws.String(tagValue),
-				},
+func (a *AmazonClientSet) TagEC2instances(instanceIDs []string, tagKey, tagValue string) error {
+	input := &ec2.CreateTagsInput{
+		Resources: aws.StringSlice(instanceIDs),
+		Tags: []*ec2.Tag{
+			{
+				Key:   aws.String(tagKey),
+				Value: aws.String(tagValue),
 			},
-		}
-		_, err := a.Ec2Client.CreateTags(input)
-		return err
+		},
 	}
-	return nil
+	_, err := a.Ec2Client.CreateTags(input)
+	return err
 }
