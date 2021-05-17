@@ -128,23 +128,28 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				node       = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 				nodeName   = node.GetName()
 			)
-			//Add statistics
+			// Add statistics
 			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 		}
-		// Add in-progress tag
-		r.Info("setting batch to in-progress", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
-		if err := r.Auth.TagEC2instance(batch, instanceStateTagKey, inProgressTagValue); err != nil {
-			r.Error(err, "failed to set batch in-progress", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
-			return false, err
-		}
 
-		// Standby (requeue if any instance was set to stand-by)
-		r.Info("setting batch to stand-by", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
-		if ok, err := r.Auth.SetInstanceStandBy(batch, r.RollingUpgrade.Spec.AsgName); ok {
-			if err != nil {
-				r.Info("failed to set batch to stand-by", "instances", awsprovider.GetInstanceIDs(batch), "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
+		// Tag and set to StandBy only the InService instances.
+		if len(inServiceInstanceIDs) > 0 {
+			// Add in-progress tag
+			r.Info("setting instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+			if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to set instancecs to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+				return false, err
 			}
+			// Standby
+			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+			if err := r.Auth.SetInstanceStandBy(inServiceInstanceIDs, r.RollingUpgrade.Spec.AsgName); err != nil {
+				r.Info("failed to set instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+			}
+			// requeue until there are no InService instances in the batch
 			return true, nil
+		} else {
+			r.Info("no InService instances in the batch", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 		}
 
 		// turns onto desired nodes
@@ -175,8 +180,10 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 		}
 		// add in-progress tag
-		if err := r.Auth.TagEC2instance(batch, instanceStateTagKey, inProgressTagValue); err != nil {
-			r.Error(err, "failed to set batch in-progress", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
+		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
+		r.Info("setting batch to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+		if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
+			r.Error(err, "failed to set batch in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			return false, err
 		}
 	}
@@ -329,16 +336,13 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	}
 
 	if len(targets) > 0 {
-		if unavailableInt > len(targets) {
-			unavailableInt = len(targets)
-		}
-		return targets[:unavailableInt]
+		r.Info("found in-progress instances", "instances", awsprovider.GetInstanceIDs(targets))
 	}
 
 	// select via strategy if there are no in-progress instances
 	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
@@ -349,7 +353,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
@@ -476,8 +480,8 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 	)
 
 	// wait for desired instances
-	inServiceInstances := awsprovider.GetInServiceInstances(scalingGroup)
-	if len(inServiceInstances) != int(desiredInstances) {
+	inServiceInstanceIDs := awsprovider.GetInServiceInstanceIDs(scalingGroup.Instances)
+	if len(inServiceInstanceIDs) != int(desiredInstances) {
 		return false
 	}
 
@@ -485,7 +489,7 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 	if r.Cloud.ClusterNodes != nil && !reflect.DeepEqual(r.Cloud.ClusterNodes, &corev1.NodeList{}) {
 		for _, node := range r.Cloud.ClusterNodes.Items {
 			instanceID := kubeprovider.GetNodeInstanceID(node)
-			if common.ContainsEqualFold(inServiceInstances, instanceID) && kubeprovider.IsNodeReady(node) && kubeprovider.IsNodePassesReadinessGates(node, r.RollingUpgrade.Spec.ReadinessGates) {
+			if common.ContainsEqualFold(inServiceInstanceIDs, instanceID) && kubeprovider.IsNodeReady(node) && kubeprovider.IsNodePassesReadinessGates(node, r.RollingUpgrade.Spec.ReadinessGates) {
 				readyNodes++
 			}
 		}
