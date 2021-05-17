@@ -136,6 +136,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			DrainErrors: drainErrs.(chan error),
 			DrainGroup:  drainGroup.(*sync.WaitGroup),
 		},
+		RollingUpgrade: rollingUpgrade,
 	}
 	rollupCtx.Cloud = NewDiscoveredState(rollupCtx.Auth, rollupCtx.Logger)
 	if err := rollupCtx.Cloud.Discover(); err != nil {
