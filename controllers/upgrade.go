@@ -54,6 +54,7 @@ type RollingUpgradeContext struct {
 	Cloud          *DiscoveredState
 	RollingUpgrade *v1alpha1.RollingUpgrade
 	DrainManager   *DrainManager
+  metricsMutex *sync.Mutex
 }
 
 // TODO: main node rotation logic
@@ -129,9 +130,8 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				node       = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 				nodeName   = node.GetName()
 			)
-			// Add statistics
-			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
-		}
+			//Add statistics
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 
 		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
 		// Tag and set to StandBy only the InService instances.
@@ -160,8 +160,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				node       = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 				nodeName   = node.GetName()
 			)
-			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady)
 		}
+
 
 		// Wait for desired nodes
 		r.Info("waiting for desired nodes", "name", r.RollingUpgrade.NamespacedName())
@@ -178,7 +179,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				nodeName   = node.GetName()
 			)
 			// add statistics
-			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 		}
 		// add in-progress tag
 		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
@@ -208,7 +209,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				defer r.DrainManager.DrainGroup.Done()
 
 				// Turns onto PreDrain script
-				r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
+				r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
 
 				// Predrain script
 				if err := r.ScriptRunner.PreDrain(scriptTarget); err != nil {
@@ -220,7 +221,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					r.Info("draining the node", "instance", instanceID, "node name", node.Name, "name", r.RollingUpgrade.NamespacedName())
 
 					// Turns onto NodeRotationDrain
-					r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
+					r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
 					if err := r.Auth.DrainNode(&node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
 						r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
@@ -228,7 +229,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				}
 
 				// Turns onto NodeRotationPostdrainScript
-				r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript)
+				r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript)
 
 				// post drain script
 				if err := r.ScriptRunner.PostDrain(scriptTarget); err != nil {
@@ -236,7 +237,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				}
 
 				// Turns onto NodeRotationPostWait
-				r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait)
+				r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait)
 
 				// Post Wait Script
 				if err := r.ScriptRunner.PostWait(scriptTarget); err != nil {
@@ -254,8 +255,8 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	select {
 	case err := <-r.DrainManager.DrainErrors:
-		r.RollingUpgrade.Status.UpdateStatistics(nodeSteps)
-		r.RollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateStatistics(nodeSteps)
+		r.UpdateLastBatchNodes(inProcessingNodes)
 
 		r.Error(err, "failed to rotate the node", "name", r.RollingUpgrade.NamespacedName())
 		return false, err
@@ -277,7 +278,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			)
 
 			// Turns onto NodeRotationTerminate
-			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate)
 
 			// Terminate - set lastTerminateTime
 			r.Info("terminating instance", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
@@ -290,7 +291,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.RollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
 
 			// Turns onto NodeRotationTerminate
-			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate)
 
 			// Post Terminate Script
 			if err := r.ScriptRunner.PostTerminate(scriptTarget); err != nil {
@@ -298,17 +299,17 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 
 			// Turns onto NodeRotationCompleted
-			r.RollingUpgrade.Status.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
 		}
 
-		r.RollingUpgrade.Status.UpdateStatistics(nodeSteps)
-		r.RollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateStatistics(nodeSteps)
+		r.UpdateLastBatchNodes(inProcessingNodes)
 
 	case <-time.After(DefaultWaitGroupTimeout):
 		// goroutines timed out - requeue
 
-		r.RollingUpgrade.Status.UpdateStatistics(nodeSteps)
-		r.RollingUpgrade.Status.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateStatistics(nodeSteps)
+		r.UpdateLastBatchNodes(inProcessingNodes)
 
 		r.Info("instances are still draining", "name", r.RollingUpgrade.NamespacedName())
 		return true, nil
