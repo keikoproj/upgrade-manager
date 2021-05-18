@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"sync"
 	"testing"
 
 	"k8s.io/client-go/kubernetes/fake"
@@ -48,18 +49,28 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 		ScriptRunner: ScriptRunner{
 			Logger: logger,
 		},
+		DrainGroupMapper: &sync.Map{},
+		DrainErrorMapper: &sync.Map{},
 	}
 	return reconciler
 
 }
 
 func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeContext {
+	rollingUpgrade := createRollingUpgrade()
+	drainGroup, _ := r.DrainGroupMapper.LoadOrStore(rollingUpgrade.NamespacedName(), &sync.WaitGroup{})
+	drainErrs, _ := r.DrainErrorMapper.LoadOrStore(rollingUpgrade.NamespacedName(), make(chan error))
+
 	return &RollingUpgradeContext{
-		Logger:         r.Logger,
-		Auth:           r.Auth,
-		ScriptRunner:   r.ScriptRunner,
-		Cloud:          NewDiscoveredState(r.Auth, r.Logger),
-		RollingUpgrade: createRollingUpgrade(),
+		Logger:       r.Logger,
+		Auth:         r.Auth,
+		ScriptRunner: r.ScriptRunner,
+		Cloud:        NewDiscoveredState(r.Auth, r.Logger),
+		DrainManager: &DrainManager{
+			DrainErrors: drainErrs.(chan error),
+			DrainGroup:  drainGroup.(*sync.WaitGroup),
+		},
+		RollingUpgrade: rollingUpgrade,
 	}
 
 }
