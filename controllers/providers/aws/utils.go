@@ -126,13 +126,13 @@ func GetTemplateLatestVersion(templates []*ec2.LaunchTemplate, templateName stri
 	return "0"
 }
 
-func GetInServiceInstances(scalingGroup *autoscaling.Group) []string {
-	instances := scalingGroup.Instances
-	inServiceInstances := []string{}
+func GetInServiceInstanceIDs(instances []*autoscaling.Instance) []string {
+	var inServiceInstanceIDs []string
 	for _, instance := range instances {
 		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
-			inServiceInstances = append(inServiceInstances, aws.StringValue(instance.InstanceId))
+			inServiceInstanceIDs = append(inServiceInstanceIDs, aws.StringValue(instance.InstanceId))
 		}
 	}
-	return inServiceInstances
+	return inServiceInstanceIDs
+
 }
