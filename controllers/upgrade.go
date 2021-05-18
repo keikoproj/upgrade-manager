@@ -151,7 +151,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		} else {
 			r.Info("no InService instances in the batch", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 		}
-
+    
 		// turns onto desired nodes
 		for _, target := range batch {
 			var (
