@@ -71,6 +71,7 @@ func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeCon
 			DrainGroup:  drainGroup.(*sync.WaitGroup),
 		},
 		RollingUpgrade: rollingUpgrade,
+    metricsMutex:   &sync.Mutex{},
 	}
 
 }
