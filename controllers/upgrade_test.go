@@ -9,12 +9,12 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 
 	//AWS
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 )
 
 func TestListClusterNodes(t *testing.T) {
@@ -280,7 +280,7 @@ func TestRotateNodes(t *testing.T) {
 		ExpectedStatusValue string
 	}{
 		{
-			"All instances have different launch config as the ASG, expect true from IsScalingGroupDrifted",
+			"All instances have different launch config as the ASG, RotateNodes() will not mark CR complete",
 			createRollingUpgradeReconciler(t),
 			func() *MockAutoscalingGroup {
 				newAsgClient := createASGClient()
@@ -291,7 +291,7 @@ func TestRotateNodes(t *testing.T) {
 			v1alpha1.StatusRunning,
 		},
 		{
-			"All instances have the same launch config as the ASG, expect false from IsScalingGroupDrifted",
+			"All instances have different launch config as the ASG, RotateNodes() will mark CR complete",
 			createRollingUpgradeReconciler(t),
 			createASGClient(),
 			false,
