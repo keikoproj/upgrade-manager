@@ -18,9 +18,11 @@ package main
 
 import (
 	"flag"
-	"github.com/keikoproj/upgrade-manager/controllers/common"
 	"os"
+	"sync"
 	"time"
+
+	"github.com/keikoproj/upgrade-manager/controllers/common"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -195,6 +197,8 @@ func main() {
 		ScriptRunner: controllers.ScriptRunner{
 			Logger: logger,
 		},
+		DrainGroupMapper: &sync.Map{},
+		DrainErrorMapper: &sync.Map{},
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
