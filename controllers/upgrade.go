@@ -54,7 +54,7 @@ type RollingUpgradeContext struct {
 	Cloud          *DiscoveredState
 	RollingUpgrade *v1alpha1.RollingUpgrade
 	DrainManager   *DrainManager
-  metricsMutex *sync.Mutex
+	metricsMutex   *sync.Mutex
 }
 
 // TODO: main node rotation logic
@@ -132,6 +132,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			)
 			//Add statistics
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
+		}
 
 		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
 		// Tag and set to StandBy only the InService instances.
@@ -152,7 +153,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		} else {
 			r.Info("no InService instances in the batch", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 		}
-    
+
 		// turns onto desired nodes
 		for _, target := range batch {
 			var (
@@ -162,7 +163,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			)
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady)
 		}
-
 
 		// Wait for desired nodes
 		r.Info("waiting for desired nodes", "name", r.RollingUpgrade.NamespacedName())
