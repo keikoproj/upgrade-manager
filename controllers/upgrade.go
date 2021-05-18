@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -143,7 +144,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 			// Standby
 			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
-			if err := r.Auth.SetInstanceStandBy(inServiceInstanceIDs, r.RollingUpgrade.Spec.AsgName); err != nil {
+			if err := r.Auth.SetInstancesStandBy(inServiceInstanceIDs, r.RollingUpgrade.Spec.AsgName); err != nil {
 				r.Info("failed to set instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
 			// requeue until there are no InService instances in the batch
@@ -188,6 +189,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		}
 	}
 
+	fmt.Println("r.DrainManager", r.DrainManager)
 	if reflect.DeepEqual(r.DrainManager.DrainGroup, &sync.WaitGroup{}) {
 		for _, target := range batch {
 			var (
