@@ -54,7 +54,7 @@ func (a *AmazonClientSet) TerminateInstance(instance *autoscaling.Instance) erro
 	return nil
 }
 
-func (a *AmazonClientSet) SetInstanceStandBy(instanceIDs []string, scalingGroupName string) error {
+func (a *AmazonClientSet) SetInstancesStandBy(instanceIDs []string, scalingGroupName string) error {
 	input := &autoscaling.EnterStandbyInput{
 		AutoScalingGroupName:           aws.String(scalingGroupName),
 		InstanceIds:                    aws.StringSlice(instanceIDs),
