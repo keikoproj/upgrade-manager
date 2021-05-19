@@ -1,6 +1,20 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.19] - 2021-05-18
+
+d6c90bb #2286: removed version from metric namespace (#226)
+5860eb7 #2285: renamed some methods related to metrics (#223)
+4da0472 feat: add go-env support (#207)
+cc1d2f6 fix: documentation and minor naming changes (#208)
+3c26418 fix: log testenv errors (#209)
+67cbab6 fix: logging improvements (#211)
+708d88e fix: documentation improvements (#210)
+95e28cd #2285: updated metric namespace for consistency with others (#219)
+30b9ad9 #2285: added CR status metrics (#217)
+51e3ff8 Issue 2108: step duration metrics to v1 (#216)
+a1af90b Cache the ASG before nodes are rotated in a loop (#212)
+
 ## [v0.18] - 2021-03-23
 
 8b2d320 Fix for Launch definition validation. Consider only the "InService" instances. (#197)
