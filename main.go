@@ -136,7 +136,7 @@ func main() {
 	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
 	sess.Handlers.Complete.PushFront(func(r *request.Request) {
 		ctx := r.HTTPRequest.Context()
-		log.Debugf("cache hit => %v, service => %s.%s",
+		log.Info("cache hit => %v, service => %s.%s",
 			cache.IsCacheHit(ctx),
 			r.ClientInfo.ServiceName,
 			r.Operation.Name,
