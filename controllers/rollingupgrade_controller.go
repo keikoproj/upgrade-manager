@@ -346,7 +346,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 func (r *RollingUpgradeReconciler) GetAutoScalingGroup(namespacedName string) (*autoscaling.Group, error) {
 	val, ok := r.ruObjNameToASG.Load(namespacedName)
 	if !ok {
-		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG with name: %s", namespacedName)
+		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG for %s from cache", namespacedName)
 	}
 	return val, nil
 }
