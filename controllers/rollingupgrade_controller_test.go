@@ -40,13 +40,18 @@ import (
 
 var nodeSteps = make(map[string][]upgrademgrv1alpha1.NodeStepDuration)
 var inProcessingNodes = make(map[string]*upgrademgrv1alpha1.NodeInProcessing)
+var mutex = &sync.Mutex{}
 
 func TestMain(m *testing.M) {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
 	}
 
-	cfg, _ = testEnv.Start()
+	var err error
+	cfg, err = testEnv.Start()
+	if err != nil {
+		panic(err)
+	}
 	os.Exit(m.Run())
 }
 
@@ -138,7 +143,7 @@ func TestPostDrainHelperPostDrainScriptSuccess(t *testing.T) {
 
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
-	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes, mutex)
 
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -154,7 +159,7 @@ func TestPostDrainHelperPostDrainScriptError(t *testing.T) {
 
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
-	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes, mutex)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 
@@ -177,7 +182,7 @@ func TestPostDrainHelperPostDrainScriptErrorWithIgnoreDrainFailures(t *testing.T
 
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
-	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes, mutex)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 
@@ -198,7 +203,7 @@ func TestPostDrainHelperPostDrainWaitScriptSuccess(t *testing.T) {
 
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
-	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes, mutex)
 
 	g.Expect(err).To(gomega.BeNil())
 }
@@ -215,7 +220,7 @@ func TestPostDrainHelperPostDrainWaitScriptError(t *testing.T) {
 
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
-	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes, mutex)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 
@@ -239,7 +244,7 @@ func TestPostDrainHelperPostDrainWaitScriptErrorWithIgnoreDrainFailures(t *testi
 
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
-	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.postDrainHelper("test-instance-id", mockNode, ruObj, nodeSteps, inProcessingNodes, mutex)
 
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 
@@ -261,7 +266,7 @@ func TestDrainNodeSuccess(t *testing.T) {
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
-	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -275,7 +280,7 @@ func TestDrainNodePreDrainError(t *testing.T) {
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
-	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 }
 
@@ -289,7 +294,7 @@ func TestDrainNodePostDrainScriptError(t *testing.T) {
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
-	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 }
 
@@ -303,7 +308,7 @@ func TestDrainNodePostDrainWaitScriptError(t *testing.T) {
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
-	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 }
 
@@ -321,7 +326,7 @@ func TestDrainNodePostDrainFailureToDrainNotFound(t *testing.T) {
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
-	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -341,7 +346,7 @@ func TestDrainNodePostDrainFailureToDrain(t *testing.T) {
 	rcRollingUpgrade := createReconciler()
 	rcRollingUpgrade.ScriptRunner.KubectlCall = mockKubeCtlCall
 
-	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainNode(ruObj, mockNode, "test-id", ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 }
 
@@ -486,7 +491,7 @@ func TestTerminateNodeSuccess(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -506,7 +511,7 @@ func TestTerminateNodeErrorNotFound(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -538,7 +543,7 @@ func TestTerminateNodeErrorScalingActivityInProgressWithRetry(t *testing.T) {
 			awsErr:    nil,
 		}
 	}()
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -557,7 +562,7 @@ func TestTerminateNodeErrorScalingActivityInProgress(t *testing.T) {
 		EC2Client:    MockEC2{},
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("no more retries left"))
 }
 
@@ -577,7 +582,7 @@ func TestTerminateNodeErrorResourceContention(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("no more retries left"))
 }
 
@@ -597,7 +602,7 @@ func TestTerminateNodeErrorOtherError(t *testing.T) {
 		EC2Client:    MockEC2{},
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err.Error()).To(gomega.ContainSubstring("some error"))
 }
 
@@ -615,7 +620,7 @@ func TestTerminateNodePostTerminateScriptSuccess(t *testing.T) {
 		EC2Client:    MockEC2{},
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -633,7 +638,7 @@ func TestTerminateNodePostTerminateScriptErrorNotFoundFromServer(t *testing.T) {
 		EC2Client:    MockEC2{},
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil())
 }
 
@@ -651,7 +656,7 @@ func TestTerminateNodePostTerminateScriptErrorOtherError(t *testing.T) {
 		EC2Client:    MockEC2{},
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
-	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.TerminateNode(ruObj, mockNode, "", nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.Not(gomega.BeNil()))
 	g.Expect(err.Error()).To(gomega.ContainSubstring("Failed to run postTerminate script: "))
 }
@@ -2765,11 +2770,11 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil()) // don't expect errors.
 
 	// nodeName is empty when node isn't part of the cluster. It must skip drain and terminate.
-	err = rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode, nodeSteps, inProcessingNodes)
+	err = rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil()) // don't expect errors.
 
 }
@@ -2801,7 +2806,7 @@ func TestPreDrainFailureWhenIgnoreDrainFailuresSet(t *testing.T) {
 		ScriptRunner: NewScriptRunner(log2.NullLogger{}),
 	}
 
-	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes)
+	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.Not(gomega.BeNil())) // expect error, as the predrain failure shouldn't be masked when IgnoreDrainFailures is set.
 }
 func TestUpdateInstancesNotExists(t *testing.T) {
@@ -2851,7 +2856,7 @@ func TestUpdateInstancesNotExists(t *testing.T) {
 	instChan := make(chan error)
 	mockInstanceName1 := "foo1"
 	instance1 := autoscaling.Instance{InstanceId: &mockInstanceName1, AvailabilityZone: &az}
-	go rcRollingUpgrade.UpdateInstance(&ctx, ruObj, &instance1, &launchDefinition{launchConfigurationName: &lcName}, instChan, nodeSteps, inProcessingNodes)
+	go rcRollingUpgrade.UpdateInstance(&ctx, ruObj, &instance1, &launchDefinition{launchConfigurationName: &lcName}, instChan, nodeSteps, inProcessingNodes, mutex)
 	processCount := 0
 	select {
 	case <-ctx.Done():

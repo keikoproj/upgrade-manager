@@ -3,6 +3,7 @@ package common
 import (
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/keikoproj/upgrade-manager/pkg/log"
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	metricNamespace = "upgrade_manager_v1"
+	metricNamespace = "upgrade_manager"
 
 	//All cluster level node upgrade statistics
 	nodeRotationTotal = prometheus.NewHistogram(
@@ -33,6 +34,8 @@ var (
 		})
 
 	stepSummaries = make(map[string]map[string]prometheus.Summary)
+
+	stepSumMutex = sync.Mutex{}
 
 	CRStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -60,7 +63,9 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 		var steps map[string]prometheus.Summary
 		if m, ok := stepSummaries[groupName]; !ok {
 			steps = make(map[string]prometheus.Summary)
+			stepSumMutex.Lock()
 			stepSummaries[groupName] = steps
+			stepSumMutex.Unlock()
 		} else {
 			steps = m
 		}
@@ -82,7 +87,9 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 					log.Errorf("register summary error, group: %s, step: %s, %v", groupName, stepName, err)
 				}
 			}
+			stepSumMutex.Lock()
 			steps[stepName] = summary
+			stepSumMutex.Unlock()
 		} else {
 			summary = s
 		}
@@ -90,14 +97,14 @@ func AddStepDuration(groupName string, stepName string, duration time.Duration) 
 	}
 }
 
-func SetRollupInitOrRunningStatus(ruName string) {
+func SetMetricRollupInitOrRunning(ruName string) {
 	CRStatus.WithLabelValues(ruName).Set(0)
 }
 
-func SetRollupCompletedStatus(ruName string) {
+func SetMetricRollupCompleted(ruName string) {
 	CRStatus.WithLabelValues(ruName).Set(1)
 }
 
-func SetRollupFailedStatus(ruName string) {
+func SetMetricRollupFailed(ruName string) {
 	CRStatus.WithLabelValues(ruName).Set(-1)
 }

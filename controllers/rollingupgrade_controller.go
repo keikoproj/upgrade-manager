@@ -154,7 +154,8 @@ func (r *RollingUpgradeReconciler) postDrainHelper(instanceID,
 	nodeName string,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing) error {
+	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	mutex *sync.Mutex) error {
 	err := r.ScriptRunner.PostDrain(instanceID, nodeName, ruObj)
 	if err != nil {
 		return err
@@ -163,7 +164,7 @@ func (r *RollingUpgradeReconciler) postDrainHelper(instanceID,
 	r.info(ruObj, "Waiting for postDrainDelay", "postDrainDelay", ruObj.Spec.PostDrainDelaySeconds)
 	time.Sleep(time.Duration(ruObj.Spec.PostDrainDelaySeconds) * time.Second)
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait, mutex)
 
 	return r.ScriptRunner.PostWait(instanceID, nodeName, ruObj)
 
@@ -176,9 +177,10 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	instanceID string,
 	drainTimeout int,
 	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing) error {
+	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	mutex *sync.Mutex) error {
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript, mutex)
 
 	// Running kubectl drain node.
 	err := r.preDrainHelper(instanceID, nodeName, ruObj)
@@ -201,7 +203,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 		r.info(ruObj, "Skipped creating context with timeout.", "drainTimeout", drainTimeout)
 	}
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain, mutex)
 
 	r.info(ruObj, "Invoking kubectl drain for the node", "nodeName", nodeName)
 	go r.CallKubectlDrain(nodeName, ruObj, errChan)
@@ -221,9 +223,9 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 		r.info(ruObj, "Kubectl drain completed for node", "nodeName", nodeName)
 	}
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript, mutex)
 
-	return r.postDrainHelper(instanceID, nodeName, ruObj, nodeSteps, inProcessingNodes)
+	return r.postDrainHelper(instanceID, nodeName, ruObj, nodeSteps, inProcessingNodes, mutex)
 }
 
 // CallKubectlDrain runs the "kubectl drain" for a given node
@@ -267,6 +269,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 	return fmt.Errorf("%s: WaitForDesiredInstances timed out while waiting for instance to be added: %w", ruObj.NamespacedName(), err)
 }
 
+// we put old instances in standby and then wait for new instances to be InService so that desired instances is met
 func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1.RollingUpgrade) error {
 	var err error
 	var ieb *iebackoff.IEBackoff
@@ -287,15 +290,13 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 		}
 
 		// get list of inService instance IDs
-		inServiceInstances := getInServiceIds(asg.Instances)
+		inServiceInstanceIds := getInServiceIds(asg.Instances)
 		desiredCapacity := aws.Int64Value(asg.DesiredCapacity)
 
-		// check all of them are nodes and are ready
+		// check all asg instances are ready nodes
 		var foundCount int64 = 0
 		for _, node := range r.NodeList.Items {
-			tokens := strings.Split(node.Spec.ProviderID, "/")
-			instanceID := tokens[len(tokens)-1]
-			if contains(inServiceInstances, instanceID) && isNodeReady(node) && IsNodePassesReadinessGates(node, ruObj.Spec.ReadinessGates) {
+			if contains(inServiceInstanceIds, r.instanceId(node)) && isNodeReady(node) && isNodePassingReadinessGates(node, ruObj.Spec.ReadinessGates) {
 				foundCount++
 			}
 		}
@@ -305,9 +306,15 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 			return nil
 		}
 
-		r.info(ruObj, "new node has not yet joined the cluster")
+		r.info(ruObj, "new node is not yet ready")
 	}
 	return fmt.Errorf("%s: WaitForDesiredNodes timed out while waiting for nodes to join: %w", ruObj.NamespacedName(), err)
+}
+
+// read aws instance id from nodes spec.providerID
+func (r *RollingUpgradeReconciler) instanceId(node corev1.Node) string {
+	tokens := strings.Split(node.Spec.ProviderID, "/")
+	return tokens[len(tokens)-1]
 }
 
 func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeName string, nodeInterface v1.NodeInterface) (bool, error) {
@@ -386,13 +393,14 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	instanceID string,
 	nodeName string,
 	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing) error {
+	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	mutex *sync.Mutex) error {
 
 	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 		InstanceId:                     aws.String(instanceID),
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate, mutex)
 
 	var err error
 	var ieb *iebackoff.IEBackoff
@@ -423,7 +431,7 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	r.info(ruObj, "Instance terminated.", "instanceID", instanceID)
 	r.info(ruObj, "starting post termination sleep", "instanceID", instanceID, "nodeIntervalSeconds", ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate, mutex)
 	return r.ScriptRunner.PostTerminate(instanceID, nodeName, ruObj)
 }
 
@@ -495,6 +503,7 @@ func (r *RollingUpgradeReconciler) populateLaunchTemplates(ruObj *upgrademgrv1al
 	return nil
 }
 
+// store all nodes in a cache to avoid fetching them multiple times
 func (r *RollingUpgradeReconciler) populateNodeList(ruObj *upgrademgrv1alpha1.RollingUpgrade, nodeInterface v1.NodeInterface) error {
 	nodeList, err := nodeInterface.List(metav1.ListOptions{})
 	if err != nil {
@@ -599,12 +608,12 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 		finalStatus = upgrademgrv1alpha1.StatusComplete
 		level = EventLevelNormal
 		r.info(ruObj, "Marked object as", "finalStatus", finalStatus)
-		common.SetRollupCompletedStatus(ruObj.Name)
+		common.SetMetricRollupCompleted(ruObj.Name)
 	} else {
 		finalStatus = upgrademgrv1alpha1.StatusError
 		level = EventLevelWarning
 		r.error(ruObj, err, "Marked object as", "finalStatus", finalStatus)
-		common.SetRollupFailedStatus(ruObj.Name)
+		common.SetMetricRollupFailed(ruObj.Name)
 	}
 
 	endTime := time.Now()
@@ -647,7 +656,7 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 	r.info(ruObj, "Deleted the entries of ASG in the cluster store", "asgName", ruObj.Spec.AsgName)
 	r.inProcessASGs.Delete(ruObj.Spec.AsgName)
 	r.admissionMap.Delete(ruObj.NamespacedName())
-	r.info(ruObj, "Deleted from admission map ", "admissionMap", &r.admissionMap)
+	r.info(ruObj, "Deleted from admission map", "admissionMap", &r.admissionMap)
 }
 
 // Process actually performs the ec2-instance restacking.
@@ -705,7 +714,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj.Status.CurrentStatus = upgrademgrv1alpha1.StatusRunning
 	ruObj.Status.NodesProcessed = 0
 	ruObj.Status.TotalNodes = len(asg.Instances)
-	common.SetRollupInitOrRunningStatus(ruObj.Name)
+	common.SetMetricRollupInitOrRunning(ruObj.Name)
 
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
 		r.error(ruObj, err, "failed to update status")
@@ -945,6 +954,7 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
 	inProcessingNodes := make(map[string]*v1alpha1.NodeInProcessing)
+	mutex := &sync.Mutex{}
 
 	ch := make(chan error)
 
@@ -956,7 +966,7 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 			"strategy": string(ruObj.Spec.Strategy.Type),
 			"msg":      fmt.Sprintf("Started Updating Instance %s, in AZ: %s", *instance.InstanceId, *instance.AvailabilityZone),
 		})
-		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, ch, nodeSteps, inProcessingNodes)
+		go r.UpdateInstance(ctx, ruObj, instance, launchDefinition, ch, nodeSteps, inProcessingNodes, mutex)
 	}
 
 	// wait for upgrades to complete
@@ -998,7 +1008,8 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	nodeName,
 	targetInstanceID string,
 	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing) error {
+	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	mutex *sync.Mutex) error {
 
 	// Set instance to standby
 	err := r.SetStandby(ruObj, targetInstanceID)
@@ -1006,7 +1017,7 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 		return err
 	}
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady, mutex)
 
 	// Wait for new instance to be created
 	err = r.WaitForDesiredInstances(ruObj)
@@ -1021,7 +1032,7 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	}
 
 	// Drain and wait for draining node.
-	return r.DrainTerminate(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes)
+	return r.DrainTerminate(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes, mutex)
 }
 
 func (r *RollingUpgradeReconciler) DrainTerminate(
@@ -1029,22 +1040,23 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 	nodeName,
 	targetInstanceID string,
 	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing) error {
+	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	mutex *sync.Mutex) error {
 
 	// Drain and wait for draining node.
 	if nodeName != "" {
-		if err := r.DrainNode(ruObj, nodeName, targetInstanceID, ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes); err != nil {
+		if err := r.DrainNode(ruObj, nodeName, targetInstanceID, ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex); err != nil {
 			return err
 		}
 	}
 
 	// Terminate instance.
-	err := r.TerminateNode(ruObj, targetInstanceID, nodeName, nodeSteps, inProcessingNodes)
+	err := r.TerminateNode(ruObj, targetInstanceID, nodeName, nodeSteps, inProcessingNodes, mutex)
 	if err != nil {
 		return err
 	}
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, mutex)
 
 	return nil
 }
@@ -1056,7 +1068,8 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	launchDefinition *launchDefinition,
 	ch chan error,
 	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing) {
+	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	mutex *sync.Mutex) {
 	targetInstanceID := aws.StringValue(i.InstanceId)
 	// If an instance was marked as "in-progress" in ClusterState, it has to be marked
 	// completed so that it can get considered again in a subsequent rollup CR.
@@ -1101,13 +1114,13 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
 		r.info(ruObj, "starting replacement with eager mode", "mode", mode)
 		//Add statistics
-		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
-		err = r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes)
+		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff, mutex)
+		err = r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes, mutex)
 	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
 		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
 		//Add statistics
-		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
-		err = r.DrainTerminate(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes)
+		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff, mutex)
+		err = r.DrainTerminate(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes, mutex)
 	} else {
 		err = fmt.Errorf("%s: unhandled strategy mode: %s", ruObj.NamespacedName(), mode)
 	}
@@ -1166,6 +1179,7 @@ func (r *RollingUpgradeReconciler) getTemplateLatestVersion(templateName string)
 	return "0"
 }
 
+// is the instance not using expected launch template ?
 func (r *RollingUpgradeReconciler) requiresRefresh(ruObj *upgrademgrv1alpha1.RollingUpgrade, ec2Instance *autoscaling.Instance,
 	definition *launchDefinition) bool {
 
