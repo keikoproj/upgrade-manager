@@ -420,7 +420,6 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 			return true
 		}
 	} else if scalingGroup.LaunchTemplate != nil {
-		r.Info("launchTemplates", "instance", instanceID, "instanceLT", aws.StringValue(instance.LaunchTemplate.LaunchTemplateName), "scalingGroupLT", aws.StringValue(scalingGroup.LaunchTemplate.LaunchTemplateName), "name", r.RollingUpgrade.NamespacedName())
 		if instance.LaunchTemplate == nil {
 			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
