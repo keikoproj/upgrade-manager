@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -93,8 +92,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		scalingGroup = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	)
 	if reflect.DeepEqual(scalingGroup, &autoscaling.Group{}) {
-		r.Info("scaling group not found", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
-		return errors.Errorf("scaling group not found")
+		return errors.Errorf("scaling group not found, scalingGroupName: %v", r.RollingUpgrade.ScalingGroupName())
 	}
 	r.Info(
 		"scaling group details",
