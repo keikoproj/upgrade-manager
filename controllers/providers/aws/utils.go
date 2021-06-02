@@ -96,25 +96,6 @@ func GetInstanceIDs(instances []*autoscaling.Instance) []string {
 	return IDs
 }
 
-// func SelectInstancesByAZ(instances []*autoscaling.Group) *autoscaling.Instance {
-// 	for _, instance := range group.Instances {
-// 		selectedID := aws.StringValue(instance.InstanceId)
-// 		if strings.EqualFold(instanceID, selectedID) {
-// 			return instance
-// 		}
-// 	}
-// 	return &autoscaling.Instance{}
-// }
-
-// func ListScalingInstanceIDs(group *autoscaling.Group) []string {
-// 	instanceIDs := make([]string, 0)
-// 	for _, instance := range group.Instances {
-// 		instanceID := aws.StringValue(instance.InstanceId)
-// 		instanceIDs = append(instanceIDs, instanceID)
-// 	}
-// 	return instanceIDs
-// }
-
 func GetTemplateLatestVersion(templates []*ec2.LaunchTemplate, templateName string) string {
 	for _, template := range templates {
 		name := aws.StringValue(template.LaunchTemplateName)

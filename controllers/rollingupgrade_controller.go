@@ -15,10 +15,12 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
@@ -65,12 +67,13 @@ type RollingUpgradeAuthenticator struct {
 // Reconcile reads that state of the cluster for a RollingUpgrade object and makes changes based on the state read
 // and the details in the RollingUpgrade.Spec
 func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	r.Info("***Reconciling***")
 	rollingUpgrade := &v1alpha1.RollingUpgrade{}
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.AdmissionMap.Delete(req.NamespacedName)
-			r.Info("deleted object from admission map", "name", req.NamespacedName)
+			r.AdmissionMap.Delete(fmt.Sprintf("%s", req.NamespacedName))
+			r.Info("rolling upgrade resource not found, deleted object from admission map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -108,7 +111,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		val := v.(string)
 		resource := k.(string)
 		if strings.EqualFold(val, scalingGroupName) && !strings.EqualFold(resource, rollingUpgrade.NamespacedName()) {
-			r.Info("object already being processed by existing resource", "resource", resource, "scalingGroup", scalingGroupName)
+			r.Info("object already being processed by existing resource", "resource", resource, "scalingGroup", scalingGroupName, "name", rollingUpgrade.NamespacedName())
 			inProgress = true
 			return false
 		}
@@ -120,8 +123,13 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	r.Info("admitted new rollingupgrade", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
-	r.AdmissionMap.Store(rollingUpgrade.NamespacedName(), scalingGroupName)
+	// store the rolling upgrade in admission map
+	if _, present := r.AdmissionMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); present == false {
+		r.Info("admitted new rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
+		r.CacheConfig.FlushCache("autoscaling")
+	} else {
+		r.Info("operating on existing rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
+	}
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
 	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
 
@@ -137,20 +145,25 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			DrainGroup:  drainGroup.(*sync.WaitGroup),
 		},
 		RollingUpgrade: rollingUpgrade,
+		metricsMutex:   &sync.Mutex{},
 	}
 	rollupCtx.Cloud = NewDiscoveredState(rollupCtx.Auth, rollupCtx.Logger)
 	if err := rollupCtx.Cloud.Discover(); err != nil {
-		r.Info("failed to discover the cloud", "name", rollingUpgrade.NamespacedName(), "scalingGroup", scalingGroupName)
+		r.Info("failed to discover the cloud", "scalingGroup", scalingGroupName, "name", rollingUpgrade.NamespacedName())
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
-		// Set prometheus metric cr_status_failed
 		common.SetMetricRollupFailed(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
 
 	// process node rotation
+	scalingGroup := awsprovider.SelectScalingGroup(rollupCtx.RollingUpgrade.ScalingGroupName(), rollupCtx.Cloud.ScalingGroups)
+	r.Info(
+		"scaling group details",
+		"scalingGroup", scalingGroupName, "launchConfig", aws.StringValue(scalingGroup.LaunchConfigurationName),
+		"name", rollingUpgrade.NamespacedName(),
+	)
 	if err := rollupCtx.RotateNodes(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
-		// Set prometheus metric cr_status_failed
 		common.SetMetricRollupFailed(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
