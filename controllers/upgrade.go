@@ -91,6 +91,16 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	var (
 		scalingGroup = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	)
+	if reflect.DeepEqual(scalingGroup, &autoscaling.Group{}) {
+		r.Info("scaling group not found", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
+		return errors.Errorf("scaling group not found")
+	}
+	r.Info(
+		"scaling group details",
+		"scalingGroup", r.RollingUpgrade.ScalingGroupName(),
+		"launchConfig", aws.StringValue(scalingGroup.LaunchConfigurationName),
+		"name", r.RollingUpgrade.NamespacedName(),
+	)
 
 	r.RollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
 

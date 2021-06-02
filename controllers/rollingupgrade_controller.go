@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
@@ -156,12 +155,6 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// process node rotation
-	scalingGroup := awsprovider.SelectScalingGroup(rollupCtx.RollingUpgrade.ScalingGroupName(), rollupCtx.Cloud.ScalingGroups)
-	r.Info(
-		"scaling group details",
-		"scalingGroup", scalingGroupName, "launchConfig", aws.StringValue(scalingGroup.LaunchConfigurationName),
-		"name", rollingUpgrade.NamespacedName(),
-	)
 	if err := rollupCtx.RotateNodes(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		common.SetMetricRollupFailed(rollingUpgrade.Name)
