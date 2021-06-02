@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -124,8 +125,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		mode = r.RollingUpgrade.StrategyMode()
 	)
 
-	r.Info("rotating batch", "instance IDs", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
+	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
 
+	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
 
 	inProcessingNodes := make(map[string]*v1alpha1.NodeInProcessing)
