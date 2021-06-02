@@ -420,18 +420,15 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 
 	if scalingGroup.LaunchConfigurationName != nil {
 		if instance.LaunchConfigurationName == nil {
-			r.Info("launch configuration name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 		launchConfigName := aws.StringValue(scalingGroup.LaunchConfigurationName)
 		instanceConfigName := aws.StringValue(instance.LaunchConfigurationName)
 		if !strings.EqualFold(launchConfigName, instanceConfigName) {
-			r.Info("launch configuration name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	} else if scalingGroup.LaunchTemplate != nil {
 		if instance.LaunchTemplate == nil {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -443,16 +440,13 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
-			r.Info("launch template version differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
 	} else if scalingGroup.MixedInstancesPolicy != nil {
 		if instance.LaunchTemplate == nil {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -464,15 +458,12 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
-			r.Info("launch template version differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	}
 
-	r.Info("node refresh not required", "name", r.RollingUpgrade.NamespacedName(), "instance", instanceID)
 	return false
 }
 
