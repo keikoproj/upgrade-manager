@@ -17,8 +17,8 @@ limitations under the License.
 package controllers
 
 import (
-	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -91,13 +91,21 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	var (
 		scalingGroup = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	)
+	if reflect.DeepEqual(scalingGroup, &autoscaling.Group{}) {
+		return errors.Errorf("scaling group not found, scalingGroupName: %v", r.RollingUpgrade.ScalingGroupName())
+	}
+	r.Info(
+		"scaling group details",
+		"scalingGroup", r.RollingUpgrade.ScalingGroupName(),
+		"launchConfig", aws.StringValue(scalingGroup.LaunchConfigurationName),
+		"name", r.RollingUpgrade.NamespacedName(),
+	)
 
 	r.RollingUpgrade.SetTotalNodes(len(scalingGroup.Instances))
 
 	// check if all instances are rotated.
 	if !r.IsScalingGroupDrifted() {
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
-		// Set prometheus metric cr_status_completed
 		common.SetMetricRollupCompleted(r.RollingUpgrade.Name)
 		return nil
 	}
@@ -140,7 +148,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			// Add in-progress tag
 			r.Info("setting instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
-				r.Error(err, "failed to set instancecs to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+				r.Error(err, "failed to set instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 				return false, err
 			}
 			// Standby
@@ -170,6 +178,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.Info("new node is yet to join the cluster", "name", r.RollingUpgrade.NamespacedName())
 			return true, nil
 		}
+		r.Info("desired nodes are ready", "name", r.RollingUpgrade.NamespacedName())
 
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
@@ -190,7 +199,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		}
 	}
 
-	fmt.Println("r.DrainManager", r.DrainManager)
 	if reflect.DeepEqual(r.DrainManager.DrainGroup, &sync.WaitGroup{}) {
 		for _, target := range batch {
 			var (
@@ -247,9 +255,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		}
 	}
 
-	timeout := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer close(timeout)
+		defer close(done)
 		r.DrainManager.DrainGroup.Wait()
 	}()
 
@@ -261,7 +269,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		r.Error(err, "failed to rotate the node", "name", r.RollingUpgrade.NamespacedName())
 		return false, err
 
-	case <-timeout:
+	case <-done:
 		// goroutines completed, terminate and requeue
 		r.RollingUpgrade.SetLastNodeDrainTime(metav1.Time{Time: time.Now()})
 		r.Info("instances drained successfully, terminating", "name", r.RollingUpgrade.NamespacedName())
@@ -326,12 +334,16 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 
 	var unavailableInt int
 	if batchSize.Type == intstr.String {
-		unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
+		if strings.Contains(batchSize.StrVal, "%") {
+			unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
+		}
+		unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
 	} else {
 		unavailableInt = batchSize.IntValue()
 	}
 
 	// first process all in progress instances
+	r.Info("selecting batch for rotation", "batch size", batchSize, "name", r.RollingUpgrade.NamespacedName())
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
 			targets = append(targets, selectedInstance)
@@ -392,6 +404,7 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 	if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
 		return false
 	}
+
 	// check if there is atleast one node that meets the force-referesh criteria
 	if r.RollingUpgrade.IsForceRefresh() {
 		var (
@@ -407,18 +420,15 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 
 	if scalingGroup.LaunchConfigurationName != nil {
 		if instance.LaunchConfigurationName == nil {
-			r.Info("launch configuration name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 		launchConfigName := aws.StringValue(scalingGroup.LaunchConfigurationName)
 		instanceConfigName := aws.StringValue(instance.LaunchConfigurationName)
 		if !strings.EqualFold(launchConfigName, instanceConfigName) {
-			r.Info("launch configuration name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	} else if scalingGroup.LaunchTemplate != nil {
 		if instance.LaunchTemplate == nil {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -430,16 +440,13 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
-			r.Info("launch template version differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
 	} else if scalingGroup.MixedInstancesPolicy != nil {
 		if instance.LaunchTemplate == nil {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -451,15 +458,12 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
-			r.Info("launch template name differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
-			r.Info("launch template version differs", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	}
 
-	r.Info("node refresh not required", "name", r.RollingUpgrade.NamespacedName(), "instance", instanceID)
 	return false
 }
 
@@ -469,9 +473,11 @@ func (r *RollingUpgradeContext) IsScalingGroupDrifted() bool {
 	scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
 		if r.IsInstanceDrifted(instance) {
+			r.Info("launch definition differs", "instance", aws.StringValue(instance.InstanceId), "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	}
+	r.Info("no drift in scaling group", "name", r.RollingUpgrade.NamespacedName())
 	return false
 }
 
@@ -485,6 +491,7 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 	// wait for desired instances
 	inServiceInstanceIDs := awsprovider.GetInServiceInstanceIDs(scalingGroup.Instances)
 	if len(inServiceInstanceIDs) != int(desiredInstances) {
+		r.Info("desired number of instances are not InService", "desired", int(desiredInstances), "inServiceCount", len(inServiceInstanceIDs), "name", r.RollingUpgrade.NamespacedName())
 		return false
 	}
 
@@ -498,6 +505,7 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 		}
 	}
 	if readyNodes != int(desiredInstances) {
+		r.Info("desired number of nodes are not ready", "desired", int(desiredInstances), "readyNodesCount", readyNodes, "name", r.RollingUpgrade.NamespacedName())
 		return false
 	}
 
