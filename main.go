@@ -136,11 +136,10 @@ func main() {
 	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
 	sess.Handlers.Complete.PushFront(func(r *request.Request) {
 		ctx := r.HTTPRequest.Context()
-		log.Info(" [AWS API call] ",
-			" cacheHit:", cache.IsCacheHit(ctx),
-			", service:", r.ClientInfo.ServiceName,
-			", operation:", r.Operation.Name,
-		)
+		log.Debugf("cache hit => %v, service => %s.%s",
+			cache.IsCacheHit(ctx),
+			r.ClientInfo.ServiceName,
+			r.Operation.Name,
 	})
 
 	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
