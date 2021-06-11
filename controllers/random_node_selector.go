@@ -1,9 +1,11 @@
 package controllers
 
 import (
+	"log"
+
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
-	"log"
 )
 
 type RandomNodeSelector struct {
@@ -13,7 +15,7 @@ type RandomNodeSelector struct {
 }
 
 func NewRandomNodeSelector(asg *autoscaling.Group, ruObj *upgrademgrv1alpha1.RollingUpgrade) *RandomNodeSelector {
-	maxUnavailable := getMaxUnavailable(ruObj.Spec.Strategy, len(asg.Instances))
+	maxUnavailable := getMaxUnavailable(ruObj.Spec.Strategy, int(aws.Int64Value(asg.DesiredCapacity)))
 	log.Printf("Max unavailable calculated for %s is %d", ruObj.Name, maxUnavailable)
 	return &RandomNodeSelector{
 		maxUnavailable: maxUnavailable,
