@@ -24,7 +24,7 @@ func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes in
 	var maxUnavailable int
 	if strategy.MaxUnavailable.Type == intstr.String {
 		if strings.Contains(strategy.MaxUnavailable.StrVal, "%") {
-			maxUnavailable, _ = intstr.GetValueFromIntOrPercent(&strategy.MaxUnavailable, totalNodes, true)
+			maxUnavailable, _ = intstr.GetValueFromIntOrPercent(&strategy.MaxUnavailable, totalNodes, false)
 		} else {
 			maxUnavailable, _ = strconv.Atoi(strategy.MaxUnavailable.StrVal)
 		}
