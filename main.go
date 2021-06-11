@@ -140,6 +140,7 @@ func main() {
 			cache.IsCacheHit(ctx),
 			r.ClientInfo.ServiceName,
 			r.Operation.Name,
+		)
 	})
 
 	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
