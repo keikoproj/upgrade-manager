@@ -96,25 +96,6 @@ func GetInstanceIDs(instances []*autoscaling.Instance) []string {
 	return IDs
 }
 
-// func SelectInstancesByAZ(instances []*autoscaling.Group) *autoscaling.Instance {
-// 	for _, instance := range group.Instances {
-// 		selectedID := aws.StringValue(instance.InstanceId)
-// 		if strings.EqualFold(instanceID, selectedID) {
-// 			return instance
-// 		}
-// 	}
-// 	return &autoscaling.Instance{}
-// }
-
-// func ListScalingInstanceIDs(group *autoscaling.Group) []string {
-// 	instanceIDs := make([]string, 0)
-// 	for _, instance := range group.Instances {
-// 		instanceID := aws.StringValue(instance.InstanceId)
-// 		instanceIDs = append(instanceIDs, instanceID)
-// 	}
-// 	return instanceIDs
-// }
-
 func GetTemplateLatestVersion(templates []*ec2.LaunchTemplate, templateName string) string {
 	for _, template := range templates {
 		name := aws.StringValue(template.LaunchTemplateName)
@@ -126,13 +107,13 @@ func GetTemplateLatestVersion(templates []*ec2.LaunchTemplate, templateName stri
 	return "0"
 }
 
-func GetInServiceInstances(scalingGroup *autoscaling.Group) []string {
-	instances := scalingGroup.Instances
-	inServiceInstances := []string{}
+func GetInServiceInstanceIDs(instances []*autoscaling.Instance) []string {
+	var inServiceInstanceIDs []string
 	for _, instance := range instances {
 		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
-			inServiceInstances = append(inServiceInstances, aws.StringValue(instance.InstanceId))
+			inServiceInstanceIDs = append(inServiceInstanceIDs, aws.StringValue(instance.InstanceId))
 		}
 	}
-	return inServiceInstances
+	return inServiceInstanceIDs
+
 }
