@@ -1048,8 +1048,8 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 		if err := r.DrainNode(ruObj, nodeName, targetInstanceID, ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex); err != nil {
 			return err
 		}
+		ruObj.Status.LastNodeDrainTime = metav1.Time{Time: time.Now()}
 	}
-	ruObj.Status.LastNodeDrainTime = metav1.Time{Time: time.Now()}
 
 	// Terminate instance.
 	err := r.TerminateNode(ruObj, targetInstanceID, nodeName, nodeSteps, inProcessingNodes, mutex)
