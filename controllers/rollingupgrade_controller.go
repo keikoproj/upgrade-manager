@@ -224,6 +224,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	}
 
 	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript, mutex)
+
 	return r.postDrainHelper(instanceID, nodeName, ruObj, nodeSteps, inProcessingNodes, mutex)
 }
 
