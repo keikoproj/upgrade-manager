@@ -1535,6 +1535,8 @@ func TestUpdateInstances(t *testing.T) {
 	g.Expect(err).ShouldNot(gomega.HaveOccurred())
 	g.Expect(ruObj.Status.Statistics).ShouldNot(gomega.BeEmpty())
 	g.Expect(ruObj.Status.LastBatchNodes).ShouldNot(gomega.BeEmpty())
+	g.Expect(ruObj.Status.LastNodeDrainTime).ShouldNot(gomega.BeNil())
+	g.Expect(ruObj.Status.LastNodeTerminationTime).ShouldNot(gomega.BeNil())
 }
 
 func TestUpdateInstancesError(t *testing.T) {
@@ -2772,6 +2774,8 @@ func TestDrainNodeTerminateTerminatesWhenIgnoreDrainFailuresSet(t *testing.T) {
 
 	err := rcRollingUpgrade.DrainTerminate(ruObj, mockNode, mockNode, nodeSteps, inProcessingNodes, mutex)
 	g.Expect(err).To(gomega.BeNil()) // don't expect errors.
+	g.Expect(ruObj.Status.LastNodeDrainTime).ShouldNot(gomega.BeNil())
+	g.Expect(ruObj.Status.LastNodeTerminationTime).ShouldNot(gomega.BeNil())
 
 	// nodeName is empty when node isn't part of the cluster. It must skip drain and terminate.
 	err = rcRollingUpgrade.DrainTerminate(ruObj, "", mockNode, nodeSteps, inProcessingNodes, mutex)

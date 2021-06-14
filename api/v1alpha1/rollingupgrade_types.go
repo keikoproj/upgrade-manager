@@ -75,8 +75,8 @@ type RollingUpgradeStatus struct {
 	TotalNodes          int    `json:"totalNodes,omitempty"`
 
 	Conditions              []RollingUpgradeCondition `json:"conditions,omitempty"`
-	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
-	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
+	LastNodeTerminationTime *metav1.Time              `json:"lastTerminationTime,omitempty"`
+	LastNodeDrainTime       *metav1.Time              `json:"lastDrainTime,omitempty"`
 
 	Statistics     []*RollingUpgradeStatistics `json:"statistics,omitempty"`
 	LastBatchNodes []string                    `json:"lastBatchNodes,omitempty"`
