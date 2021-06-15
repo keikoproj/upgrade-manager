@@ -1,9 +1,14 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.20] - 2021-06-14
+
+3c70352 Upgrade to go 1.16 (#184)
+42cf8d4 Improve warning logs (#242)
+fce274e fix: status update failing due to unomitted fields (#251)
+
 ## [v0.19] - 2021-05-18
 
-d6c90bb #2286: removed version from metric namespace (#226)
 5860eb7 #2285: renamed some methods related to metrics (#223)
 4da0472 feat: add go-env support (#207)
 cc1d2f6 fix: documentation and minor naming changes (#208)
