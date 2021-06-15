@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -97,6 +98,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	r.Info(
 		"scaling group details",
 		"scalingGroup", r.RollingUpgrade.ScalingGroupName(),
+		"desiredInstances", aws.Int64Value(scalingGroup.DesiredCapacity),
 		"launchConfig", aws.StringValue(scalingGroup.LaunchConfigurationName),
 		"name", r.RollingUpgrade.NamespacedName(),
 	)
@@ -232,7 +234,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
 					if err := r.Auth.DrainNode(&node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
-						r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
+						if !r.RollingUpgrade.IsIgnoreDrainFailures() {
+							r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
+						}
 					}
 				}
 
@@ -336,8 +340,9 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	if batchSize.Type == intstr.String {
 		if strings.Contains(batchSize.StrVal, "%") {
 			unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
+		} else {
+			unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
 		}
-		unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
 	} else {
 		unavailableInt = batchSize.IntValue()
 	}
@@ -468,14 +473,18 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 }
 
 func (r *RollingUpgradeContext) IsScalingGroupDrifted() bool {
+	var driftCount = 0
 	r.Info("checking if rolling upgrade is completed", "name", r.RollingUpgrade.NamespacedName())
 
 	scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
 		if r.IsInstanceDrifted(instance) {
-			r.Info("launch definition differs", "instance", aws.StringValue(instance.InstanceId), "name", r.RollingUpgrade.NamespacedName())
-			return true
+			driftCount++
 		}
+	}
+	if driftCount != 0 {
+		r.Info("drift detected in scaling group", "driftedInstancesCount/DesiredInstancesCount", fmt.Sprintf("(%v/%v)", driftCount, aws.Int64Value(scalingGroup.DesiredCapacity)), "name", r.RollingUpgrade.NamespacedName())
+		return true
 	}
 	r.Info("no drift in scaling group", "name", r.RollingUpgrade.NamespacedName())
 	return false
