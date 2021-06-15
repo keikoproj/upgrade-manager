@@ -340,8 +340,9 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	if batchSize.Type == intstr.String {
 		if strings.Contains(batchSize.StrVal, "%") {
 			unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
+		} else {
+			unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
 		}
-		unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
 	} else {
 		unavailableInt = batchSize.IntValue()
 	}
