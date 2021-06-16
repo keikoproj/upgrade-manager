@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [v0.21] - 2021-06-14
+## [v0.21] - 2021-06-16
 
 1e430f3 additional check in setting maxUnavailable (#255)
 
