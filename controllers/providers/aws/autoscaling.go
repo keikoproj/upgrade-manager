@@ -26,6 +26,11 @@ var (
 		autoscaling.LifecycleStateTerminating,
 		autoscaling.LifecycleStateTerminatingWait,
 		autoscaling.LifecycleStateTerminatingProceed,
+		autoscaling.LifecycleStateTerminated,
+		autoscaling.LifecycleStateWarmedTerminating,
+		autoscaling.LifecycleStateWarmedTerminatingWait,
+		autoscaling.LifecycleStateWarmedTerminatingProceed,
+		autoscaling.LifecycleStateWarmedTerminated,
 	}
 )
 

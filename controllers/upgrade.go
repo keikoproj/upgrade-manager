@@ -295,7 +295,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 			// Terminate - set lastTerminateTime
 			r.Info("terminating instance", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
-
 			if err := r.Auth.TerminateInstance(target); err != nil {
 				// terminate failures are retryable
 				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
@@ -342,7 +341,10 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	r.Info("selecting batch for rotation", "batch size", unavailableInt, "name", r.RollingUpgrade.NamespacedName())
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
-			targets = append(targets, selectedInstance)
+			//In-progress instances shouldn't be considered if they are in terminating state.
+			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
+				targets = append(targets, selectedInstance)
+			}
 		}
 	}
 
