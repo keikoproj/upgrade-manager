@@ -88,6 +88,7 @@ func (s *RollingUpgradeContext) NodeStep(InProcessingNodes map[string]*v1alpha1.
 		duration2 := s.ToStepDuration(groupName, nodeName, v1alpha1.NodeRotationTotal, total)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration1)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration2)
+		delete(InProcessingNodes, nodeName)
 	} else if inProcessingNode.StepName != stepName { //Still same step
 		var oldOrder = v1alpha1.NodeRotationStepOrders[inProcessingNode.StepName]
 		var newOrder = v1alpha1.NodeRotationStepOrders[stepName]
