@@ -1,6 +1,6 @@
-
+VERSION=1.0.0-RC1
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= keikoproj/rolling-upgrade-controller:${VERSION} 
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
