@@ -347,8 +347,13 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 		unavailableInt = batchSize.IntValue()
 	}
 
+	// batch size should be atleast 1
+	if unavailableInt == 0 {
+		unavailableInt = 1
+	}
+
 	// first process all in progress instances
-	r.Info("selecting batch for rotation", "batch size", batchSize, "name", r.RollingUpgrade.NamespacedName())
+	r.Info("selecting batch for rotation", "batch size", unavailableInt, "name", r.RollingUpgrade.NamespacedName())
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
 			targets = append(targets, selectedInstance)
