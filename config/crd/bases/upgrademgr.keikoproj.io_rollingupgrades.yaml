@@ -140,6 +140,7 @@ spec:
               endTime:
                 type: string
               lastBatchNodes:
+                description: For backward compatibility
                 items:
                   type: string
                 type: array
@@ -149,6 +150,25 @@ spec:
               lastTerminationTime:
                 format: date-time
                 type: string
+              nodeInProcessing:
+                additionalProperties:
+                  description: Node In-processing
+                  properties:
+                    nodeName:
+                      type: string
+                    stepEndTime:
+                      format: date-time
+                      type: string
+                    stepName:
+                      type: string
+                    stepStartTime:
+                      format: date-time
+                      type: string
+                    upgradeStartTime:
+                      format: date-time
+                      type: string
+                  type: object
+                type: object
               nodesProcessed:
                 type: integer
               startTime:
