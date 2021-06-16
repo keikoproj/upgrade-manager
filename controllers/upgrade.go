@@ -17,6 +17,8 @@ limitations under the License.
 package controllers
 
 import (
+	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -97,6 +99,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	r.Info(
 		"scaling group details",
 		"scalingGroup", r.RollingUpgrade.ScalingGroupName(),
+		"desiredInstances", aws.Int64Value(scalingGroup.DesiredCapacity),
 		"launchConfig", aws.StringValue(scalingGroup.LaunchConfigurationName),
 		"name", r.RollingUpgrade.NamespacedName(),
 	)
@@ -232,7 +235,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
 					if err := r.Auth.DrainNode(&node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
-						r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
+						if !r.RollingUpgrade.IsIgnoreDrainFailures() {
+							r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
+						}
 					}
 				}
 
@@ -271,7 +276,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	case <-done:
 		// goroutines completed, terminate and requeue
-		r.RollingUpgrade.SetLastNodeDrainTime(metav1.Time{Time: time.Now()})
+		r.RollingUpgrade.SetLastNodeDrainTime(&metav1.Time{Time: time.Now()})
 		r.Info("instances drained successfully, terminating", "name", r.RollingUpgrade.NamespacedName())
 		for _, target := range batch {
 			var (
@@ -296,7 +301,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 				return true, nil
 			}
-			r.RollingUpgrade.SetLastNodeTerminationTime(metav1.Time{Time: time.Now()})
+			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
 
 			// Turns onto NodeRotationTerminate
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate)
@@ -331,19 +336,10 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 		totalNodes = len(scalingGroup.Instances)
 		targets    = make([]*autoscaling.Instance, 0)
 	)
-
-	var unavailableInt int
-	if batchSize.Type == intstr.String {
-		if strings.Contains(batchSize.StrVal, "%") {
-			unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
-		}
-		unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
-	} else {
-		unavailableInt = batchSize.IntValue()
-	}
+	unavailableInt := CalculateMaxUnavailable(batchSize, totalNodes)
 
 	// first process all in progress instances
-	r.Info("selecting batch for rotation", "batch size", batchSize, "name", r.RollingUpgrade.NamespacedName())
+	r.Info("selecting batch for rotation", "batch size", unavailableInt, "name", r.RollingUpgrade.NamespacedName())
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
 			targets = append(targets, selectedInstance)
@@ -369,7 +365,9 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) {
-				targets = append(targets, instance)
+				if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+					targets = append(targets, instance)
+				}
 			}
 		}
 
@@ -468,15 +466,24 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 }
 
 func (r *RollingUpgradeContext) IsScalingGroupDrifted() bool {
+	var (
+		driftCount      = 0
+		scalingGroup    = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+		desiredCapacity = int(aws.Int64Value(scalingGroup.DesiredCapacity))
+	)
 	r.Info("checking if rolling upgrade is completed", "name", r.RollingUpgrade.NamespacedName())
 
-	scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	for _, instance := range scalingGroup.Instances {
 		if r.IsInstanceDrifted(instance) {
-			r.Info("launch definition differs", "instance", aws.StringValue(instance.InstanceId), "name", r.RollingUpgrade.NamespacedName())
-			return true
+			driftCount++
 		}
 	}
+	if driftCount != 0 {
+		r.Info("drift detected in scaling group", "driftedInstancesCount/DesiredInstancesCount", fmt.Sprintf("(%v/%v)", driftCount, desiredCapacity), "name", r.RollingUpgrade.NamespacedName())
+		r.SetProgress(desiredCapacity-driftCount, desiredCapacity)
+		return true
+	}
+	r.SetProgress(desiredCapacity, desiredCapacity)
 	r.Info("no drift in scaling group", "name", r.RollingUpgrade.NamespacedName())
 	return false
 }
@@ -510,4 +517,36 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 	}
 
 	return true
+}
+
+func CalculateMaxUnavailable(batchSize intstr.IntOrString, totalNodes int) int {
+	var unavailableInt int
+	if batchSize.Type == intstr.String {
+		if strings.Contains(batchSize.StrVal, "%") {
+			unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
+		} else {
+			unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
+		}
+	} else {
+		unavailableInt = batchSize.IntValue()
+	}
+
+	// batch size should be atleast 1
+	if unavailableInt == 0 {
+		unavailableInt = 1
+	}
+
+	// batch size should be atmost the number of nodes
+	if unavailableInt > totalNodes {
+		unavailableInt = totalNodes
+	}
+
+	return unavailableInt
+}
+
+func (r *RollingUpgradeContext) SetProgress(nodesProcessed int, totalNodes int) {
+	completePercentage := int(math.Round(float64(nodesProcessed) / float64(totalNodes) * 100))
+	r.RollingUpgrade.SetTotalNodes(totalNodes)
+	r.RollingUpgrade.SetNodesProcessed(nodesProcessed)
+	r.RollingUpgrade.SetCompletePercentage(completePercentage)
 }
