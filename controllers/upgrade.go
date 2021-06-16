@@ -342,7 +342,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
 			//In-progress instances shouldn't be considered if they are in terminating state.
-			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
 				targets = append(targets, selectedInstance)
 			}
 		}
