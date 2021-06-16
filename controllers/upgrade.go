@@ -131,7 +131,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
 
-	inProcessingNodes := r.RollingUpgrade.Status.LastBatchNodes
+	inProcessingNodes := r.RollingUpgrade.Status.NodeInProcessing
 	if inProcessingNodes == nil {
 		inProcessingNodes = make(map[string]*v1alpha1.NodeInProcessing)
 	}
