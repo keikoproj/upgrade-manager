@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v0.21] - 2021-06-16
+
+1e430f3 additional check in setting maxUnavailable (#255)
+
 ## [v0.20] - 2021-06-14
 
 3c70352 Upgrade to go 1.16 (#184)
