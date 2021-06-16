@@ -10,7 +10,11 @@ import (
 
 // Update last batch nodes
 func (s *RollingUpgradeContext) UpdateLastBatchNodes(batchNodes map[string]*v1alpha1.NodeInProcessing) {
-	s.RollingUpgrade.Status.LastBatchNodes = batchNodes
+	keys := make([]string, 0, len(batchNodes))
+	for k := range batchNodes {
+		keys = append(keys, k)
+	}
+	s.RollingUpgrade.Status.LastBatchNodes = keys
 }
 
 // Update Node Statistics
