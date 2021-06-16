@@ -54,8 +54,8 @@ type RollingUpgradeStatus struct {
 	LastNodeTerminationTime *metav1.Time              `json:"lastTerminationTime,omitempty"`
 	LastNodeDrainTime       *metav1.Time              `json:"lastDrainTime,omitempty"`
 
-	Statistics     []*RollingUpgradeStatistics `json:"statistics,omitempty"`
-	LastBatchNodes []string                    `json:"lastBatchNodes,omitempty"`
+	Statistics     []*RollingUpgradeStatistics  `json:"statistics,omitempty"`
+	LastBatchNodes map[string]*NodeInProcessing `json:"lastBatchNodes,omitempty"`
 }
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
