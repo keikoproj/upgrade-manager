@@ -335,22 +335,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 		totalNodes = len(scalingGroup.Instances)
 		targets    = make([]*autoscaling.Instance, 0)
 	)
-
-	var unavailableInt int
-	if batchSize.Type == intstr.String {
-		if strings.Contains(batchSize.StrVal, "%") {
-			unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
-		} else {
-			unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
-		}
-	} else {
-		unavailableInt = batchSize.IntValue()
-	}
-
-	// batch size should be atleast 1
-	if unavailableInt == 0 {
-		unavailableInt = 1
-	}
+	unavailableInt := CalculateMaxUnavailable(batchSize, totalNodes, scalingGroup)
 
 	// first process all in progress instances
 	r.Info("selecting batch for rotation", "batch size", unavailableInt, "name", r.RollingUpgrade.NamespacedName())
@@ -524,4 +509,29 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 	}
 
 	return true
+}
+
+func CalculateMaxUnavailable(batchSize intstr.IntOrString, totalNodes int, scalingGroup *autoscaling.Group) int {
+	var unavailableInt int
+	if batchSize.Type == intstr.String {
+		if strings.Contains(batchSize.StrVal, "%") {
+			unavailableInt, _ = intstr.GetValueFromIntOrPercent(&batchSize, totalNodes, true)
+		} else {
+			unavailableInt, _ = strconv.Atoi(batchSize.StrVal)
+		}
+	} else {
+		unavailableInt = batchSize.IntValue()
+	}
+
+	// batch size should be atleast 1
+	if unavailableInt == 0 {
+		unavailableInt = 1
+	}
+
+	// batch size should be atmost the number of nodes
+	if unavailableInt > totalNodes {
+		unavailableInt = totalNodes
+	}
+
+	return unavailableInt
 }
