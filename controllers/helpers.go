@@ -2,6 +2,9 @@ package controllers
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,14 +13,25 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	corev1 "k8s.io/api/core/v1"
 
-	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"log"
+
+	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 )
 
 // getMaxUnavailable calculates and returns the maximum unavailable nodes
 // takes an update strategy and total number of nodes as input
 func getMaxUnavailable(strategy upgrademgrv1alpha1.UpdateStrategy, totalNodes int) int {
-	maxUnavailable, _ := intstr.GetValueFromIntOrPercent(&strategy.MaxUnavailable, totalNodes, false)
+	var maxUnavailable int
+	if strategy.MaxUnavailable.Type == intstr.String {
+		if strings.Contains(strategy.MaxUnavailable.StrVal, "%") {
+			maxUnavailable, _ = intstr.GetValueFromIntOrPercent(&strategy.MaxUnavailable, totalNodes, false)
+		} else {
+			maxUnavailable, _ = strconv.Atoi(strategy.MaxUnavailable.StrVal)
+		}
+	} else {
+		maxUnavailable = strategy.MaxUnavailable.IntValue()
+	}
+
 	// setting maxUnavailable to total number of nodes when maxUnavailable is greater than total node count
 	if totalNodes < maxUnavailable {
 		log.Printf("Reducing maxUnavailable count from %d to %d as total nodes count is %d",

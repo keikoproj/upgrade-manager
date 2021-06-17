@@ -346,7 +346,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 func (r *RollingUpgradeReconciler) GetAutoScalingGroup(namespacedName string) (*autoscaling.Group, error) {
 	val, ok := r.ruObjNameToASG.Load(namespacedName)
 	if !ok {
-		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG with name: %s", namespacedName)
+		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG for %s from cache", namespacedName)
 	}
 	return val, nil
 }
@@ -1051,6 +1051,7 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 		if err := r.DrainNode(ruObj, nodeName, targetInstanceID, ruObj.Spec.Strategy.DrainTimeout, nodeSteps, inProcessingNodes, mutex); err != nil {
 			return err
 		}
+		ruObj.Status.LastNodeDrainTime = &metav1.Time{Time: time.Now()}
 	}
 
 	// Terminate instance.
@@ -1059,6 +1060,7 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 		return err
 	}
 
+	ruObj.Status.LastNodeTerminationTime = &metav1.Time{Time: time.Now()}
 	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, mutex)
 
 	return nil
