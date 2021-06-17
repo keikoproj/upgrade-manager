@@ -33,6 +33,12 @@ var (
 			},
 		})
 
+	totalProcessingTime = make(map[string]prometheus.Summary)
+
+	totalNodesMetrics = make(map[string]prometheus.Gauge)
+
+	nodesProcessedMetrics = make(map[string]prometheus.Gauge)
+
 	stepSummaries = make(map[string]map[string]prometheus.Summary)
 
 	stepSumMutex = sync.Mutex{}
@@ -53,6 +59,69 @@ var (
 func InitMetrics() {
 	metrics.Registry.MustRegister(nodeRotationTotal)
 	metrics.Registry.MustRegister(CRStatus)
+}
+
+//Observe total processing time
+func TotalProcessingTime(groupName string, duration time.Duration) {
+	var summary prometheus.Summary
+	if s, ok := totalProcessingTime[groupName]; !ok {
+		summary = prometheus.NewSummary(
+			prometheus.SummaryOpts{
+				Namespace:   metricNamespace,
+				Name:        "total_processing_time_seconds",
+				Help:        "Total processing time for all nodes in the group",
+				ConstLabels: prometheus.Labels{"group": groupName},
+			})
+		err := metrics.Registry.Register(summary)
+		if err != nil {
+			if reflect.TypeOf(err).String() == "prometheus.AlreadyRegisteredError" {
+				log.Warnf("summary was registered again, group: %s", groupName)
+			} else {
+				log.Errorf("register summary error, group: %s, %v", groupName, err)
+			}
+		}
+		stepSumMutex.Lock()
+		totalProcessingTime[groupName] = summary
+		stepSumMutex.Unlock()
+	} else {
+		summary = s
+	}
+	summary.Observe(duration.Seconds())
+}
+
+func addGaugeOrUpdate(gaugeMap map[string]prometheus.Gauge, groupName string, count int, metricName, help string) {
+	var gauge prometheus.Gauge
+	if c, ok := gaugeMap[groupName]; !ok {
+		gauge = prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace:   metricNamespace,
+				Name:        metricName,
+				Help:        help,
+				ConstLabels: prometheus.Labels{"group": groupName},
+			})
+		err := metrics.Registry.Register(c)
+		if err != nil {
+			if reflect.TypeOf(err).String() == "prometheus.AlreadyRegisteredError" {
+				log.Warnf("gauge was registered again, group: %s", groupName)
+			} else {
+				log.Errorf("register gauge error, group: %s, %v", groupName, err)
+			}
+		}
+		stepSumMutex.Lock()
+		gaugeMap[groupName] = gauge
+		stepSumMutex.Unlock()
+	} else {
+		gauge = c
+	}
+	gauge.Set(float64(count))
+}
+
+func SetTotalNodesMetric(groupName string, nodes int) {
+	addGaugeOrUpdate(totalNodesMetrics, groupName, nodes, "total_nodes", "Total nodes in the group")
+}
+
+func SetNodesProcessedMetric(groupName string, nodesProcessed int) {
+	addGaugeOrUpdate(nodesProcessedMetrics, groupName, nodesProcessed, "nodes_processed", "Nodes processed in the group")
 }
 
 // Add rolling update step duration when the step is completed

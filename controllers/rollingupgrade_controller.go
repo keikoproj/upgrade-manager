@@ -620,6 +620,7 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 	ruObj.Status.EndTime = endTime.Format(time.RFC3339)
 	ruObj.Status.CurrentStatus = finalStatus
 	ruObj.Status.NodesProcessed = nodesProcessed
+	common.SetNodesProcessedMetric(ruObj.Spec.AsgName, ruObj.Status.NodesProcessed)
 
 	ruObj.Status.Conditions = append(ruObj.Status.Conditions,
 		upgrademgrv1alpha1.RollingUpgradeCondition{
@@ -631,7 +632,9 @@ func (r *RollingUpgradeReconciler) finishExecution(err error, nodesProcessed int
 	if err != nil {
 		r.info(ruObj, "Failed to calculate totalProcessingTime")
 	} else {
-		ruObj.Status.TotalProcessingTime = endTime.Sub(startTime).String()
+		var duration = endTime.Sub(startTime)
+		ruObj.Status.TotalProcessingTime = duration.String()
+		common.TotalProcessingTime(ruObj.Spec.AsgName, duration)
 	}
 	// end event
 
@@ -714,6 +717,10 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj.Status.CurrentStatus = upgrademgrv1alpha1.StatusRunning
 	ruObj.Status.NodesProcessed = 0
 	ruObj.Status.TotalNodes = len(asg.Instances)
+
+	common.SetTotalNodesMetric(ruObj.Spec.AsgName, ruObj.Status.TotalNodes)
+	common.SetNodesProcessedMetric(ruObj.Spec.AsgName, 0)
+
 	common.SetMetricRollupInitOrRunning(ruObj.Name)
 
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
@@ -1085,6 +1092,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	if !ok {
 		r.info(ruObj, "Object either force completed or deleted. Ignoring node update")
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
+		common.SetNodesProcessedMetric(ruObj.Spec.AsgName, ruObj.Status.NodesProcessed)
 		ch <- nil
 		return
 	}
@@ -1093,6 +1101,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	// there is no need to refresh it.
 	if !r.requiresRefresh(ruObj, i, launchDefinition) {
 		ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
+		common.SetNodesProcessedMetric(ruObj.Spec.AsgName, ruObj.Status.NodesProcessed)
 		if err := r.Status().Update(*ctx, ruObj); err != nil {
 			r.error(ruObj, err, "failed to update status")
 		}
@@ -1150,6 +1159,7 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 		r.info(ruObj, "Setting tag on the instance post termination failed.", "nodeName", nodeName)
 	}
 	ruObj.Status.NodesProcessed = ruObj.Status.NodesProcessed + 1
+	common.SetNodesProcessedMetric(ruObj.Spec.AsgName, ruObj.Status.NodesProcessed)
 	if err := r.Status().Update(*ctx, ruObj); err != nil {
 		// Check if the err is "StorageError: invalid object". If so, the object was deleted...
 		if strings.Contains(err.Error(), "StorageError: invalid object") {
