@@ -99,7 +99,7 @@ func addGaugeOrUpdate(gaugeMap map[string]prometheus.Gauge, groupName string, co
 				Help:        help,
 				ConstLabels: prometheus.Labels{"group": groupName},
 			})
-		err := metrics.Registry.Register(c)
+		err := metrics.Registry.Register(gauge)
 		if err != nil {
 			if reflect.TypeOf(err).String() == "prometheus.AlreadyRegisteredError" {
 				log.Warnf("gauge was registered again, group: %s", groupName)
