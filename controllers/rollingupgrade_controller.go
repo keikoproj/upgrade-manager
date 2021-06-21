@@ -716,7 +716,7 @@ func (r *RollingUpgradeReconciler) Process(ctx *context.Context,
 	ruObj.Status.StartTime = time.Now().Format(time.RFC3339)
 	ruObj.Status.CurrentStatus = upgrademgrv1alpha1.StatusRunning
 	ruObj.Status.NodesProcessed = 0
-	ruObj.Status.TotalNodes = len(asg.Instances)
+	ruObj.Status.TotalNodes = int(aws.Int64Value(asg.DesiredCapacity))
 
 	common.SetTotalNodesMetric(ruObj.Spec.AsgName, ruObj.Status.TotalNodes)
 	common.SetNodesProcessedMetric(ruObj.Spec.AsgName, 0)
