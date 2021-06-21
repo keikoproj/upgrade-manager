@@ -80,8 +80,8 @@ type RollingUpgradeStatus struct {
 
 	Statistics []*RollingUpgradeStatistics `json:"statistics,omitempty"`
 	// For backward compatibility
-	LastBatchNodes   []string                     `json:"lastBatchNodes,omitempty"`
-	NodeInProcessing map[string]*NodeInProcessing `json:"nodeInProcessing,omitempty"`
+	LastBatchNodes []string `json:"lastBatchNodes,omitempty"`
+	//NodeInProcessing map[string]*NodeInProcessing `json:"nodeInProcessing,omitempty"`
 }
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
@@ -151,7 +151,7 @@ type NodeInProcessing struct {
 
 // Update last batch nodes
 func (s *RollingUpgradeStatus) UpdateLastBatchNodes(batchNodes map[string]*NodeInProcessing) {
-	s.NodeInProcessing = batchNodes
+	//s.NodeInProcessing = batchNodes
 	keys := make([]string, 0, len(batchNodes))
 	for k := range batchNodes {
 		keys = append(keys, k)

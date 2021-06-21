@@ -960,10 +960,9 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 
 	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
-	inProcessingNodes := ruObj.Status.NodeInProcessing
-	if inProcessingNodes == nil {
-		inProcessingNodes = make(map[string]*v1alpha1.NodeInProcessing)
-	}
+
+	inProcessingNodes := make(map[string]*v1alpha1.NodeInProcessing)
+
 	mutex := &sync.Mutex{}
 
 	ch := make(chan error)
