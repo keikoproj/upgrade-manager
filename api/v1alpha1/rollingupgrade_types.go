@@ -78,8 +78,10 @@ type RollingUpgradeStatus struct {
 	LastNodeTerminationTime *metav1.Time              `json:"lastTerminationTime,omitempty"`
 	LastNodeDrainTime       *metav1.Time              `json:"lastDrainTime,omitempty"`
 
-	Statistics     []*RollingUpgradeStatistics `json:"statistics,omitempty"`
-	LastBatchNodes []string                    `json:"lastBatchNodes,omitempty"`
+	Statistics []*RollingUpgradeStatistics `json:"statistics,omitempty"`
+	// For backward compatibility
+	LastBatchNodes   []string                     `json:"lastBatchNodes,omitempty"`
+	NodeInProcessing map[string]*NodeInProcessing `json:"nodeInProcessing,omitempty"`
 }
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
@@ -149,6 +151,7 @@ type NodeInProcessing struct {
 
 // Update last batch nodes
 func (s *RollingUpgradeStatus) UpdateLastBatchNodes(batchNodes map[string]*NodeInProcessing) {
+	s.NodeInProcessing = batchNodes
 	keys := make([]string, 0, len(batchNodes))
 	for k := range batchNodes {
 		keys = append(keys, k)
@@ -212,6 +215,9 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 		duration2 := s.ToStepDuration(groupName, nodeName, NodeRotationTotal, total)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration1, mutex)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration2, mutex)
+		mutex.Lock()
+		delete(InProcessingNodes, nodeName)
+		mutex.Unlock()
 	} else if inProcessingNode.StepName != stepName { //Still same step
 		var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
 		var newOrder = NodeRotationStepOrders[stepName]
