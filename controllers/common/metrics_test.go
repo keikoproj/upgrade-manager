@@ -47,3 +47,27 @@ func TestCRStatusCompleted(t *testing.T) {
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(gauage).ToNot(gomega.BeNil())
 }
+
+func TestTotalProcessingTime(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	g.Expect(totalProcessingTime["test-asg"]).To(gomega.BeNil())
+	TotalProcessingTime("test-asg", 1)
+	g.Expect(totalProcessingTime["test-asg"]).NotTo(gomega.BeNil())
+}
+
+func TestSetTotalNodesMetric(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	g.Expect(totalNodesMetrics["test-asg"]).To(gomega.BeNil())
+	SetTotalNodesMetric("test-asg", 1)
+	g.Expect(totalNodesMetrics["test-asg"]).NotTo(gomega.BeNil())
+}
+
+func TestSetNodesProcessedMetric(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	g.Expect(nodesProcessedMetrics["test-asg"]).To(gomega.BeNil())
+	SetNodesProcessedMetric("test-asg", 1)
+	g.Expect(nodesProcessedMetrics["test-asg"]).NotTo(gomega.BeNil())
+}
