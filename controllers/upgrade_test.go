@@ -291,7 +291,7 @@ func TestRotateNodes(t *testing.T) {
 			v1alpha1.StatusRunning,
 		},
 		{
-			"All instances have different launch config as the ASG, RotateNodes() will mark CR complete",
+			"All instances have same launch config as the ASG, RotateNodes() will mark CR complete",
 			createRollingUpgradeReconciler(t),
 			createASGClient(),
 			false,
@@ -305,7 +305,7 @@ func TestRotateNodes(t *testing.T) {
 
 		err := rollupCtx.RotateNodes()
 		if err != nil {
-			t.Errorf("Test Description: \n expected value: nil, actual value: %v", err)
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
 		}
 		if rollupCtx.RollingUpgrade.CurrentStatus() != test.ExpectedStatusValue {
 			t.Errorf("Test Description: %s \n expected value: %s, actual value: %s", test.TestDescription, test.ExpectedStatusValue, rollupCtx.RollingUpgrade.CurrentStatus())

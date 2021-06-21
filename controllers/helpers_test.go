@@ -3,6 +3,7 @@ package controllers
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"k8s.io/client-go/kubernetes/fake"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -196,4 +197,19 @@ func createAmazonClient(t *testing.T) *awsprovider.AmazonClientSet {
 		AsgClient: createASGClient(),
 		Ec2Client: createEc2Client(),
 	}
+}
+
+func (mockAutoscalingGroup MockAutoscalingGroup) TerminateInstanceInAutoScalingGroup(input *autoscaling.TerminateInstanceInAutoScalingGroupInput) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
+	output := &autoscaling.TerminateInstanceInAutoScalingGroupOutput{}
+	if mockAutoscalingGroup.errorFlag {
+		if mockAutoscalingGroup.awsErr != nil {
+			if len(mockAutoscalingGroup.errorInstanceId) <= 0 ||
+				mockAutoscalingGroup.errorInstanceId == *input.InstanceId {
+				return output, mockAutoscalingGroup.awsErr
+			}
+		}
+	}
+	asgChange := autoscaling.Activity{ActivityId: aws.String("xxx"), AutoScalingGroupName: aws.String("sss"), Cause: aws.String("xxx"), StartTime: aws.Time(time.Now()), StatusCode: aws.String("200"), StatusMessage: aws.String("success")}
+	output.Activity = &asgChange
+	return output, nil
 }
