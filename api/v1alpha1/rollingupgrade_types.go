@@ -215,9 +215,6 @@ func (s *RollingUpgradeStatus) NodeStep(InProcessingNodes map[string]*NodeInProc
 		duration2 := s.ToStepDuration(groupName, nodeName, NodeRotationTotal, total)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration1, mutex)
 		s.addNodeStepDuration(nodeSteps, nodeName, duration2, mutex)
-		mutex.Lock()
-		delete(InProcessingNodes, nodeName)
-		mutex.Unlock()
 	} else if inProcessingNode.StepName != stepName { //Still same step
 		var oldOrder = NodeRotationStepOrders[inProcessingNode.StepName]
 		var newOrder = NodeRotationStepOrders[stepName]
