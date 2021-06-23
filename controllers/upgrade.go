@@ -554,13 +554,18 @@ func (r *RollingUpgradeContext) SetProgress(nodesProcessed int, totalNodes int) 
 	r.RollingUpgrade.SetTotalNodes(totalNodes)
 	r.RollingUpgrade.SetNodesProcessed(nodesProcessed)
 	r.RollingUpgrade.SetCompletePercentage(completePercentage)
+
+	// expose total nodes and nodes processed to prometheus
+	common.SetTotalNodesMetric(r.RollingUpgrade.ScalingGroupName(), totalNodes)
+	common.SetNodesProcessedMetric(r.RollingUpgrade.ScalingGroupName(), nodesProcessed)
+
 }
 
 func (r *RollingUpgradeContext) endTimeUpdate() {
-	//set end time
+	// set end time
 	r.RollingUpgrade.SetEndTime(time.Now().Format(time.RFC3339))
 
-	//set total processing time
+	// set total processing time
 	startTime, err1 := time.Parse(time.RFC3339, r.RollingUpgrade.StartTime())
 	endTime, err2 := time.Parse(time.RFC3339, r.RollingUpgrade.EndTime())
 	if err1 != nil || err2 != nil {
@@ -568,5 +573,8 @@ func (r *RollingUpgradeContext) endTimeUpdate() {
 	} else {
 		var totalProcessingTime = endTime.Sub(startTime)
 		r.RollingUpgrade.SetTotalProcessingTime(totalProcessingTime.String())
+
+		// expose total processing time to prometheus
+		common.TotalProcessingTime(r.RollingUpgrade.ScalingGroupName(), totalProcessingTime)
 	}
 }
