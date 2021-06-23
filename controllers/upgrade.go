@@ -110,6 +110,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	if !r.IsScalingGroupDrifted() {
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
 		common.SetMetricRollupCompleted(r.RollingUpgrade.Name)
+		r.endTimeUpdate()
 		return nil
 	}
 
@@ -553,4 +554,19 @@ func (r *RollingUpgradeContext) SetProgress(nodesProcessed int, totalNodes int) 
 	r.RollingUpgrade.SetTotalNodes(totalNodes)
 	r.RollingUpgrade.SetNodesProcessed(nodesProcessed)
 	r.RollingUpgrade.SetCompletePercentage(completePercentage)
+}
+
+func (r *RollingUpgradeContext) endTimeUpdate() {
+	//set end time
+	r.RollingUpgrade.SetEndTime(time.Now().Format(time.RFC3339))
+
+	//set total processing time
+	startTime, err1 := time.Parse(time.RFC3339, r.RollingUpgrade.StartTime())
+	endTime, err2 := time.Parse(time.RFC3339, r.RollingUpgrade.EndTime())
+	if err1 != nil || err2 != nil {
+		r.Info("failed to calculate totalProcessingTime")
+	} else {
+		var totalProcessingTime = endTime.Sub(startTime)
+		r.RollingUpgrade.SetTotalProcessingTime(totalProcessingTime.String())
+	}
 }
