@@ -304,6 +304,10 @@ func (r *RollingUpgrade) EndTime() string {
 	return r.Status.EndTime
 }
 
+func (r *RollingUpgrade) SetTotalProcessingTime(t string) {
+	r.Status.TotalProcessingTime = t
+}
+
 func (r *RollingUpgrade) SetTotalNodes(n int) {
 	r.Status.TotalNodes = n
 }
