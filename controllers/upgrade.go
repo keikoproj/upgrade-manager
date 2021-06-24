@@ -319,7 +319,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return false, err
 			}
 
-			//Predict terminating time
+			//Calculate the terminating time,
 			terminatedTime := metav1.Time{
 				Time: metav1.Now().Add(time.Duration(r.RollingUpgrade.NodeIntervalSeconds()) * time.Second),
 			}
