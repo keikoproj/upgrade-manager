@@ -156,6 +156,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.Info("setting instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
 				r.Error(err, "failed to set instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return false, err
 			}
 			// Standby
@@ -164,6 +165,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				r.Info("failed to set instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
 			// requeue until there are no InService instances in the batch
+			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
 		} else {
 			r.Info("no InService instances in the batch", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
@@ -183,6 +185,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		r.Info("waiting for desired nodes", "name", r.RollingUpgrade.NamespacedName())
 		if !r.DesiredNodesReady() {
 			r.Info("new node is yet to join the cluster", "name", r.RollingUpgrade.NamespacedName())
+			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
 		}
 		r.Info("desired nodes are ready", "name", r.RollingUpgrade.NamespacedName())
@@ -202,6 +205,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		r.Info("setting batch to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 		if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
 			r.Error(err, "failed to set batch in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return false, err
 		}
 	}
@@ -272,8 +276,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	select {
 	case err := <-r.DrainManager.DrainErrors:
-		r.UpdateStatistics(nodeSteps)
-		r.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
 		r.Error(err, "failed to rotate the node", "name", r.RollingUpgrade.NamespacedName())
 		return false, err
@@ -303,6 +306,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			if err := r.Auth.TerminateInstance(target); err != nil {
 				// terminate failures are retryable
 				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return true, nil
 			}
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
@@ -315,18 +319,20 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return false, err
 			}
 
-			// Turns onto NodeRotationCompleted
-			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
+			//Predict terminating time
+			terminatedTime := metav1.Time{
+				Time: metav1.Now().Add(time.Duration(r.RollingUpgrade.NodeIntervalSeconds()) * time.Second),
+			}
+			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminated)
+			r.DoNodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, terminatedTime)
 		}
 
-		r.UpdateStatistics(nodeSteps)
-		r.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
 	case <-time.After(DefaultWaitGroupTimeout):
 		// goroutines timed out - requeue
 
-		r.UpdateStatistics(nodeSteps)
-		r.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
 		r.Info("instances are still draining", "name", r.RollingUpgrade.NamespacedName())
 		return true, nil
