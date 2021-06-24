@@ -306,6 +306,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			if err := r.Auth.TerminateInstance(target); err != nil {
 				// terminate failures are retryable
 				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return true, nil
 			}
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
