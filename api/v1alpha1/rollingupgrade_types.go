@@ -168,6 +168,7 @@ const (
 	NodeRotationPostWait         RollingUpgradeStep = "post_wait"
 	NodeRotationTerminate        RollingUpgradeStep = "terminate"
 	NodeRotationPostTerminate    RollingUpgradeStep = "post_terminate"
+	NodeRotationTerminated       RollingUpgradeStep = "terminated"
 	NodeRotationCompleted        RollingUpgradeStep = "completed"
 )
 
@@ -180,6 +181,7 @@ var NodeRotationStepOrders = map[RollingUpgradeStep]int{
 	NodeRotationPostWait:         60,
 	NodeRotationTerminate:        70,
 	NodeRotationPostTerminate:    80,
+	NodeRotationTerminated:       90,
 	NodeRotationCompleted:        1000,
 }
 
