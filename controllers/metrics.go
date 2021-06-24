@@ -8,6 +8,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// Update metrics status UpdateMetricsStatus
+func (s *RollingUpgradeContext) UpdateMetricsStatus(batchNodes map[string]*v1alpha1.NodeInProcessing, nodeSteps map[string][]v1alpha1.NodeStepDuration) {
+	s.UpdateLastBatchNodes(batchNodes)
+	s.UpdateStatistics(nodeSteps)
+}
+
 // Update last batch nodes
 func (s *RollingUpgradeContext) UpdateLastBatchNodes(batchNodes map[string]*v1alpha1.NodeInProcessing) {
 	s.RollingUpgrade.Status.NodeInProcessing = batchNodes

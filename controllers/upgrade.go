@@ -156,6 +156,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.Info("setting instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
 				r.Error(err, "failed to set instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return false, err
 			}
 			// Standby
@@ -164,6 +165,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				r.Info("failed to set instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
 			// requeue until there are no InService instances in the batch
+			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
 		} else {
 			r.Info("no InService instances in the batch", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
@@ -183,6 +185,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		r.Info("waiting for desired nodes", "name", r.RollingUpgrade.NamespacedName())
 		if !r.DesiredNodesReady() {
 			r.Info("new node is yet to join the cluster", "name", r.RollingUpgrade.NamespacedName())
+			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
 		}
 		r.Info("desired nodes are ready", "name", r.RollingUpgrade.NamespacedName())
@@ -202,6 +205,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		r.Info("setting batch to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 		if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
 			r.Error(err, "failed to set batch in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
+			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return false, err
 		}
 	}
@@ -272,8 +276,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	select {
 	case err := <-r.DrainManager.DrainErrors:
-		r.UpdateStatistics(nodeSteps)
-		r.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
 		r.Error(err, "failed to rotate the node", "name", r.RollingUpgrade.NamespacedName())
 		return false, err
@@ -319,14 +322,12 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
 		}
 
-		r.UpdateStatistics(nodeSteps)
-		r.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
 	case <-time.After(DefaultWaitGroupTimeout):
 		// goroutines timed out - requeue
 
-		r.UpdateStatistics(nodeSteps)
-		r.UpdateLastBatchNodes(inProcessingNodes)
+		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
 		r.Info("instances are still draining", "name", r.RollingUpgrade.NamespacedName())
 		return true, nil
@@ -576,20 +577,5 @@ func (r *RollingUpgradeContext) endTimeUpdate() {
 
 		// expose total processing time to prometheus
 		common.TotalProcessingTime(r.RollingUpgrade.ScalingGroupName(), totalProcessingTime)
-	}
-}
-
-func (r *RollingUpgradeContext) endTimeUpdate() {
-	//set end time
-	r.RollingUpgrade.SetEndTime(time.Now().Format(time.RFC3339))
-
-	//set total processing time
-	startTime, err1 := time.Parse(time.RFC3339, r.RollingUpgrade.StartTime())
-	endTime, err2 := time.Parse(time.RFC3339, r.RollingUpgrade.EndTime())
-	if err1 != nil || err2 != nil {
-		r.Info("failed to calculate totalProcessingTime")
-	} else {
-		var totalProcessingTime = endTime.Sub(startTime)
-		r.RollingUpgrade.SetTotalProcessingTime(totalProcessingTime.String())
 	}
 }
