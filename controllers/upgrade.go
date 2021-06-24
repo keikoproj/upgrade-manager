@@ -319,8 +319,12 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return false, err
 			}
 
-			// Turns onto NodeRotationCompleted
-			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted)
+			//Predict terminating time
+			terminatedTime := metav1.Time{
+				Time: metav1.Now().Add(time.Duration(r.RollingUpgrade.NodeIntervalSeconds()) * time.Second),
+			}
+			r.DoNodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminated, terminatedTime)
+			r.DoNodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, terminatedTime)
 		}
 
 		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
