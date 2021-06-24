@@ -578,18 +578,3 @@ func (r *RollingUpgradeContext) endTimeUpdate() {
 		common.TotalProcessingTime(r.RollingUpgrade.ScalingGroupName(), totalProcessingTime)
 	}
 }
-
-func (r *RollingUpgradeContext) endTimeUpdate() {
-	//set end time
-	r.RollingUpgrade.SetEndTime(time.Now().Format(time.RFC3339))
-
-	//set total processing time
-	startTime, err1 := time.Parse(time.RFC3339, r.RollingUpgrade.StartTime())
-	endTime, err2 := time.Parse(time.RFC3339, r.RollingUpgrade.EndTime())
-	if err1 != nil || err2 != nil {
-		r.Info("failed to calculate totalProcessingTime")
-	} else {
-		var totalProcessingTime = endTime.Sub(startTime)
-		r.RollingUpgrade.SetTotalProcessingTime(totalProcessingTime.String())
-	}
-}
