@@ -146,13 +146,6 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		RollingUpgrade: rollingUpgrade,
 		metricsMutex:   &sync.Mutex{},
 	}
-	rollupCtx.Cloud = NewDiscoveredState(rollupCtx.Auth, rollupCtx.Logger)
-	if err := rollupCtx.Cloud.Discover(); err != nil {
-		r.Info("failed to discover the cloud", "scalingGroup", scalingGroupName, "name", rollingUpgrade.NamespacedName())
-		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
-		common.SetMetricRollupFailed(rollingUpgrade.Name)
-		return ctrl.Result{}, err
-	}
 
 	// process node rotation
 	if err := rollupCtx.RotateNodes(); err != nil {
