@@ -59,7 +59,6 @@ type RollingUpgradeContext struct {
 	metricsMutex   *sync.Mutex
 }
 
-// TODO: main node rotation logic
 func (r *RollingUpgradeContext) RotateNodes() error {
 	var (
 		lastTerminationTime = r.RollingUpgrade.LastNodeTerminationTime()
@@ -67,16 +66,8 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		lastDrainTime       = r.RollingUpgrade.LastNodeDrainTime()
 		drainInterval       = r.RollingUpgrade.PostDrainDelaySeconds()
 	)
-	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
-	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
-
-	// set status start time
-	if r.RollingUpgrade.StartTime() == "" {
-		r.RollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
-	}
 
 	if !lastTerminationTime.IsZero() || !lastDrainTime.IsZero() {
-
 		// Check if we are still waiting on a termination delay
 		if time.Since(lastTerminationTime.Time).Seconds() < float64(nodeInterval) {
 			r.Info("reconcile requeue due to termination interval wait", "name", r.RollingUpgrade.NamespacedName())
@@ -88,6 +79,22 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 			r.Info("reconcile requeue due to drain interval wait", "name", r.RollingUpgrade.NamespacedName())
 			return nil
 		}
+	}
+
+	// set status start time
+	if r.RollingUpgrade.StartTime() == "" {
+		r.RollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
+	}
+	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
+
+	// discover the state of AWS and K8s cluster.
+	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
+	if err := r.Cloud.Discover(); err != nil {
+		r.Info("failed to discover the cloud", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
+		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		common.SetMetricRollupFailed(r.RollingUpgrade.Name)
+		return err
 	}
 
 	var (
@@ -245,6 +252,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					if err := r.Auth.DrainNode(&node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
 						if !r.RollingUpgrade.IsIgnoreDrainFailures() {
 							r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
+							//TODO: BREAK AFTER ERRORS?
 						}
 					}
 				}
@@ -326,7 +334,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminated)
 			r.DoNodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, terminatedTime)
 		}
-
 		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
 	case <-time.After(DefaultWaitGroupTimeout):
