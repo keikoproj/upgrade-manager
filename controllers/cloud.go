@@ -34,7 +34,7 @@ var (
 type DiscoveredState struct {
 	*RollingUpgradeAuthenticator
 	logr.Logger
-	ClusterNodes        *corev1.NodeList
+	ClusterNodes        []*corev1.Node
 	LaunchTemplates     []*ec2.LaunchTemplate
 	ScalingGroups       []*autoscaling.Group
 	InProgressInstances []string
@@ -66,12 +66,6 @@ func (d *DiscoveredState) Discover() error {
 		return errors.Wrap(err, "failed to discover ec2 instances")
 	}
 	d.InProgressInstances = inProgressInstances
-
-	nodes, err := d.KubernetesClientSet.ListClusterNodes()
-	if err != nil || nodes == nil || nodes.Size() == 0 {
-		return errors.Wrap(err, "failed to discover cluster nodes")
-	}
-	d.ClusterNodes = nodes
 
 	return nil
 }

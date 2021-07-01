@@ -60,6 +60,14 @@ type RollingUpgradeContext struct {
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
+
+	// set status start time
+	if r.RollingUpgrade.StartTime() == "" {
+		r.RollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
+	}
+	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
+
 	var (
 		lastTerminationTime = r.RollingUpgrade.LastNodeTerminationTime()
 		nodeInterval        = r.RollingUpgrade.NodeIntervalSeconds()
@@ -81,15 +89,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		}
 	}
 
-	// set status start time
-	if r.RollingUpgrade.StartTime() == "" {
-		r.RollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
-	}
-	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
-	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
-
 	// discover the state of AWS and K8s cluster.
-	r.Cloud = NewDiscoveredState(r.Auth, r.Logger)
 	if err := r.Cloud.Discover(); err != nil {
 		r.Info("failed to discover the cloud", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
@@ -249,7 +249,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					// Turns onto NodeRotationDrain
 					r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
-					if err := r.Auth.DrainNode(&node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
+					if err := r.Auth.DrainNode(node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
 						if !r.RollingUpgrade.IsIgnoreDrainFailures() {
 							r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
 							//TODO: BREAK AFTER ERRORS?
@@ -522,7 +522,7 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 
 	// wait for desired nodes
 	if r.Cloud.ClusterNodes != nil && !reflect.DeepEqual(r.Cloud.ClusterNodes, &corev1.NodeList{}) {
-		for _, node := range r.Cloud.ClusterNodes.Items {
+		for _, node := range r.Cloud.ClusterNodes {
 			instanceID := kubeprovider.GetNodeInstanceID(node)
 			if common.ContainsEqualFold(inServiceInstanceIDs, instanceID) && kubeprovider.IsNodeReady(node) && kubeprovider.IsNodePassesReadinessGates(node, r.RollingUpgrade.Spec.ReadinessGates) {
 				readyNodes++
