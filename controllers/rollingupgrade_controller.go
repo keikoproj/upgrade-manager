@@ -26,12 +26,15 @@ import (
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
+	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
@@ -47,6 +50,7 @@ type RollingUpgradeReconciler struct {
 	Auth             *RollingUpgradeAuthenticator
 	DrainGroupMapper *sync.Map
 	DrainErrorMapper *sync.Map
+	ClusterNodesMap  *sync.Map
 }
 
 type RollingUpgradeAuthenticator struct {
@@ -56,7 +60,7 @@ type RollingUpgradeAuthenticator struct {
 
 // +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=upgrademgr.keikoproj.io,resources=rollingupgrades/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;patch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;patch;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=list
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create
 // +kubebuilder:rbac:groups=core,resources=pods/eviction,verbs=create
@@ -145,6 +149,13 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 		RollingUpgrade: rollingUpgrade,
 		metricsMutex:   &sync.Mutex{},
+
+		// discover the K8s cluster at controller level through watch
+		Cloud: func() *DiscoveredState {
+			var c = NewDiscoveredState(r.Auth, r.Logger)
+			c.ClusterNodes = r.getClusterNodes()
+			return c
+		}(),
 	}
 
 	// process node rotation
@@ -161,6 +172,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.RollingUpgrade{}).
+		Watches(&source.Kind{Type: &corev1.Node{}}, handler.EnqueueRequestsFromMapFunc(r.nodeReconciler)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
 }
@@ -176,4 +188,25 @@ func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.Rolling
 	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
 		r.Info("failed to update status", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
 	}
+}
+
+func (r *RollingUpgradeReconciler) nodeReconciler(obj client.Object) []ctrl.Request {
+	var nodeName = obj.GetName()
+	r.Info("nodeReconciler", "nodeName", nodeName)
+	r.ClusterNodesMap.Store(nodeName, obj.(*corev1.Node))
+	return nil
+}
+
+func (r *RollingUpgradeReconciler) getClusterNodes() []*corev1.Node {
+	var clusterNodes []*corev1.Node
+
+	m := map[string]interface{}{}
+	r.ClusterNodesMap.Range(func(key, value interface{}) bool {
+		m[fmt.Sprint(key)] = value
+		return true
+	})
+	for _, value := range m {
+		clusterNodes = append(clusterNodes, value.(*corev1.Node))
+	}
+	return clusterNodes
 }
