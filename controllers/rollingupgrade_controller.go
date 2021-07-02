@@ -180,6 +180,7 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+// nodesEventHandler will fetch us the nodes on corresponding events, an alternative to doing explicit API calls.
 func (r *RollingUpgradeReconciler) nodeEventsHandler() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
@@ -214,10 +215,7 @@ func (r *RollingUpgradeReconciler) nodeEventsHandler() predicate.Predicate {
 		},
 	}
 }
-func (r *RollingUpgradeReconciler) nodeReconciler(obj client.Object) []ctrl.Request {
-	//do nothing, as eventHandler will populate the clusterNodes
-	return nil
-}
+
 func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 	if n >= 1 {
 		r.Info("setting max parallel reconcile", "value", n)
