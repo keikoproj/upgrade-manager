@@ -24,11 +24,13 @@ import (
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
+	"github.com/keikoproj/upgrade-manager/controllers/common/log"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -191,9 +193,23 @@ func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.Rolling
 }
 
 func (r *RollingUpgradeReconciler) nodeReconciler(obj client.Object) []ctrl.Request {
-	var nodeName = obj.GetName()
-	r.Info("nodeReconciler", "nodeName", nodeName)
-	r.ClusterNodesMap.Store(nodeName, obj.(*corev1.Node))
+	var (
+		nodeName = obj.GetName()
+		nodeObj  = obj.(*corev1.Node)
+	)
+
+	// for a deleted node, delete it from sync Map as well.
+	var ctx context.Context
+	err := r.Get(ctx, types.NamespacedName{Name: nodeName}, nodeObj)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			r.ClusterNodesMap.Delete(nodeName)
+			log.Debug("nodeReconciler[delete] - nodeObj not found, deleted from sync map", "name", nodeName)
+		}
+	} else {
+		log.Debug("nodeReconciler[store]", "nodeName", nodeName)
+		r.ClusterNodesMap.Store(nodeName, obj.(*corev1.Node))
+	}
 	return nil
 }
 
