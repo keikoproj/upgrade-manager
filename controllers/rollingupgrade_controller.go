@@ -30,11 +30,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
@@ -175,10 +176,46 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.RollingUpgrade{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, handler.EnqueueRequestsFromMapFunc(r.nodeReconciler)).
+		WithEventFilter(r.nodeEventsHandler()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
 }
 
+func (r *RollingUpgradeReconciler) nodeEventsHandler() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			nodeObj, ok := e.Object.(*corev1.Node)
+			if ok {
+				nodeName := e.Object.GetName()
+				log.Debug("nodeEventsHandler[create] nodeObj created, stored in sync map", "nodeName", nodeName)
+				r.ClusterNodesMap.Store(nodeName, nodeObj)
+			}
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			nodeObj, ok := e.ObjectNew.(*corev1.Node)
+			if ok {
+				nodeName := e.ObjectNew.GetName()
+				log.Debug("nodeEventsHandler[update] nodeObj updated, updated in sync map", "nodeName", nodeName)
+				r.ClusterNodesMap.Store(nodeName, nodeObj)
+			}
+			return true
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			_, ok := e.Object.(*corev1.Node)
+			if ok {
+				nodeName := e.Object.GetName()
+				r.ClusterNodesMap.Delete(nodeName)
+				log.Debug("nodeEventsHandler[delete] - nodeObj not found, deleted from sync map", "name", nodeName)
+			}
+			return true
+		},
+	}
+}
+func (r *RollingUpgradeReconciler) nodeReconciler(obj client.Object) []ctrl.Request {
+	//do nothing, as eventHandler will populate the clusterNodes
+	return nil
+}
 func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 	if n >= 1 {
 		r.Info("setting max parallel reconcile", "value", n)
@@ -190,27 +227,6 @@ func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.Rolling
 	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
 		r.Info("failed to update status", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
 	}
-}
-
-func (r *RollingUpgradeReconciler) nodeReconciler(obj client.Object) []ctrl.Request {
-	var (
-		nodeName = obj.GetName()
-		nodeObj  = obj.(*corev1.Node)
-	)
-
-	// for a deleted node, delete it from sync Map as well.
-	var ctx context.Context
-	err := r.Get(ctx, types.NamespacedName{Name: nodeName}, nodeObj)
-	if err != nil {
-		if kerrors.IsNotFound(err) {
-			r.ClusterNodesMap.Delete(nodeName)
-			log.Debug("nodeReconciler[delete] - nodeObj not found, deleted from sync map", "name", nodeName)
-		}
-	} else {
-		log.Debug("nodeReconciler[store]", "nodeName", nodeName)
-		r.ClusterNodesMap.Store(nodeName, obj.(*corev1.Node))
-	}
-	return nil
 }
 
 func (r *RollingUpgradeReconciler) getClusterNodes() []*corev1.Node {
