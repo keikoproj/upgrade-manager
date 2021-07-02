@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"os/user"
-	"reflect"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -87,20 +86,20 @@ func GetKubernetesLocalConfig() (*rest.Config, error) {
 	return config, nil
 }
 
-func SelectNodeByInstanceID(instanceID string, nodes *corev1.NodeList) corev1.Node {
+func SelectNodeByInstanceID(instanceID string, nodes []*corev1.Node) *corev1.Node {
 	if nodes != nil {
-		for _, node := range nodes.Items {
+		for _, node := range nodes {
 			nodeID := GetNodeInstanceID(node)
 			if strings.EqualFold(instanceID, nodeID) {
 				return node
 			}
 		}
 	}
-	return corev1.Node{}
+	return nil
 }
 
-func GetNodeInstanceID(node corev1.Node) string {
-	if !reflect.DeepEqual(node, &corev1.Node{}) {
+func GetNodeInstanceID(node *corev1.Node) string {
+	if node != nil {
 		tokens := strings.Split(node.Spec.ProviderID, "/")
 		nodeInstanceID := tokens[len(tokens)-1]
 		return nodeInstanceID
@@ -108,7 +107,7 @@ func GetNodeInstanceID(node corev1.Node) string {
 	return ""
 }
 
-func IsNodeReady(node corev1.Node) bool {
+func IsNodeReady(node *corev1.Node) bool {
 	for _, condition := range node.Status.Conditions {
 		if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
 			return true
@@ -117,7 +116,7 @@ func IsNodeReady(node corev1.Node) bool {
 	return false
 }
 
-func IsNodePassesReadinessGates(node corev1.Node, requiredReadinessGates []v1alpha1.NodeReadinessGate) bool {
+func IsNodePassesReadinessGates(node *corev1.Node, requiredReadinessGates []v1alpha1.NodeReadinessGate) bool {
 	if len(requiredReadinessGates) == 0 {
 		return true
 	}
