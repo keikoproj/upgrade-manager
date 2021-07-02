@@ -147,10 +147,15 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
 		for _, target := range batch {
+			instanceID := aws.StringValue(target.InstanceId)
+			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+			if node == nil {
+				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				continue
+			}
+
 			var (
-				instanceID = aws.StringValue(target.InstanceId)
-				node       = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
-				nodeName   = node.GetName()
+				nodeName = node.GetName()
 			)
 			//Add statistics
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
@@ -180,10 +185,14 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 		// turns onto desired nodes
 		for _, target := range batch {
+			instanceID := aws.StringValue(target.InstanceId)
+			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+			if node == nil {
+				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				continue
+			}
 			var (
-				instanceID = aws.StringValue(target.InstanceId)
-				node       = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
-				nodeName   = node.GetName()
+				nodeName = node.GetName()
 			)
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady)
 		}
@@ -199,10 +208,14 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
+			instanceID := aws.StringValue(target.InstanceId)
+			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+			if node == nil {
+				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				continue
+			}
 			var (
-				instanceID = aws.StringValue(target.InstanceId)
-				node       = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
-				nodeName   = node.GetName()
+				nodeName = node.GetName()
 			)
 			// add statistics
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
@@ -219,9 +232,13 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	if reflect.DeepEqual(r.DrainManager.DrainGroup, &sync.WaitGroup{}) {
 		for _, target := range batch {
+			instanceID := aws.StringValue(target.InstanceId)
+			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+			if node == nil {
+				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				continue
+			}
 			var (
-				instanceID   = aws.StringValue(target.InstanceId)
-				node         = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 				nodeName     = node.GetName()
 				scriptTarget = ScriptTarget{
 					InstanceID:    instanceID,
@@ -243,7 +260,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				}
 
 				// Issue drain concurrently - set lastDrainTime
-				if node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes); !reflect.DeepEqual(node, corev1.Node{}) {
+				if node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes); node != nil {
 					r.Info("draining the node", "instance", instanceID, "node name", node.Name, "name", r.RollingUpgrade.NamespacedName())
 
 					// Turns onto NodeRotationDrain
@@ -294,9 +311,13 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		r.RollingUpgrade.SetLastNodeDrainTime(&metav1.Time{Time: time.Now()})
 		r.Info("instances drained successfully, terminating", "name", r.RollingUpgrade.NamespacedName())
 		for _, target := range batch {
+			instanceID := aws.StringValue(target.InstanceId)
+			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+			if node == nil {
+				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				continue
+			}
 			var (
-				instanceID   = aws.StringValue(target.InstanceId)
-				node         = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 				nodeName     = node.GetName()
 				scriptTarget = ScriptTarget{
 					InstanceID:    instanceID,
@@ -423,8 +444,12 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 
 	// check if there is atleast one node that meets the force-referesh criteria
 	if r.RollingUpgrade.IsForceRefresh() {
+		node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
+		if node == nil {
+			r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
+			return false
+		}
 		var (
-			node                = kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 			nodeCreationTime    = node.CreationTimestamp.Time
 			upgradeCreationTime = r.RollingUpgrade.CreationTimestamp.Time
 		)
