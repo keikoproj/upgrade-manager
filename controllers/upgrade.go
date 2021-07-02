@@ -68,27 +68,6 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
 	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
 
-	var (
-		lastTerminationTime = r.RollingUpgrade.LastNodeTerminationTime()
-		nodeInterval        = r.RollingUpgrade.NodeIntervalSeconds()
-		lastDrainTime       = r.RollingUpgrade.LastNodeDrainTime()
-		drainInterval       = r.RollingUpgrade.PostDrainDelaySeconds()
-	)
-
-	if !lastTerminationTime.IsZero() || !lastDrainTime.IsZero() {
-		// Check if we are still waiting on a termination delay
-		if time.Since(lastTerminationTime.Time).Seconds() < float64(nodeInterval) {
-			r.Info("reconcile requeue due to termination interval wait", "name", r.RollingUpgrade.NamespacedName())
-			return nil
-		}
-
-		// Check if we are still waiting on a drain delay
-		if time.Since(lastDrainTime.Time).Seconds() < float64(drainInterval) {
-			r.Info("reconcile requeue due to drain interval wait", "name", r.RollingUpgrade.NamespacedName())
-			return nil
-		}
-	}
-
 	// discover the state of AWS and K8s cluster.
 	if err := r.Cloud.Discover(); err != nil {
 		r.Info("failed to discover the cloud", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
@@ -228,6 +207,24 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return false, err
 		}
+	}
+
+	var (
+		lastTerminationTime = r.RollingUpgrade.LastNodeTerminationTime()
+		nodeInterval        = r.RollingUpgrade.NodeIntervalSeconds()
+		lastDrainTime       = r.RollingUpgrade.LastNodeDrainTime()
+		drainInterval       = r.RollingUpgrade.PostDrainDelaySeconds()
+	)
+
+	// check if we are still waiting on a termination delay
+	if !lastTerminationTime.IsZero() && time.Since(lastTerminationTime.Time).Seconds() < float64(nodeInterval) {
+		r.Info("reconcile requeue due to termination interval wait", "name", r.RollingUpgrade.NamespacedName())
+		return true, nil
+	}
+	// check if we are still waiting on a drain delay
+	if !lastDrainTime.IsZero() && time.Since(lastDrainTime.Time).Seconds() < float64(drainInterval) {
+		r.Info("reconcile requeue due to drain interval wait", "name", r.RollingUpgrade.NamespacedName())
+		return true, nil
 	}
 
 	if reflect.DeepEqual(r.DrainManager.DrainGroup, &sync.WaitGroup{}) {

@@ -55,6 +55,7 @@ type RollingUpgradeReconciler struct {
 	ClusterNodesMap  *sync.Map
 }
 
+// RollingUpgradeAuthenticator has the clients for providers
 type RollingUpgradeAuthenticator struct {
 	*awsprovider.AmazonClientSet
 	*kubeprovider.KubernetesClientSet
@@ -69,7 +70,7 @@ type RollingUpgradeAuthenticator struct {
 // +kubebuilder:rbac:groups=extensions;apps,resources=daemonsets;replicasets;statefulsets,verbs=get
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get
 
-// Reconcile reads that state of the cluster for a RollingUpgrade object and makes changes based on the state read
+// reconcile reads that state of the cluster for a RollingUpgrade object and makes changes based on the state read
 // and the details in the RollingUpgrade.Spec
 func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Info("***Reconciling***")
@@ -84,14 +85,14 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// If the resource is being deleted, remove it from the admissionMap
+	// if the resource is being deleted, remove it from the admissionMap
 	if !rollingUpgrade.DeletionTimestamp.IsZero() {
 		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
 		r.Info("rolling upgrade deleted", "name", rollingUpgrade.NamespacedName())
 		return reconcile.Result{}, nil
 	}
 
-	// Stop processing upgrades which are in finite state
+	// stop processing upgrades which are in finite state
 	currentStatus := rollingUpgrade.CurrentStatus()
 	if common.ContainsEqualFold(v1alpha1.FiniteStates, currentStatus) {
 		r.AdmissionMap.Delete(rollingUpgrade.NamespacedName())
@@ -108,7 +109,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		inProgress       bool
 	)
 
-	// Defer a status update on the resource
+	// defer a status update on the resource
 	defer r.UpdateStatus(rollingUpgrade)
 
 	// handle condition where multiple resources submitted targeting the same scaling group by requeing
@@ -138,6 +139,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
 	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
 
+	// setup the RollingUpgradeContext needed for node rotations.
 	drainGroup, _ := r.DrainGroupMapper.LoadOrStore(rollingUpgrade.NamespacedName(), &sync.WaitGroup{})
 	drainErrs, _ := r.DrainErrorMapper.LoadOrStore(rollingUpgrade.NamespacedName(), make(chan error))
 
@@ -167,7 +169,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	return reconcile.Result{RequeueAfter: time.Second * 10}, nil
+	return reconcile.Result{RequeueAfter: time.Second * 30}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -175,13 +177,13 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.RollingUpgrade{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, nil).
-		WithEventFilter(r.nodeEventsHandler()).
+		WithEventFilter(r.NodeEventsHandler()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
 }
 
-// nodesEventHandler will fetch us the nodes on corresponding events, an alternative to doing explicit API calls.
-func (r *RollingUpgradeReconciler) nodeEventsHandler() predicate.Predicate {
+// NodesEventHandler will fetch us the nodes on corresponding events, an alternative to doing explicit API calls.
+func (r *RollingUpgradeReconciler) NodeEventsHandler() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			nodeObj, ok := e.Object.(*corev1.Node)
@@ -216,6 +218,7 @@ func (r *RollingUpgradeReconciler) nodeEventsHandler() predicate.Predicate {
 	}
 }
 
+// number of reconciles the upgrade-manager should handle in parallel
 func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 	if n >= 1 {
 		r.Info("setting max parallel reconcile", "value", n)
@@ -223,12 +226,14 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 	}
 }
 
+// at the end of every reconcile, update the RollingUpgrade  object
 func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.RollingUpgrade) {
 	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
 		r.Info("failed to update status", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
 	}
 }
 
+// extract node objects from syncMap to a slice
 func (r *RollingUpgradeReconciler) getClusterNodes() []*corev1.Node {
 	var clusterNodes []*corev1.Node
 
