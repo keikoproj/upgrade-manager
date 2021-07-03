@@ -217,12 +217,12 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	)
 
 	// check if we are still waiting on a termination delay
-	if !lastTerminationTime.IsZero() && time.Since(lastTerminationTime.Time).Seconds() < float64(nodeInterval) {
+	if lastTerminationTime != nil && !lastTerminationTime.IsZero() && time.Since(lastTerminationTime.Time).Seconds() < float64(nodeInterval) {
 		r.Info("reconcile requeue due to termination interval wait", "name", r.RollingUpgrade.NamespacedName())
 		return true, nil
 	}
 	// check if we are still waiting on a drain delay
-	if !lastDrainTime.IsZero() && time.Since(lastDrainTime.Time).Seconds() < float64(drainInterval) {
+	if lastDrainTime != nil && !lastDrainTime.IsZero() && time.Since(lastDrainTime.Time).Seconds() < float64(drainInterval) {
 		r.Info("reconcile requeue due to drain interval wait", "name", r.RollingUpgrade.NamespacedName())
 		return true, nil
 	}
@@ -335,6 +335,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return true, nil
 			}
+
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
 
 			// Turns onto NodeRotationTerminate
@@ -351,6 +352,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminated)
 			r.DoNodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, terminatedTime)
+
 		}
 		r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 
@@ -377,7 +379,10 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	r.Info("selecting batch for rotation", "batch size", unavailableInt, "name", r.RollingUpgrade.NamespacedName())
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
-			targets = append(targets, selectedInstance)
+			//In-progress instances shouldn't be considered if they are in terminating state.
+			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
+				targets = append(targets, selectedInstance)
+			}
 		}
 	}
 
@@ -389,10 +394,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
 			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) {
-				//In-progress instances shouldn't be considered if they are in terminating state.
-				if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
-					targets = append(targets, instance)
-				}
+				targets = append(targets, instance)
 			}
 		}
 		if unavailableInt > len(targets) {

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/aws-sdk-go-cache/cache"
@@ -53,6 +52,7 @@ type RollingUpgradeReconciler struct {
 	DrainGroupMapper *sync.Map
 	DrainErrorMapper *sync.Map
 	ClusterNodesMap  *sync.Map
+	ReconcileMap     *sync.Map
 }
 
 // RollingUpgradeAuthenticator has the clients for providers
@@ -104,13 +104,19 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return reconcile.Result{}, err
 	}
 
+	// defer a status update on the resource
+	defer r.UpdateStatus(rollingUpgrade)
+
 	var (
 		scalingGroupName = rollingUpgrade.ScalingGroupName()
 		inProgress       bool
 	)
 
-	// defer a status update on the resource
-	defer r.UpdateStatus(rollingUpgrade)
+	// at any given point in time, there should be only one reconcile operation running per ASG
+	if _, present := r.ReconcileMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); present == true {
+		r.Info("a reconcile operation is already in progress for this ASG, requeuing", "scalingGroup", scalingGroupName, "name", rollingUpgrade.NamespacedName())
+		return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
+	}
 
 	// handle condition where multiple resources submitted targeting the same scaling group by requeing
 	r.AdmissionMap.Range(func(k, v interface{}) bool {
@@ -126,7 +132,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if inProgress {
 		// requeue any resources which are already being processed by a different resource, until the resource is completed/deleted
-		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+		return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
 	}
 
 	// store the rolling upgrade in admission map
@@ -169,7 +175,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	return reconcile.Result{RequeueAfter: time.Second * 30}, nil
+	return reconcile.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -228,6 +234,7 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 
 // at the end of every reconcile, update the RollingUpgrade  object
 func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.RollingUpgrade) {
+	r.ReconcileMap.LoadAndDelete(rollingUpgrade.NamespacedName())
 	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
 		r.Info("failed to update status", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
 	}
