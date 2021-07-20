@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	corev1 "k8s.io/api/core/v1"
@@ -189,6 +190,7 @@ var (
 	FiniteStates        = []string{StatusComplete, StatusError}
 	AllowedStrategyType = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
 	AllowedStrategyMode = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
+	DefaultRequeueTime  = time.Second * 30
 )
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade
