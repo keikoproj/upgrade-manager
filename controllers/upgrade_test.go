@@ -246,33 +246,36 @@ func TestIsScalingGroupDrifted(t *testing.T) {
 
 func TestRotateNodes(t *testing.T) {
 	var tests = []struct {
-		TestDescription     string
-		Reconciler          *RollingUpgradeReconciler
-		AsgClient           *MockAutoscalingGroup
-		ExpectedValue       bool
-		ExpectedStatusValue string
+		TestDescription       string
+		Reconciler            *RollingUpgradeReconciler
+		AsgClient             *MockAutoscalingGroup
+		RollingUpgradeContext *RollingUpgradeContext
+		ExpectedValue         bool
+		ExpectedStatusValue   string
 	}{
 		{
-			"All instances have different launch config as the ASG, RotateNodes() will not mark CR complete",
+			"All instances have different launch config as the ASG, RotateNodes() should not mark CR complete",
 			createRollingUpgradeReconciler(t),
-			func() *MockAutoscalingGroup {
-				newAsgClient := createASGClient()
-				newAsgClient.autoScalingGroups[0].LaunchConfigurationName = aws.String("different-launch-config")
-				return newAsgClient
+			createASGClient(),
+			func() *RollingUpgradeContext {
+				newRollingUpgradeContext := createRollingUpgradeContext(createRollingUpgradeReconciler(t))
+				newRollingUpgradeContext.RollingUpgrade.Spec.AsgName = "mock-asg-2" // The instances in mock-asg are drifted
+				return newRollingUpgradeContext
 			}(),
 			true,
 			v1alpha1.StatusRunning,
 		},
 		{
-			"All instances have same launch config as the ASG, RotateNodes() will mark CR complete",
+			"All instances have same launch config as the ASG, RotateNodes() should mark CR complete",
 			createRollingUpgradeReconciler(t),
 			createASGClient(),
+			createRollingUpgradeContext(createRollingUpgradeReconciler(t)),
 			false,
 			v1alpha1.StatusComplete,
 		},
 	}
 	for _, test := range tests {
-		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx := test.RollingUpgradeContext
 		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
