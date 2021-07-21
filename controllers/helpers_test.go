@@ -179,6 +179,20 @@ func createASGInstance(instanceID string, launchConfigName string) *autoscaling.
 	}
 }
 
+func createEc2Instances() []*ec2.Instance {
+	return []*ec2.Instance{
+		&ec2.Instance{
+			InstanceId: aws.String("mock-instance-1"),
+		},
+		&ec2.Instance{
+			InstanceId: aws.String("mock-instance-2"),
+		},
+		&ec2.Instance{
+			InstanceId: aws.String("mock-instance-3"),
+		},
+	}
+}
+
 func createASG(asgName string, launchConfigName string) *autoscaling.Group {
 	return &autoscaling.Group{
 		AutoScalingGroupName:    &asgName,
@@ -192,10 +206,23 @@ func createASG(asgName string, launchConfigName string) *autoscaling.Group {
 	}
 }
 
+func createDriftedASG(asgName string, launchConfigName string) *autoscaling.Group {
+	return &autoscaling.Group{
+		AutoScalingGroupName:    &asgName,
+		LaunchConfigurationName: &launchConfigName,
+		Instances: []*autoscaling.Instance{
+			createASGInstance("mock-instance-1", "different-launch-config"),
+			createASGInstance("mock-instance-2", "different-launch-config"),
+			createASGInstance("mock-instance-3", "different-launch-config"),
+		},
+		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
+	}
+}
+
 func createASGs() []*autoscaling.Group {
 	return []*autoscaling.Group{
 		createASG("mock-asg-1", "mock-launch-config-1"),
-		createASG("mock-asg-2", "mock-launch-config-2"),
+		createDriftedASG("mock-asg-2", "mock-launch-config-2"),
 		createASG("mock-asg-3", "mock-launch-config-3"),
 	}
 }
@@ -319,5 +346,9 @@ func (m *MockEC2) DescribeInstancesPages(request *ec2.DescribeInstancesInput, ca
 }
 
 func (m *MockEC2) DescribeInstances(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
-	return &ec2.DescribeInstancesOutput{}, nil
+	return &ec2.DescribeInstancesOutput{
+		Reservations: []*ec2.Reservation{
+			&ec2.Reservation{Instances: createEc2Instances()},
+		},
+	}, nil
 }
