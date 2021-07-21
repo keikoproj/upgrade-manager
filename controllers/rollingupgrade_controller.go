@@ -78,7 +78,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.AdmissionMap.Delete(fmt.Sprintf("%s", req.NamespacedName))
+			r.AdmissionMap.Delete(req.NamespacedName.String())
 			r.Info("rolling upgrade resource not found, deleted object from admission map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}

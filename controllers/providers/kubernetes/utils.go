@@ -87,12 +87,10 @@ func GetKubernetesLocalConfig() (*rest.Config, error) {
 }
 
 func SelectNodeByInstanceID(instanceID string, nodes []*corev1.Node) *corev1.Node {
-	if nodes != nil {
-		for _, node := range nodes {
-			nodeID := GetNodeInstanceID(node)
-			if strings.EqualFold(instanceID, nodeID) {
-				return node
-			}
+	for _, node := range nodes {
+		nodeID := GetNodeInstanceID(node)
+		if strings.EqualFold(instanceID, nodeID) {
+			return node
 		}
 	}
 	return nil
