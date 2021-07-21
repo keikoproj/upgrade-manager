@@ -60,6 +60,15 @@ type RollingUpgradeContext struct {
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
+	// set status to running
+	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
+
+	// set start time
+	if r.RollingUpgrade.StartTime() == "" {
+		r.RollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
+	}
+
 	// discover the state of AWS and K8s cluster.
 	if err := r.Cloud.Discover(); err != nil {
 		r.Info("failed to discover the cloud", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
