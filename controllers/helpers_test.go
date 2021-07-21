@@ -158,13 +158,10 @@ type MockAutoscalingGroup struct {
 }
 
 type launchTemplateInfo struct {
-	data *ec2.ResponseLaunchTemplateData
 	name *string
 }
 type MockEC2 struct {
 	ec2iface.EC2API
-	awsErr          awserr.Error
-	reservations    []*ec2.Reservation
 	LaunchTemplates map[string]*launchTemplateInfo
 }
 

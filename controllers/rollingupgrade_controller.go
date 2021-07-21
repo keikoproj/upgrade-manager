@@ -78,7 +78,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.AdmissionMap.Delete(fmt.Sprintf("%s", req.NamespacedName))
+			r.AdmissionMap.Delete(req.NamespacedName.String())
 			r.Info("rolling upgrade resource not found, deleted object from admission map", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -113,7 +113,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	)
 
 	// at any given point in time, there should be only one reconcile operation running per ASG
-	if _, present := r.ReconcileMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); present == true {
+	if _, present := r.ReconcileMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); present {
 		r.Info("a reconcile operation is already in progress for this ASG, requeuing", "scalingGroup", scalingGroupName, "name", rollingUpgrade.NamespacedName())
 		return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
 	}
@@ -136,7 +136,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// store the rolling upgrade in admission map
-	if _, present := r.AdmissionMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); present == false {
+	if _, present := r.AdmissionMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); !present {
 		r.Info("admitted new rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
 		r.CacheConfig.FlushCache("autoscaling")
 	} else {
