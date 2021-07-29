@@ -199,6 +199,8 @@ func main() {
 		},
 		DrainGroupMapper: &sync.Map{},
 		DrainErrorMapper: &sync.Map{},
+		ClusterNodesMap:  &sync.Map{},
+		ReconcileMap:     &sync.Map{},
 	}
 
 	reconciler.SetMaxParallel(maxParallel)

@@ -31,6 +31,10 @@ spec:
       jsonPath: .status.nodesProcessed
       name: NodesProcessed
       type: string
+    - description: percentage of completion for the rollingupgrade CR
+      jsonPath: .status.completePercentage
+      name: Complete
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -118,6 +122,8 @@ spec:
           status:
             description: RollingUpgradeStatus defines the observed state of RollingUpgrade
             properties:
+              completePercentage:
+                type: string
               conditions:
                 items:
                   description: RollingUpgradeCondition describes the state of the
@@ -134,6 +140,7 @@ spec:
               endTime:
                 type: string
               lastBatchNodes:
+                description: For backward compatibility
                 items:
                   type: string
                 type: array
@@ -143,6 +150,25 @@ spec:
               lastTerminationTime:
                 format: date-time
                 type: string
+              nodeInProcessing:
+                additionalProperties:
+                  description: Node In-processing
+                  properties:
+                    nodeName:
+                      type: string
+                    stepEndTime:
+                      format: date-time
+                      type: string
+                    stepName:
+                      type: string
+                    stepStartTime:
+                      format: date-time
+                      type: string
+                    upgradeStartTime:
+                      format: date-time
+                      type: string
+                  type: object
+                type: object
               nodesProcessed:
                 type: integer
               startTime:
