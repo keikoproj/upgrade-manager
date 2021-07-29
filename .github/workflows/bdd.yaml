@@ -13,7 +13,6 @@ on:
 jobs:
   build:
     name: Setup & Run
-    if: github.repository == 'keikoproj/upgrade-manager'
     runs-on: ubuntu-latest
     steps:
     
