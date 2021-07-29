@@ -6,7 +6,6 @@ import (
 
 	drain "k8s.io/kubectl/pkg/drain"
 
-	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,32 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 )
-
-func TestListClusterNodes(t *testing.T) {
-	var tests = []struct {
-		TestDescription string
-		Reconciler      *RollingUpgradeReconciler
-		Node            *corev1.Node
-		ExpectError     bool
-	}{
-		{
-			"List cluster should succeed",
-			createRollingUpgradeReconciler(t),
-			createNode(),
-			false,
-		},
-	}
-
-	for _, test := range tests {
-		rollupCtx := createRollingUpgradeContext(test.Reconciler)
-
-		actual, err := rollupCtx.Auth.ListClusterNodes()
-		expected := createNodeList()
-		if err != nil || !reflect.DeepEqual(actual, expected) {
-			t.Errorf("ListClusterNodes fail %v", err)
-		}
-	}
-}
 
 // This test checks implementation of our DrainNode which does both cordon + drain
 func TestDrainNode(t *testing.T) {
@@ -54,7 +27,7 @@ func TestDrainNode(t *testing.T) {
 		{
 			"Drain should succeed as node is registered with fakeClient",
 			createRollingUpgradeReconciler(t),
-			createNode(),
+			createNode("mock-node-1"),
 			false,
 		},
 		{
@@ -92,7 +65,7 @@ func TestRunCordonOrUncordon(t *testing.T) {
 		{
 			"Cordon should succeed as node is registered with fakeClient",
 			createRollingUpgradeReconciler(t),
-			createNode(),
+			createNode("mock-node-1"),
 			true,
 			false,
 		},
@@ -107,7 +80,7 @@ func TestRunCordonOrUncordon(t *testing.T) {
 			"Uncordon should succeed as node is registered with fakeClient",
 			createRollingUpgradeReconciler(t),
 			func() *corev1.Node {
-				node := createNode()
+				node := createNode("mock-node-1")
 				node.Spec.Unschedulable = true
 				return node
 			}(),
@@ -166,7 +139,7 @@ func TestRunDrainNode(t *testing.T) {
 		{
 			"Drain should succeed as node is registered with fakeClient",
 			createRollingUpgradeReconciler(t),
-			createNode(),
+			createNode("mock-node-1"),
 			false,
 		},
 		// This test should fail, create an upstream ticket.
@@ -273,39 +246,42 @@ func TestIsScalingGroupDrifted(t *testing.T) {
 
 func TestRotateNodes(t *testing.T) {
 	var tests = []struct {
-		TestDescription     string
-		Reconciler          *RollingUpgradeReconciler
-		AsgClient           *MockAutoscalingGroup
-		ExpectedValue       bool
-		ExpectedStatusValue string
+		TestDescription       string
+		Reconciler            *RollingUpgradeReconciler
+		AsgClient             *MockAutoscalingGroup
+		RollingUpgradeContext *RollingUpgradeContext
+		ExpectedValue         bool
+		ExpectedStatusValue   string
 	}{
 		{
-			"All instances have different launch config as the ASG, RotateNodes() will not mark CR complete",
+			"All instances have different launch config as the ASG, RotateNodes() should not mark CR complete",
 			createRollingUpgradeReconciler(t),
-			func() *MockAutoscalingGroup {
-				newAsgClient := createASGClient()
-				newAsgClient.autoScalingGroups[0].LaunchConfigurationName = aws.String("different-launch-config")
-				return newAsgClient
+			createASGClient(),
+			func() *RollingUpgradeContext {
+				newRollingUpgradeContext := createRollingUpgradeContext(createRollingUpgradeReconciler(t))
+				newRollingUpgradeContext.RollingUpgrade.Spec.AsgName = "mock-asg-2" // The instances in mock-asg are drifted
+				return newRollingUpgradeContext
 			}(),
 			true,
 			v1alpha1.StatusRunning,
 		},
 		{
-			"All instances have different launch config as the ASG, RotateNodes() will mark CR complete",
+			"All instances have same launch config as the ASG, RotateNodes() should mark CR complete",
 			createRollingUpgradeReconciler(t),
 			createASGClient(),
+			createRollingUpgradeContext(createRollingUpgradeReconciler(t)),
 			false,
 			v1alpha1.StatusComplete,
 		},
 	}
 	for _, test := range tests {
-		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx := test.RollingUpgradeContext
 		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
 		err := rollupCtx.RotateNodes()
 		if err != nil {
-			t.Errorf("Test Description: \n expected value: nil, actual value: %v", err)
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
 		}
 		if rollupCtx.RollingUpgrade.CurrentStatus() != test.ExpectedStatusValue {
 			t.Errorf("Test Description: %s \n expected value: %s, actual value: %s", test.TestDescription, test.ExpectedStatusValue, rollupCtx.RollingUpgrade.CurrentStatus())
@@ -319,14 +295,14 @@ func TestDesiredNodesReady(t *testing.T) {
 		TestDescription string
 		Reconciler      *RollingUpgradeReconciler
 		AsgClient       *MockAutoscalingGroup
-		ClusterNodes    *corev1.NodeList
+		ClusterNodes    []*corev1.Node
 		ExpectedValue   bool
 	}{
 		{
 			"Desired nodes are ready",
 			createRollingUpgradeReconciler(t),
 			createASGClient(),
-			createNodeList(),
+			createNodeSlice(),
 			true,
 		},
 		{
@@ -337,23 +313,23 @@ func TestDesiredNodesReady(t *testing.T) {
 				newAsgClient.autoScalingGroups[0].DesiredCapacity = func(x int) *int64 { i := int64(x); return &i }(4)
 				return newAsgClient
 			}(),
-			createNodeList(),
+			createNodeSlice(),
 			false,
 		},
 		{
 			"None of the nodes are ready (desiredCount != readyCount)",
 			createRollingUpgradeReconciler(t),
 			createASGClient(),
-			func() *corev1.NodeList {
-				var nodeList = &corev1.NodeList{Items: []corev1.Node{}}
+			func() []*corev1.Node {
+				var nodeSlice []*corev1.Node
 				for i := 0; i < 3; i++ {
-					node := createNode()
+					node := createNode("mock-node-1")
 					node.Status.Conditions = []corev1.NodeCondition{
 						{Type: corev1.NodeReady, Status: corev1.ConditionFalse},
 					}
-					nodeList.Items = append(nodeList.Items, *node)
+					nodeSlice = append(nodeSlice, node)
 				}
-				return nodeList
+				return nodeSlice
 			}(),
 			false,
 		},
@@ -369,7 +345,7 @@ func TestDesiredNodesReady(t *testing.T) {
 				}
 				return newAsgClient
 			}(),
-			createNodeList(),
+			createNodeSlice(),
 			false,
 		},
 	}

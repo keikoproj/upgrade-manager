@@ -249,8 +249,14 @@ func (in *RollingUpgradeStatus) DeepCopyInto(out *RollingUpgradeStatus) {
 		*out = make([]RollingUpgradeCondition, len(*in))
 		copy(*out, *in)
 	}
-	in.LastNodeTerminationTime.DeepCopyInto(&out.LastNodeTerminationTime)
-	in.LastNodeDrainTime.DeepCopyInto(&out.LastNodeDrainTime)
+	if in.LastNodeTerminationTime != nil {
+		in, out := &in.LastNodeTerminationTime, &out.LastNodeTerminationTime
+		*out = (*in).DeepCopy()
+	}
+	if in.LastNodeDrainTime != nil {
+		in, out := &in.LastNodeDrainTime, &out.LastNodeDrainTime
+		*out = (*in).DeepCopy()
+	}
 	if in.Statistics != nil {
 		in, out := &in.Statistics, &out.Statistics
 		*out = make([]*RollingUpgradeStatistics, len(*in))
@@ -266,6 +272,21 @@ func (in *RollingUpgradeStatus) DeepCopyInto(out *RollingUpgradeStatus) {
 		in, out := &in.LastBatchNodes, &out.LastBatchNodes
 		*out = make([]string, len(*in))
 		copy(*out, *in)
+	}
+	if in.NodeInProcessing != nil {
+		in, out := &in.NodeInProcessing, &out.NodeInProcessing
+		*out = make(map[string]*NodeInProcessing, len(*in))
+		for key, val := range *in {
+			var outVal *NodeInProcessing
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				in, out := &val, &outVal
+				*out = new(NodeInProcessing)
+				(*in).DeepCopyInto(*out)
+			}
+			(*out)[key] = outVal
+		}
 	}
 }
 

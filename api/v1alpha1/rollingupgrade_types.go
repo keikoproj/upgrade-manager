@@ -18,12 +18,14 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"strconv"
-	"strings"
 )
 
 // RollingUpgradeSpec defines the desired state of RollingUpgrade
@@ -48,12 +50,15 @@ type RollingUpgradeStatus struct {
 	TotalProcessingTime     string                    `json:"totalProcessingTime,omitempty"`
 	NodesProcessed          int                       `json:"nodesProcessed,omitempty"`
 	TotalNodes              int                       `json:"totalNodes,omitempty"`
+	CompletePercentage      string                    `json:"completePercentage,omitempty"`
 	Conditions              []RollingUpgradeCondition `json:"conditions,omitempty"`
-	LastNodeTerminationTime metav1.Time               `json:"lastTerminationTime,omitempty"`
-	LastNodeDrainTime       metav1.Time               `json:"lastDrainTime,omitempty"`
+	LastNodeTerminationTime *metav1.Time              `json:"lastTerminationTime,omitempty"`
+	LastNodeDrainTime       *metav1.Time              `json:"lastDrainTime,omitempty"`
 
-	Statistics     []*RollingUpgradeStatistics `json:"statistics,omitempty"`
-	LastBatchNodes []string                    `json:"lastBatchNodes,omitempty"`
+	Statistics []*RollingUpgradeStatistics `json:"statistics,omitempty"`
+	// For backward compatibility
+	LastBatchNodes   []string                     `json:"lastBatchNodes,omitempty"`
+	NodeInProcessing map[string]*NodeInProcessing `json:"nodeInProcessing,omitempty"`
 }
 
 // RollingUpgrade Statistics, includes summary(sum/count) from each step
@@ -97,6 +102,7 @@ func (s *RollingUpgradeStatus) SetCondition(cond RollingUpgradeCondition) {
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.currentStatus",description="current status of the rollingupgarde"
 // +kubebuilder:printcolumn:name="TotalNodes",type="string",JSONPath=".status.totalNodes",description="total nodes involved in the rollingupgarde"
 // +kubebuilder:printcolumn:name="NodesProcessed",type="string",JSONPath=".status.nodesProcessed",description="current number of nodes processed in the rollingupgarde"
+// +kubebuilder:printcolumn:name="Complete",type="string",JSONPath=".status.completePercentage",description="percentage of completion for the rollingupgrade CR"
 
 // RollingUpgrade is the Schema for the rollingupgrades API
 type RollingUpgrade struct {
@@ -163,6 +169,7 @@ const (
 	NodeRotationPostWait         RollingUpgradeStep = "post_wait"
 	NodeRotationTerminate        RollingUpgradeStep = "terminate"
 	NodeRotationPostTerminate    RollingUpgradeStep = "post_terminate"
+	NodeRotationTerminated       RollingUpgradeStep = "terminated"
 	NodeRotationCompleted        RollingUpgradeStep = "completed"
 )
 
@@ -175,6 +182,7 @@ var NodeRotationStepOrders = map[RollingUpgradeStep]int{
 	NodeRotationPostWait:         60,
 	NodeRotationTerminate:        70,
 	NodeRotationPostTerminate:    80,
+	NodeRotationTerminated:       90,
 	NodeRotationCompleted:        1000,
 }
 
@@ -182,6 +190,7 @@ var (
 	FiniteStates        = []string{StatusComplete, StatusError}
 	AllowedStrategyType = []string{string(RandomUpdateStrategy), string(UniformAcrossAzUpdateStrategy)}
 	AllowedStrategyMode = []string{string(UpdateStrategyModeLazy), string(UpdateStrategyModeEager)}
+	DefaultRequeueTime  = time.Second * 30
 )
 
 // RollingUpgradeCondition describes the state of the RollingUpgrade
@@ -255,19 +264,19 @@ func (r *RollingUpgrade) MaxUnavailable() intstr.IntOrString {
 	return r.Spec.Strategy.MaxUnavailable
 }
 
-func (r *RollingUpgrade) LastNodeTerminationTime() metav1.Time {
+func (r *RollingUpgrade) LastNodeTerminationTime() *metav1.Time {
 	return r.Status.LastNodeTerminationTime
 }
 
-func (r *RollingUpgrade) SetLastNodeTerminationTime(t metav1.Time) {
+func (r *RollingUpgrade) SetLastNodeTerminationTime(t *metav1.Time) {
 	r.Status.LastNodeTerminationTime = t
 }
 
-func (r *RollingUpgrade) LastNodeDrainTime() metav1.Time {
+func (r *RollingUpgrade) LastNodeDrainTime() *metav1.Time {
 	return r.Status.LastNodeDrainTime
 }
 
-func (r *RollingUpgrade) SetLastNodeDrainTime(t metav1.Time) {
+func (r *RollingUpgrade) SetLastNodeDrainTime(t *metav1.Time) {
 	r.Status.LastNodeDrainTime = t
 }
 
@@ -299,6 +308,10 @@ func (r *RollingUpgrade) EndTime() string {
 	return r.Status.EndTime
 }
 
+func (r *RollingUpgrade) SetTotalProcessingTime(t string) {
+	r.Status.TotalProcessingTime = t
+}
+
 func (r *RollingUpgrade) SetTotalNodes(n int) {
 	r.Status.TotalNodes = n
 }
@@ -307,6 +320,9 @@ func (r *RollingUpgrade) SetNodesProcessed(n int) {
 	r.Status.NodesProcessed = n
 }
 
+func (r *RollingUpgrade) SetCompletePercentage(n int) {
+	r.Status.CompletePercentage = fmt.Sprintf("%s%%", strconv.Itoa(n))
+}
 func (r *RollingUpgrade) GetStatus() RollingUpgradeStatus {
 	return r.Status
 }
@@ -315,6 +331,9 @@ func (r *RollingUpgrade) IsForceRefresh() bool {
 	return r.Spec.ForceRefresh
 }
 
+func (r *RollingUpgrade) IsIgnoreDrainFailures() bool {
+	return r.Spec.IgnoreDrainFailures
+}
 func (r *RollingUpgrade) StrategyMode() UpdateStrategyMode {
 	return r.Spec.Strategy.Mode
 }
