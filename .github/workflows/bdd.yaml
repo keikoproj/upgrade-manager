@@ -1,0 +1,50 @@
+name: BDD
+
+on:
+#  schedule:
+#    - cron: '0 7 * * *' # UTC is being used, 07:00 am would be 12:00am in PT
+  push:
+    branches:
+      - controller-v2
+  pull_request:
+    branches:
+      - controller-v2
+
+jobs:
+  build:
+    name: Setup & Run
+    if: github.repository == 'keikoproj/upgrade-manager'
+    runs-on: ubuntu-latest
+    steps:
+    
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    
+    - name: Prerequisites
+      run: |
+        # Getting kustomize
+         sudo snap install kustomize
+        # Generating resources files
+         make manifests
+         kustomize build config/default -o test-bdd/bases/base_crd-rbac-deployment.yaml
+         kustomize build test-bdd/bases -o test-bdd/crd-rbac-deployment.yaml
+        # Setting kubeconfig
+         aws eks update-kubeconfig --name upgrademgr-eks-nightly --region us-west-2
+        # Deploying
+         kubectl apply -f test-bdd/crd-rbac-deployment.yaml
+        
+    - name: Run BDD
+      run: |
+        go get github.com/cucumber/godog/cmd/godog@v0.10.0
+        cd test-bdd
+        $HOME/go/bin/godog
+
+    - name: Cleanup
+      run: kubectl delete deployment upgrade-manager-controller-manager -n upgrade-manager-system
