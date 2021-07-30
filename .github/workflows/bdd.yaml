@@ -1,8 +1,9 @@
 name: BDD
 
 on:
-  schedule:
-    - cron: '*/10 * * * *' # UTC is being used, 07:00 am would be 12:00am in PT
+  push:
+    branches:
+      - controller-v2
 
 jobs:
   build:
