@@ -19,14 +19,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Configure AWS Credentials
+#    - name: Configure AWS Credentials
+#      env:
+#        AWS_REGION: us-west-2
+#        AWS_DEFAULT_REGION: us-west-2
+#        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    
+    - name: Prerequisites
       env:
         AWS_REGION: us-west-2
         AWS_DEFAULT_REGION: us-west-2
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    
-    - name: Prerequisites
       run: |
         # Getting kustomize
          sudo snap install kustomize
@@ -40,10 +45,20 @@ jobs:
          kubectl apply -f test-bdd/crd-rbac-deployment.yaml
         
     - name: Run BDD
+      env:
+        AWS_REGION: us-west-2
+        AWS_DEFAULT_REGION: us-west-2
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: |
         go get github.com/cucumber/godog/cmd/godog@v0.10.0
         cd test-bdd
         $HOME/go/bin/godog
 
     - name: Cleanup
+      env:
+        AWS_REGION: us-west-2
+        AWS_DEFAULT_REGION: us-west-2
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: kubectl delete deployment upgrade-manager-controller-manager -n upgrade-manager-system
