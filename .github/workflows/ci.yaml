@@ -14,6 +14,7 @@ on:
 jobs:
   build:
     name: CI # Lint, Test, Codecov, Docker build & Push
+    if: github.repository == 'keikoproj/upgrade-manager'
     runs-on: ubuntu-latest
     steps:
 
