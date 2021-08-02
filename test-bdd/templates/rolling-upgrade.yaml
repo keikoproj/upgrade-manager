@@ -8,13 +8,7 @@ spec:
   nodeIntervalSeconds: 90
   postDrain: {}
   postDrainDelaySeconds: 30
-  postDrainScript: |
-    echo "Hello, postDrain!"
-  postDrainWaitScript: |
-    echo "Hello, postDrainWait!"
   postTerminate: {}
-  postTerminateScript: |
-    echo "Hello, postTerminate!"
   preDrain: {}
   strategy:
     mode: eager
