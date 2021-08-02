@@ -5,17 +5,16 @@ metadata:
   namespace: upgrade-manager-system
 spec:
   asgName: upgrademgr-eks-nightly-ASG
-  nodeIntervalSeconds: 90
-  postDrain: {}
-  postDrainDelaySeconds: 30
-  postDrainScript: |
-    echo "Hello, postDrain!"
-  postDrainWaitScript: |
-    echo "Hello, postDrainWait!"
-  postTerminate: {}
-  postTerminateScript: |
-    echo "Hello, postTerminate!"
-  preDrain: {}
+  nodeIntervalSeconds: 300
+  postDrainDelaySeconds: 90
+  postDrain:
+    script: |
+      echo "Hello, postDrain!"
+    postWaitScript: |
+      echo "Hello, postDrainWait!"
+  postTerminate:
+    script: |
+      echo "Hello, postTerminate!"
   strategy:
     mode: eager
     drainTimeout: 600
