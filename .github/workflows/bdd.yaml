@@ -42,4 +42,6 @@ jobs:
         $HOME/go/bin/godog
 
     - name: Cleanup
-      run: kubectl delete deployment upgrade-manager-controller-manager -n upgrade-manager-system
+      run: |
+        kubectl delete deployment upgrade-manager-controller-manager -n upgrade-manager-system
+        kubectl delete ru test-rollup -n upgrade-manager-system

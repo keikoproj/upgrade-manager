@@ -4,5 +4,5 @@ resources:
 - base_crd-rbac-deployment.yaml
 images:
   - name: keikoproj/rolling-upgrade-controller
-    newTag: master
+    newTag: controller-v2
 
