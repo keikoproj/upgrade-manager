@@ -21,4 +21,4 @@ spec:
           name: https
       - name: manager
         args:
-        - "--metrics-bind-address=127.0.0.1:8080"
+        - "--max-parallel=10"
