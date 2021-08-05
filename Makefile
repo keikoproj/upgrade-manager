@@ -21,9 +21,6 @@ test: generate fmt vet manifests
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile coverage.txt
 	go tool cover -html=./coverage.txt -o cover.html
 
-# make test target for test-bdd module	
-test-bdd: $(MAKE) -C test-bdd/ test
-
 # Build manager binary
 manager: generate fmt vet
 	go build -o bin/manager main.go
