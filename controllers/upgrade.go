@@ -477,7 +477,7 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 			launchTemplateName      = aws.StringValue(scalingGroup.LaunchTemplate.LaunchTemplateName)
 			instanceTemplateName    = aws.StringValue(instance.LaunchTemplate.LaunchTemplateName)
 			instanceTemplateVersion = aws.StringValue(instance.LaunchTemplate.Version)
-			templateVersion         = awsprovider.GetTemplateLatestVersion(r.Cloud.LaunchTemplates, launchTemplateName)
+			templateVersion         = aws.StringValue(scalingGroup.LaunchTemplate.Version)
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
@@ -495,7 +495,7 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 			launchTemplateName      = aws.StringValue(scalingGroup.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName)
 			instanceTemplateName    = aws.StringValue(instance.LaunchTemplate.LaunchTemplateName)
 			instanceTemplateVersion = aws.StringValue(instance.LaunchTemplate.Version)
-			templateVersion         = awsprovider.GetTemplateLatestVersion(r.Cloud.LaunchTemplates, launchTemplateName)
+			templateVersion         = aws.StringValue(scalingGroup.LaunchTemplate.Version)
 		)
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
