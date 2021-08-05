@@ -1,6 +1,22 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.1] - 2021-08-05
+52d80d9 check for ASG's launch template version instead latest. (#293)
+c35445d Controller v2: fix BDD template and update Dockerfile with bash  (#292)
+db54e0b Controller v2: fix BDD template (#291)
+b698dd6 Controller v2: remove cleaning up ruObject as BDD already does. (#290)
+86412d5 Controller v2: increase memory/CPU limit and update args (#289)
+2d8651c Controller v2: update args (#288)
+835fd0d V2 bdd (#286)
+998de0d V2 bdd (#285)
+3841cc7 #2122: bdd changes for v2 (#284)
+93626b4 Controller v2: BDD cron update (#283)
+1be8190 Controller v2: BDD cron update (#282)
+62c2255 Controller v2: BDD cron update (#280)
+42abe52 Controller v2: BDD cron update (#279)
+5bdc134 Controller v2 bdd changes (#278)
+
 ## [v1.0.0] - 2021-07-21
  7a4766d (HEAD -> controller-v2, origin/controller-v2) upgrade-manager-v2: Add CI github action, fix lint errors. (#276)
  00f7e89 upgrade-manager-v2: Fix unit tests (#275)
