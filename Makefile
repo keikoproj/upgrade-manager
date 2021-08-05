@@ -1,4 +1,4 @@
-git add MakefileVERSION=1.0.0
+VERSION=1.0.0
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
