@@ -1,4 +1,4 @@
-VERSION=1.0.0
+git add MakefileVERSION=1.0.0
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
@@ -20,9 +20,6 @@ test: generate fmt vet manifests
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile coverage.txt
 	go tool cover -html=./coverage.txt -o cover.html
-
-# make test target for test-bdd module	
-test-bdd: $(MAKE) -C test-bdd/ test
 
 # Build manager binary
 manager: generate fmt vet
