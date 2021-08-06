@@ -41,6 +41,9 @@ import (
 var (
 	//DefaultWaitGroupTimeout is the timeout value for DrainGroup
 	DefaultWaitGroupTimeout = time.Second * 5
+
+	//LaunchTemplate latest string
+	LaunchTemplateVersionLatest = "$Latest"
 )
 
 // DrainManager holds the information to perform drain operation in parallel.
@@ -480,6 +483,11 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 			templateVersion         = aws.StringValue(scalingGroup.LaunchTemplate.Version)
 		)
 
+		// replace latest string with latest version number
+		if strings.EqualFold(templateVersion, LaunchTemplateVersionLatest) {
+			templateVersion = awsprovider.GetTemplateLatestVersion(r.Cloud.LaunchTemplates, launchTemplateName)
+		}
+
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
@@ -497,6 +505,11 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 			instanceTemplateVersion = aws.StringValue(instance.LaunchTemplate.Version)
 			templateVersion         = aws.StringValue(scalingGroup.LaunchTemplate.Version)
 		)
+
+		// replace latest string with latest version number
+		if strings.EqualFold(templateVersion, LaunchTemplateVersionLatest) {
+			templateVersion = awsprovider.GetTemplateLatestVersion(r.Cloud.LaunchTemplates, launchTemplateName)
+		}
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
 			return true
