@@ -1,6 +1,9 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.2] - 2021-08-05
+d73da1b replace launchTemplate latest string with version number (#296)
+
 ## [v1.0.1] - 2021-08-05
 52d80d9 check for ASG's launch template version instead latest. (#293)
 c35445d Controller v2: fix BDD template and update Dockerfile with bash  (#292)
