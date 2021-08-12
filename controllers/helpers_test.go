@@ -176,6 +176,17 @@ func createASGInstance(instanceID string, launchConfigName string) *autoscaling.
 	}
 }
 
+func createASGInstanceWithLaunchTemplate(instanceID string, launchTemplateName string) *autoscaling.Instance {
+	return &autoscaling.Instance{
+		InstanceId: &instanceID,
+		LaunchTemplate: &autoscaling.LaunchTemplateSpecification{
+			LaunchTemplateName: &launchTemplateName,
+		},
+		AvailabilityZone: aws.String("az-1"),
+		LifecycleState:   aws.String("InService"),
+	}
+}
+
 func createEc2Instances() []*ec2.Instance {
 	return []*ec2.Instance{
 		&ec2.Instance{
@@ -203,6 +214,40 @@ func createASG(asgName string, launchConfigName string) *autoscaling.Group {
 	}
 }
 
+func createASGWithLaunchTemplate(asgName string, launchTemplate string) *autoscaling.Group {
+	return &autoscaling.Group{
+		AutoScalingGroupName: &asgName,
+		LaunchTemplate: &autoscaling.LaunchTemplateSpecification{
+			LaunchTemplateName: &asgName,
+		},
+		Instances: []*autoscaling.Instance{
+			createASGInstance("mock-instance-1", launchTemplate),
+			createASGInstance("mock-instance-2", launchTemplate),
+			createASGInstance("mock-instance-3", launchTemplate),
+		},
+		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
+	}
+}
+
+func createASGWithMixedInstanceLaunchTemplate(asgName string, launchTemplate string) *autoscaling.Group {
+	return &autoscaling.Group{
+		AutoScalingGroupName: &asgName,
+		MixedInstancesPolicy: &autoscaling.MixedInstancesPolicy{
+			LaunchTemplate: &autoscaling.LaunchTemplate{
+				LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{
+					LaunchTemplateName: &asgName,
+				},
+			},
+		},
+		Instances: []*autoscaling.Instance{
+			createASGInstance("mock-instance-1", launchTemplate),
+			createASGInstance("mock-instance-2", launchTemplate),
+			createASGInstance("mock-instance-3", launchTemplate),
+		},
+		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
+	}
+}
+
 func createDriftedASG(asgName string, launchConfigName string) *autoscaling.Group {
 	return &autoscaling.Group{
 		AutoScalingGroupName:    &asgName,
@@ -221,6 +266,8 @@ func createASGs() []*autoscaling.Group {
 		createASG("mock-asg-1", "mock-launch-config-1"),
 		createDriftedASG("mock-asg-2", "mock-launch-config-2"),
 		createASG("mock-asg-3", "mock-launch-config-3"),
+		createASGWithLaunchTemplate("mock-asg-4", "mock-launch-template-4"),
+		createASGWithMixedInstanceLaunchTemplate("mock-asg-5", "mock-launch-template-5"),
 	}
 }
 
