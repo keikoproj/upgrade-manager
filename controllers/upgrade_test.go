@@ -176,30 +176,49 @@ func TestIsInstanceDrifted(t *testing.T) {
 		TestDescription string
 		Reconciler      *RollingUpgradeReconciler
 		Instance        *autoscaling.Instance
+		AsgName         *string
 		ExpectedValue   bool
 	}{
 		{
 			"Instance has the same launch config as the ASG, expect false from IsInstanceDrifted",
 			createRollingUpgradeReconciler(t),
 			createASGInstance("mock-instance-1", "mock-launch-config-1"),
+			aws.String("mock-asg-1"),
 			false,
 		},
 		{
 			"Instance has different launch config from the ASG, expect true from IsInstanceDrifted",
 			createRollingUpgradeReconciler(t),
 			createASGInstance("mock-instance-1", "different-launch-config"),
+			aws.String("mock-asg-1"),
 			true,
 		},
 		{
 			"Instance has no launch config, expect true from IsInstanceDrifted",
 			createRollingUpgradeReconciler(t),
 			createASGInstance("mock-instance-1", ""),
+			aws.String("mock-asg-1"),
+			true,
+		},
+		{
+			"Instance has launch template, expect true from IsInstanceDrifted",
+			createRollingUpgradeReconciler(t),
+			createASGInstanceWithLaunchTemplate("mock-instance-1", "mock-launch-template-4"),
+			aws.String("mock-asg-4"),
+			true,
+		},
+		{
+			"Instance has mixed instances launch template, expect true from IsInstanceDrifted",
+			createRollingUpgradeReconciler(t),
+			createASGInstanceWithLaunchTemplate("mock-instance-1", "mock-launch-template-5"),
+			aws.String("mock-asg-5"),
 			true,
 		},
 	}
 	for _, test := range tests {
 		rollupCtx := createRollingUpgradeContext(test.Reconciler)
 		rollupCtx.Cloud.ScalingGroups = createASGs()
+		rollupCtx.RollingUpgrade.Spec.AsgName = *test.AsgName
 		actualValue := rollupCtx.IsInstanceDrifted(test.Instance)
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
