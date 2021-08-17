@@ -29,3 +29,10 @@ func ContainsEqualFold(slice []string, s string) bool {
 	}
 	return false
 }
+
+func IntMax(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
