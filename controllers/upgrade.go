@@ -508,7 +508,7 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 			launchTemplateName      = aws.StringValue(scalingGroup.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName)
 			instanceTemplateName    = aws.StringValue(instance.LaunchTemplate.LaunchTemplateName)
 			instanceTemplateVersion = aws.StringValue(instance.LaunchTemplate.Version)
-			templateVersion         = aws.StringValue(scalingGroup.LaunchTemplate.Version)
+			templateVersion         = aws.StringValue(scalingGroup.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.Version)
 		)
 
 		// replace latest string with latest version number
