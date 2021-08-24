@@ -160,9 +160,12 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 			// Standby
 			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
-			if err := r.Auth.SetInstancesStandBy(inServiceInstanceIDs, r.RollingUpgrade.Spec.AsgName); err != nil {
-				r.Info("failed to set instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+			for _, instanceID := range inServiceInstanceIDs {
+				if err := r.Auth.SetInstancesStandBy([]string{instanceID}, r.RollingUpgrade.Spec.AsgName); err != nil {
+					r.Info("failed to set instance to stand-by", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+				}
 			}
+
 			// requeue until there are no InService instances in the batch
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
@@ -187,7 +190,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		// Wait for desired nodes
 		r.Info("waiting for desired nodes", "name", r.RollingUpgrade.NamespacedName())
 		if !r.DesiredNodesReady() {
-			r.Info("new node is yet to join the cluster", "name", r.RollingUpgrade.NamespacedName())
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
 		}
