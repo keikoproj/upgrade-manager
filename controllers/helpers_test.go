@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -398,6 +397,7 @@ func (m *MockEC2) DescribeInstances(*ec2.DescribeInstancesInput) (*ec2.DescribeI
 	}, nil
 }
 
-func (m *MockAutoscalingGroup) EnterStandby(ctx context.Context, params *autoscaling.EnterStandbyInput, optFns ...func(*autoscaling.Options)) (*autoscaling.EnterStandbyOutput, error) {
-	return &autoscaling.EnterStandbyOutput{}, nil
+func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(_ *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
+	output := &autoscaling.EnterStandbyOutput{}
+	return output, nil
 }
