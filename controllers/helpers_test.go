@@ -396,3 +396,8 @@ func (m *MockEC2) DescribeInstances(*ec2.DescribeInstancesInput) (*ec2.DescribeI
 		},
 	}, nil
 }
+
+func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(_ *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
+	output := &autoscaling.EnterStandbyOutput{}
+	return output, nil
+}
