@@ -643,14 +643,12 @@ func (r *RollingUpgradeContext) SetBatchStandBy(instanceIDs []string) error {
 		start            = 0
 	)
 
-	fmt.Println("SetBatchStandBy", "numberOfBatches", numberOfBatches, "pendingInstances", pendingInstances)
 	for i := 0; i < int(numberOfBatches) && pendingInstances > 0 && start < len(instanceIDs); i++ {
 		batchSize := common.IntMin(pendingInstances, awsprovider.InstanceStandByLimit)
 		if batchSize > len(instanceIDs) {
 			return errors.Errorf("unable to set instances to standBy. Out of bounds error. Instances: %v", instanceIDs[start:batchSize])
 		}
 
-		fmt.Println("SetBatchStandBy(for-loop)", "batchSize", batchSize, "start", start)
 		if err := r.Auth.SetInstancesStandBy(instanceIDs[start:start+batchSize], r.RollingUpgrade.Spec.AsgName); err != nil {
 			r.Info("failed to set instances to stand-by", "instances", instanceIDs[start:batchSize], "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 		}
