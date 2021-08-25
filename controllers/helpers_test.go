@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -395,4 +396,8 @@ func (m *MockEC2) DescribeInstances(*ec2.DescribeInstancesInput) (*ec2.DescribeI
 			&ec2.Reservation{Instances: createEc2Instances()},
 		},
 	}, nil
+}
+
+func (m *MockAutoscalingGroup) EnterStandby(ctx context.Context, params *autoscaling.EnterStandbyInput, optFns ...func(*autoscaling.Options)) (*autoscaling.EnterStandbyOutput, error) {
+	return &autoscaling.EnterStandbyOutput{}, nil
 }
