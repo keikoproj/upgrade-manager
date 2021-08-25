@@ -164,12 +164,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return false, err
 			}
 
-			// for _, instanceID := range inServiceInstanceIDs {
-			// 	if err := r.Auth.SetInstancesStandBy([]string{instanceID}, r.RollingUpgrade.Spec.AsgName); err != nil {
-			// 		r.Info("failed to set instance to stand-by", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
-			// 	}
-			// }
-
 			// requeue until there are no InService instances in the batch
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
