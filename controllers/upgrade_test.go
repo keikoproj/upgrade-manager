@@ -4,10 +4,12 @@ import (
 	"os"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/util/intstr"
 	drain "k8s.io/kubectl/pkg/drain"
 
 	"time"
 
+	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	corev1 "k8s.io/api/core/v1"
 
 	//AWS
@@ -356,6 +358,72 @@ func TestDesiredNodesReady(t *testing.T) {
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
 		actualValue := rollupCtx.DesiredNodesReady()
+		if actualValue != test.ExpectedValue {
+			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
+		}
+	}
+}
+
+func TestSetBatchStandBy(t *testing.T) {
+	var tests = []struct {
+		TestDescription      string
+		Reconciler           *RollingUpgradeReconciler
+		RollingUpgrade       *v1alpha1.RollingUpgrade
+		AsgClient            *MockAutoscalingGroup
+		ClusterNodes         []*corev1.Node
+		ExpectedValue        error
+		InstanceStandByLimit int
+	}{
+		{
+			"Single Batch",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%"}
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+			createNodeSlice(),
+			nil,
+			3,
+		},
+		{
+			"Multiple Batches",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%"}
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+			createNodeSlice(),
+			nil,
+			1,
+		},
+		{
+			"Multiple Batches with some overflow",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%"}
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+			createNodeSlice(),
+			nil,
+			2,
+		},
+	}
+	for _, test := range tests {
+		awsprovider.InstanceStandByLimit = test.InstanceStandByLimit
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		batch := test.AsgClient.autoScalingGroups[0].Instances
+		actualValue := rollupCtx.SetBatchStandBy(awsprovider.GetInstanceIDs(batch))
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
 		}
