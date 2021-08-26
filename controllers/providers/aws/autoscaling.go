@@ -32,6 +32,8 @@ var (
 		autoscaling.LifecycleStateWarmedTerminatingProceed,
 		autoscaling.LifecycleStateWarmedTerminated,
 	}
+	// Instance standBy limit is enforced by AWS EnterStandBy API
+	InstanceStandByLimit = 19
 )
 
 func (a *AmazonClientSet) DescribeScalingGroups() ([]*autoscaling.Group, error) {
