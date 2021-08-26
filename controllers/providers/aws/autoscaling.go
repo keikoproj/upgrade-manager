@@ -32,6 +32,7 @@ var (
 		autoscaling.LifecycleStateWarmedTerminatingProceed,
 		autoscaling.LifecycleStateWarmedTerminated,
 	}
+	// Instance standBy limit is enforced by AWS EnterStandBy API
 	InstanceStandByLimit = 19
 )
 
