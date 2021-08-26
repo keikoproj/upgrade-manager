@@ -36,3 +36,19 @@ func IntMax(a, b int) int {
 	}
 	return b
 }
+
+func IntMin(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func GetChunks(items []string, chunkSize int) [][]string {
+	var chunks [][]string
+	for i := 0; i < len(items); i += chunkSize {
+		end := IntMin(i+chunkSize, len(items))
+		chunks = append(chunks, items[i:end])
+	}
+	return chunks
+}
