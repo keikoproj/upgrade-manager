@@ -160,9 +160,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 			// Standby
 			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
-			if err := r.SetBatchStandBy(batchInstanceIDs); err != nil {
-				return false, err
-			}
+			r.SetBatchStandBy(batchInstanceIDs)
 
 			// requeue until there are no InService instances in the batch
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
@@ -637,24 +635,12 @@ func (r *RollingUpgradeContext) endTimeUpdate() {
 
 // AWS API call for setting an instance to StandBy has a limit of 19. Hence we have to call the API in batches.
 func (r *RollingUpgradeContext) SetBatchStandBy(instanceIDs []string) error {
-	var (
-		pendingInstances = len(instanceIDs)
-		numberOfBatches  = math.Ceil(float64(len(instanceIDs)) / float64(awsprovider.InstanceStandByLimit))
-		start            = 0
-	)
-
-	for i := 0; i < int(numberOfBatches) && pendingInstances > 0 && start < len(instanceIDs); i++ {
-		batchSize := common.IntMin(pendingInstances, awsprovider.InstanceStandByLimit)
-		if batchSize > len(instanceIDs) {
-			return errors.Errorf("unable to set instances to standBy. Out of bounds error. Instances: %v", instanceIDs[start:batchSize])
+	var err error
+	instanceBatch := common.GetChunks(instanceIDs, awsprovider.InstanceStandByLimit)
+	for _, batch := range instanceBatch {
+		if err = r.Auth.SetInstancesStandBy(batch, r.RollingUpgrade.Spec.AsgName); err != nil {
+			r.Info("failed to set instances to stand-by", "instances", batch, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 		}
-
-		if err := r.Auth.SetInstancesStandBy(instanceIDs[start:start+batchSize], r.RollingUpgrade.Spec.AsgName); err != nil {
-			r.Info("failed to set instances to stand-by", "instances", instanceIDs[start:batchSize], "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
-		}
-		start += batchSize
-		pendingInstances -= batchSize
 	}
-	return nil
-
+	return err
 }
