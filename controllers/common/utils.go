@@ -47,7 +47,7 @@ func IntMin(a, b int) int {
 func GetChunks(items []string, chunkSize int) [][]string {
 	var chunks [][]string
 	for i := 0; i < len(items); i += chunkSize {
-		end := common.IntMin(i+chunkSize, len(items))
+		end := IntMin(i+chunkSize, len(items))
 		chunks = append(chunks, items[i:end])
 	}
 	return chunks
