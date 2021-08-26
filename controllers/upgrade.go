@@ -160,9 +160,10 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 			// Standby
 			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
-			if err := r.Auth.SetInstancesStandBy(inServiceInstanceIDs, r.RollingUpgrade.Spec.AsgName); err != nil {
-				r.Info("failed to set instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+			if err := r.SetBatchStandBy(batchInstanceIDs); err != nil {
+				r.Info("failed to set instances to stand-by", "instances", batch, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
+
 			// requeue until there are no InService instances in the batch
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
@@ -187,7 +188,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		// Wait for desired nodes
 		r.Info("waiting for desired nodes", "name", r.RollingUpgrade.NamespacedName())
 		if !r.DesiredNodesReady() {
-			r.Info("new node is yet to join the cluster", "name", r.RollingUpgrade.NamespacedName())
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return true, nil
 		}
@@ -633,4 +633,16 @@ func (r *RollingUpgradeContext) endTimeUpdate() {
 		// expose total processing time to prometheus
 		common.TotalProcessingTime(r.RollingUpgrade.ScalingGroupName(), totalProcessingTime)
 	}
+}
+
+// AWS API call for setting an instance to StandBy has a limit of 19. Hence we have to call the API in batches.
+func (r *RollingUpgradeContext) SetBatchStandBy(instanceIDs []string) error {
+	var err error
+	instanceBatch := common.GetChunks(instanceIDs, awsprovider.InstanceStandByLimit)
+	for _, batch := range instanceBatch {
+		if err = r.Auth.SetInstancesStandBy(batch, r.RollingUpgrade.Spec.AsgName); err != nil {
+			return err
+		}
+	}
+	return nil
 }
