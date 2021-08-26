@@ -32,6 +32,7 @@ var (
 		autoscaling.LifecycleStateWarmedTerminatingProceed,
 		autoscaling.LifecycleStateWarmedTerminated,
 	}
+	InstanceStandByLimit = 19
 )
 
 func (a *AmazonClientSet) DescribeScalingGroups() ([]*autoscaling.Group, error) {
