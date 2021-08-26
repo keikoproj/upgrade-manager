@@ -160,7 +160,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 			// Standby
 			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
-			r.SetBatchStandBy(batchInstanceIDs)
+			if err := r.SetBatchStandBy(batchInstanceIDs); err != nil {
+				r.Info("failed to set instances to stand-by", "instances", batch, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+			}
 
 			// requeue until there are no InService instances in the batch
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
@@ -639,8 +641,8 @@ func (r *RollingUpgradeContext) SetBatchStandBy(instanceIDs []string) error {
 	instanceBatch := common.GetChunks(instanceIDs, awsprovider.InstanceStandByLimit)
 	for _, batch := range instanceBatch {
 		if err = r.Auth.SetInstancesStandBy(batch, r.RollingUpgrade.Spec.AsgName); err != nil {
-			r.Info("failed to set instances to stand-by", "instances", batch, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
+			return err
 		}
 	}
-	return err
+	return nil
 }
