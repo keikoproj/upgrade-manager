@@ -42,19 +42,17 @@ import (
 type RollingUpgradeReconciler struct {
 	client.Client
 	logr.Logger
-	Scheme              *runtime.Scheme
-	AdmissionMap        sync.Map
-	CacheConfig         *cache.Config
-	EventWriter         *kubeprovider.EventWriter
-	maxParallel         int
-	ScriptRunner        ScriptRunner
-	Auth                *RollingUpgradeAuthenticator
-	DrainGroupMapper    *sync.Map
-	DrainErrorMapper    *sync.Map
-	ClusterNodesMap     *sync.Map
-	ReconcileMap        *sync.Map
-	DrainTimeout        int
-	IgnoreDrainFailures bool
+	Scheme           *runtime.Scheme
+	AdmissionMap     sync.Map
+	CacheConfig      *cache.Config
+	EventWriter      *kubeprovider.EventWriter
+	maxParallel      int
+	ScriptRunner     ScriptRunner
+	Auth             *RollingUpgradeAuthenticator
+	DrainGroupMapper *sync.Map
+	DrainErrorMapper *sync.Map
+	ClusterNodesMap  *sync.Map
+	ReconcileMap     *sync.Map
 }
 
 // RollingUpgradeAuthenticator has the clients for providers
@@ -168,9 +166,6 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			c.ClusterNodes = r.getClusterNodes()
 			return c
 		}(),
-
-		DrainTimeout:        r.DrainTimeout,
-		IgnoreDrainFailures: r.IgnoreDrainFailures,
 	}
 
 	// process node rotation
