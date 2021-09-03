@@ -84,14 +84,10 @@ func main() {
 		maxParallel          int
 		maxAPIRetries        int
 		debugMode            bool
-		drainTimeout         int
-		ignoreDrainFailures  bool
 		logMode              string
 	)
 
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
-	flag.IntVar(&drainTimeout, "drain-timeout", 900, "when the drain command should timeout")
-	flag.BoolVar(&ignoreDrainFailures, "ignore-drain-failures", false, "proceed with instance termination despite drain failures.")
 	flag.StringVar(&logMode, "log-format", "text", "Log mode: supported values: text, json.")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -205,9 +201,6 @@ func main() {
 		DrainErrorMapper: &sync.Map{},
 		ClusterNodesMap:  &sync.Map{},
 		ReconcileMap:     &sync.Map{},
-
-		DrainTimeout:        drainTimeout,
-		IgnoreDrainFailures: ignoreDrainFailures,
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
