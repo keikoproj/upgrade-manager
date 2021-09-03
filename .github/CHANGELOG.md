@@ -1,6 +1,13 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.3] - 2021-09-03
+6252725 revert #300 (#305)
+df08ab0 Set Instances to StandBy in batches (#303)
+e77431c fix: fix panic when using MixedInstancesPolicy (#298)
+1e6d29d Add ignoreDrainFailure and DrainTimeout as controller arguements (#300)
+
+
 ## [v1.0.2] - 2021-08-05
 d73da1b replace launchTemplate latest string with version number (#296)
 
