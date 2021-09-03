@@ -60,9 +60,6 @@ type RollingUpgradeContext struct {
 	RollingUpgrade *v1alpha1.RollingUpgrade
 	DrainManager   *DrainManager
 	metricsMutex   *sync.Mutex
-
-	DrainTimeout        int
-	IgnoreDrainFailures bool
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
@@ -117,8 +114,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 
 func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) (bool, error) {
 	var (
-		mode         = r.RollingUpgrade.StrategyMode()
-		drainTimeout = common.IntMax(r.DrainTimeout, r.RollingUpgrade.DrainTimeout())
+		mode = r.RollingUpgrade.StrategyMode()
 	)
 
 	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
@@ -271,9 +267,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					// Turns onto NodeRotationDrain
 					r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
-					if err := r.Auth.DrainNode(node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), drainTimeout, r.Auth.Kubernetes); err != nil {
+					if err := r.Auth.DrainNode(node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
 						// ignore drain failures if either of spec or controller args have set ignoreDrainFailures to true.
-						if !r.RollingUpgrade.IsIgnoreDrainFailures() && !r.IgnoreDrainFailures {
+						if !r.RollingUpgrade.IsIgnoreDrainFailures() {
 							r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
 							return
 						}
