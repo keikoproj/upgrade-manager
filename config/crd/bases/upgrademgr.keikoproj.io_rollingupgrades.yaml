@@ -115,8 +115,6 @@ spec:
                     type: string
                   type:
                     type: string
-                required:
-                - drainTimeout
                 type: object
             type: object
           status:
