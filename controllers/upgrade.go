@@ -54,12 +54,14 @@ type DrainManager struct {
 
 type RollingUpgradeContext struct {
 	logr.Logger
-	ScriptRunner   ScriptRunner
-	Auth           *RollingUpgradeAuthenticator
-	Cloud          *DiscoveredState
-	RollingUpgrade *v1alpha1.RollingUpgrade
-	DrainManager   *DrainManager
-	metricsMutex   *sync.Mutex
+	ScriptRunner        ScriptRunner
+	Auth                *RollingUpgradeAuthenticator
+	Cloud               *DiscoveredState
+	RollingUpgrade      *v1alpha1.RollingUpgrade
+	DrainManager        *DrainManager
+	metricsMutex        *sync.Mutex
+	DrainTimeout        int
+	IgnoreDrainFailures bool
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
@@ -249,6 +251,24 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			)
 			r.DrainManager.DrainGroup.Add(1)
 
+			// Determine IgnoreDrainFailure and DrainTimeout values. CR spec takes the precedence.
+			var (
+				drainTimeout        int
+				ignoreDrainFailures bool
+			)
+			if r.RollingUpgrade.DrainTimeout() == nil {
+				drainTimeout = r.DrainTimeout
+			} else {
+				drainTimeout = *r.RollingUpgrade.DrainTimeout()
+			}
+
+			if r.RollingUpgrade.IsIgnoreDrainFailures() == nil {
+				ignoreDrainFailures = r.IgnoreDrainFailures
+			} else {
+				ignoreDrainFailures = *r.RollingUpgrade.IsIgnoreDrainFailures()
+			}
+
+			// Drain the nodes in parallel
 			go func() {
 				defer r.DrainManager.DrainGroup.Done()
 
@@ -267,9 +287,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					// Turns onto NodeRotationDrain
 					r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain)
 
-					if err := r.Auth.DrainNode(node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), r.RollingUpgrade.DrainTimeout(), r.Auth.Kubernetes); err != nil {
+					if err := r.Auth.DrainNode(node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), drainTimeout, r.Auth.Kubernetes); err != nil {
 						// ignore drain failures if either of spec or controller args have set ignoreDrainFailures to true.
-						if !r.RollingUpgrade.IsIgnoreDrainFailures() {
+						if !ignoreDrainFailures {
 							r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
 							return
 						}
