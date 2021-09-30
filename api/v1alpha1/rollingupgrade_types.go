@@ -37,7 +37,7 @@ type RollingUpgradeSpec struct {
 	PostDrain             PostDrainSpec       `json:"postDrain,omitempty"`
 	PostTerminate         PostTerminateSpec   `json:"postTerminate,omitempty"`
 	Strategy              UpdateStrategy      `json:"strategy,omitempty"`
-	IgnoreDrainFailures   bool                `json:"ignoreDrainFailures,omitempty"`
+	IgnoreDrainFailures   *bool               `json:"ignoreDrainFailures,omitempty"`
 	ForceRefresh          bool                `json:"forceRefresh,omitempty"`
 	ReadinessGates        []NodeReadinessGate `json:"readinessGates,omitempty"`
 }
@@ -216,7 +216,7 @@ type UpdateStrategy struct {
 	Type           UpdateStrategyType `json:"type,omitempty"`
 	Mode           UpdateStrategyMode `json:"mode,omitempty"`
 	MaxUnavailable intstr.IntOrString `json:"maxUnavailable,omitempty"`
-	DrainTimeout   int                `json:"drainTimeout"`
+	DrainTimeout   *int               `json:"drainTimeout,omitempty"`
 }
 
 func (c UpdateStrategyMode) String() string {
@@ -232,7 +232,7 @@ func (r *RollingUpgrade) ScalingGroupName() string {
 	return r.Spec.AsgName
 }
 
-func (r *RollingUpgrade) DrainTimeout() int {
+func (r *RollingUpgrade) DrainTimeout() *int {
 	return r.Spec.Strategy.DrainTimeout
 }
 
@@ -331,7 +331,7 @@ func (r *RollingUpgrade) IsForceRefresh() bool {
 	return r.Spec.ForceRefresh
 }
 
-func (r *RollingUpgrade) IsIgnoreDrainFailures() bool {
+func (r *RollingUpgrade) IsIgnoreDrainFailures() *bool {
 	return r.Spec.IgnoreDrainFailures
 }
 func (r *RollingUpgrade) StrategyMode() UpdateStrategyMode {
@@ -372,9 +372,9 @@ func (r *RollingUpgrade) Validate() (bool, error) {
 	}
 
 	// validating the DrainTimeout value
-	if strategy.DrainTimeout == 0 {
-		r.Spec.Strategy.DrainTimeout = -1
-	} else if strategy.DrainTimeout < -1 {
+	if *strategy.DrainTimeout == 0 {
+		*r.Spec.Strategy.DrainTimeout = -1
+	} else if *strategy.DrainTimeout < -1 {
 		err := fmt.Errorf("%s: Invalid value for startegy DrainTimeout - %d", r.Name, strategy.MaxUnavailable.IntVal)
 		return false, err
 	}
