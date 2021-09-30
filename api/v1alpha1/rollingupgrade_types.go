@@ -372,12 +372,13 @@ func (r *RollingUpgrade) Validate() (bool, error) {
 	}
 
 	// validating the DrainTimeout value
-	if *strategy.DrainTimeout == 0 {
-		*r.Spec.Strategy.DrainTimeout = -1
-	} else if *strategy.DrainTimeout < -1 {
-		err := fmt.Errorf("%s: Invalid value for startegy DrainTimeout - %d", r.Name, strategy.MaxUnavailable.IntVal)
-		return false, err
+	if strategy.DrainTimeout != nil {
+		if *strategy.DrainTimeout == 0 {
+			*r.Spec.Strategy.DrainTimeout = -1
+		} else if *strategy.DrainTimeout < -1 {
+			err := fmt.Errorf("%s: Invalid value for startegy DrainTimeout - %d", r.Name, strategy.MaxUnavailable.IntVal)
+			return false, err
+		}
 	}
-
 	return true, nil
 }
