@@ -45,7 +45,7 @@ func TestDrainNode(t *testing.T) {
 		err := rollupCtx.Auth.DrainNode(
 			test.Node,
 			time.Duration(rollupCtx.RollingUpgrade.PostDrainDelaySeconds()),
-			rollupCtx.RollingUpgrade.DrainTimeout(),
+			900,
 			rollupCtx.Auth.Kubernetes,
 		)
 		if (test.ExpectError && err == nil) || (!test.ExpectError && err != nil) {
@@ -112,7 +112,7 @@ func TestRunCordonOrUncordon(t *testing.T) {
 			Out:                 os.Stdout,
 			ErrOut:              os.Stdout,
 			DeleteEmptyDirData:  true,
-			Timeout:             time.Duration(rollupCtx.RollingUpgrade.Spec.Strategy.DrainTimeout) * time.Second,
+			Timeout:             900,
 		}
 		err := drain.RunCordonOrUncordon(helper, test.Node, test.Cordon)
 		if (test.ExpectError && err == nil) || (!test.ExpectError && err != nil) {
@@ -163,7 +163,7 @@ func TestRunDrainNode(t *testing.T) {
 			Out:                 os.Stdout,
 			ErrOut:              os.Stdout,
 			DeleteEmptyDirData:  true,
-			Timeout:             time.Duration(rollupCtx.RollingUpgrade.Spec.Strategy.DrainTimeout) * time.Second,
+			Timeout:             900,
 		}
 		err := drain.RunNodeDrain(helper, test.Node.Name)
 		if (test.ExpectError && err == nil) || (!test.ExpectError && err != nil) {
