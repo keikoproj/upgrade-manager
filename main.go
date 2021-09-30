@@ -85,6 +85,8 @@ func main() {
 		maxAPIRetries        int
 		debugMode            bool
 		logMode              string
+		drainTimeout         int
+		ignoreDrainFailures  bool
 	)
 
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
@@ -96,6 +98,8 @@ func main() {
 	flag.StringVar(&namespace, "namespace", "", "The namespace in which to watch objects")
 	flag.IntVar(&maxParallel, "max-parallel", 10, "The max number of parallel rolling upgrades")
 	flag.IntVar(&maxAPIRetries, "max-api-retries", 12, "The number of maximum retries for failed/rate limited AWS API calls")
+	flag.IntVar(&drainTimeout, "drain-timeout", 900, "when the drain command should timeout")
+	flag.BoolVar(&ignoreDrainFailures, "ignore-drain-failures", false, "proceed with instance termination despite drain failures.")
 
 	opts := zap.Options{
 		Development: true,
@@ -197,10 +201,12 @@ func main() {
 		ScriptRunner: controllers.ScriptRunner{
 			Logger: logger,
 		},
-		DrainGroupMapper: &sync.Map{},
-		DrainErrorMapper: &sync.Map{},
-		ClusterNodesMap:  &sync.Map{},
-		ReconcileMap:     &sync.Map{},
+		DrainGroupMapper:    &sync.Map{},
+		DrainErrorMapper:    &sync.Map{},
+		ClusterNodesMap:     &sync.Map{},
+		ReconcileMap:        &sync.Map{},
+		DrainTimeout:        drainTimeout,
+		IgnoreDrainFailures: ignoreDrainFailures,
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
