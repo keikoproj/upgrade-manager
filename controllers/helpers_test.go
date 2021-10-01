@@ -85,8 +85,7 @@ func createRollingUpgrade() *v1alpha1.RollingUpgrade {
 			AsgName:               "mock-asg-1",
 			PostDrainDelaySeconds: 30,
 			Strategy: v1alpha1.UpdateStrategy{
-				Type:         v1alpha1.RandomUpdateStrategy,
-				DrainTimeout: 30,
+				Type: v1alpha1.RandomUpdateStrategy,
 			},
 		},
 	}
