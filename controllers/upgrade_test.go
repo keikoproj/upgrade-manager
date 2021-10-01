@@ -448,3 +448,72 @@ func TestSetBatchStandBy(t *testing.T) {
 		}
 	}
 }
+
+func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
+	var tests = []struct {
+		TestDescription     string
+		Reconciler          *RollingUpgradeReconciler
+		RollingUpgrade      *v1alpha1.RollingUpgrade
+		AsgClient           *MockAutoscalingGroup
+		ClusterNodes        []*corev1.Node
+		ExpectedStatusValue string
+	}{
+		{
+			"CR spec has IgnoreDrainFailures as nil, so default false should be considered",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			v1alpha1.StatusComplete,
+		},
+		{
+			"CR spec has IgnoreDrainFailures as true, so default false should not be considered",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				ignoreDrainFailuresValue := true
+				rollingUpgrade.Spec.IgnoreDrainFailures = &ignoreDrainFailuresValue
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+			createNodeSlice(),
+			v1alpha1.StatusComplete,
+		},
+		{
+			"CR spec has DrainTimeout as nil, so default value of 900 should be considered",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			v1alpha1.StatusComplete,
+		},
+		{
+			"CR spec has DrainTimeout as 1800, so default value of 900 should not be considered",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				drainTimeoutValue := 1800
+				rollingUpgrade.Spec.Strategy.DrainTimeout = &drainTimeoutValue
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+			createNodeSlice(),
+			v1alpha1.StatusComplete,
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		err := rollupCtx.RotateNodes()
+		if err != nil {
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
+		}
+		if rollupCtx.RollingUpgrade.CurrentStatus() != test.ExpectedStatusValue {
+			t.Errorf("Test Description: %s \n expected value: %s, actual value: %s", test.TestDescription, test.ExpectedStatusValue, rollupCtx.RollingUpgrade.CurrentStatus())
+		}
+	}
+}
