@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.4] - 2021-10-04
+995b81b controller flags for ignoreDrainFailures and drainTimeout (#307)
+
+
 ## [v1.0.3] - 2021-09-03
 6252725 revert #300 (#305)
 df08ab0 Set Instances to StandBy in batches (#303)
