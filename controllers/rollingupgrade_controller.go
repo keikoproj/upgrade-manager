@@ -141,6 +141,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if _, present := r.AdmissionMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); !present {
 		r.Info("admitted new rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
 		r.CacheConfig.FlushCache("autoscaling")
+		r.CacheConfig.FlushCache("ec2")
 	} else {
 		r.Info("operating on existing rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
 	}
