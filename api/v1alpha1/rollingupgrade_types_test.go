@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"
 
 	"golang.org/x/net/context"
@@ -88,7 +87,7 @@ var _ = Describe("RollingUpgrade", func() {
 
 // Test
 func TestNodeTurnsOntoStep(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
+	g := NewGomegaWithT(t)
 
 	r := &RollingUpgradeStatus{}
 	//A map to retain the steps for multiple nodes
@@ -98,42 +97,42 @@ func TestNodeTurnsOntoStep(t *testing.T) {
 
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationKickoff, mutex)
 
-	g.Expect(inProcessingNodes).NotTo(gomega.BeNil())
-	g.Expect(nodeSteps["node-1"]).To(gomega.BeNil())
+	g.Expect(inProcessingNodes).NotTo(BeNil())
+	g.Expect(nodeSteps["node-1"]).To(BeNil())
 
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationDesiredNodeReady, mutex)
 
-	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(1))
-	g.Expect(nodeSteps["node-1"][0].StepName).To(gomega.Equal(NodeRotationKickoff))
+	g.Expect(len(nodeSteps["node-1"])).To(Equal(1))
+	g.Expect(nodeSteps["node-1"][0].StepName).To(Equal(NodeRotationKickoff))
 
 	//Retry desired_node_ready
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationDesiredNodeReady, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(1))
-	g.Expect(nodeSteps["node-1"][0].StepName).To(gomega.Equal(NodeRotationKickoff))
+	g.Expect(len(nodeSteps["node-1"])).To(Equal(1))
+	g.Expect(nodeSteps["node-1"][0].StepName).To(Equal(NodeRotationKickoff))
 
 	//Retry desired_node_ready again
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationDesiredNodeReady, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(1))
-	g.Expect(nodeSteps["node-1"][0].StepName).To(gomega.Equal(NodeRotationKickoff))
+	g.Expect(len(nodeSteps["node-1"])).To(Equal(1))
+	g.Expect(nodeSteps["node-1"][0].StepName).To(Equal(NodeRotationKickoff))
 
 	//Completed
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationCompleted, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(3))
-	g.Expect(nodeSteps["node-1"][1].StepName).To(gomega.Equal(NodeRotationDesiredNodeReady))
-	g.Expect(nodeSteps["node-1"][2].StepName).To(gomega.Equal(NodeRotationTotal))
+	g.Expect(len(nodeSteps["node-1"])).To(Equal(3))
+	g.Expect(nodeSteps["node-1"][1].StepName).To(Equal(NodeRotationDesiredNodeReady))
+	g.Expect(nodeSteps["node-1"][2].StepName).To(Equal(NodeRotationTotal))
 
 	//Second node
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-2", NodeRotationKickoff, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(3))
+	g.Expect(len(nodeSteps["node-1"])).To(Equal(3))
 
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-2", NodeRotationDesiredNodeReady, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(3))
+	g.Expect(len(nodeSteps["node-1"])).To(Equal(3))
 
 	r.UpdateLastBatchNodes(inProcessingNodes)
-	g.Expect(len(r.LastBatchNodes)).To(gomega.Equal(2))
+	g.Expect(len(r.LastBatchNodes)).To(Equal(2))
 
 	r.UpdateStatistics(nodeSteps)
-	g.Expect(r.Statistics).ToNot(gomega.BeEmpty())
-	g.Expect(len(r.Statistics)).To(gomega.Equal(3))
+	g.Expect(r.Statistics).ToNot(BeEmpty())
+	g.Expect(len(r.Statistics)).To(Equal(3))
 
 }
