@@ -43,7 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 )
@@ -153,8 +152,8 @@ func (r *RollingUpgradeReconciler) preDrainHelper(instanceID, nodeName string, r
 func (r *RollingUpgradeReconciler) postDrainHelper(instanceID,
 	nodeName string,
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
-	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	nodeSteps map[string][]upgrademgrv1alpha1.NodeStepDuration,
+	inProcessingNodes map[string]*upgrademgrv1alpha1.NodeInProcessing,
 	mutex *sync.Mutex) error {
 	err := r.ScriptRunner.PostDrain(instanceID, nodeName, ruObj)
 	if err != nil {
@@ -164,7 +163,7 @@ func (r *RollingUpgradeReconciler) postDrainHelper(instanceID,
 	r.info(ruObj, "Waiting for postDrainDelay", "postDrainDelay", ruObj.Spec.PostDrainDelaySeconds)
 	time.Sleep(time.Duration(ruObj.Spec.PostDrainDelaySeconds) * time.Second)
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostWait, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationPostWait, mutex)
 
 	return r.ScriptRunner.PostWait(instanceID, nodeName, ruObj)
 
@@ -176,11 +175,11 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 	nodeName string,
 	instanceID string,
 	drainTimeout int,
-	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	nodeSteps map[string][]upgrademgrv1alpha1.NodeStepDuration,
+	inProcessingNodes map[string]*upgrademgrv1alpha1.NodeInProcessing,
 	mutex *sync.Mutex) error {
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationPredrainScript, mutex)
 
 	// Running kubectl drain node.
 	err := r.preDrainHelper(instanceID, nodeName, ruObj)
@@ -203,7 +202,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 		r.info(ruObj, "Skipped creating context with timeout.", "drainTimeout", drainTimeout)
 	}
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationDrain, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationDrain, mutex)
 
 	r.info(ruObj, "Invoking kubectl drain for the node", "nodeName", nodeName)
 	go r.CallKubectlDrain(nodeName, ruObj, errChan)
@@ -223,7 +222,7 @@ func (r *RollingUpgradeReconciler) DrainNode(ruObj *upgrademgrv1alpha1.RollingUp
 		r.info(ruObj, "Kubectl drain completed for node", "nodeName", nodeName)
 	}
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostdrainScript, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationPostdrainScript, mutex)
 
 	return r.postDrainHelper(instanceID, nodeName, ruObj, nodeSteps, inProcessingNodes, mutex)
 }
@@ -255,7 +254,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredInstances(ruObj *upgrademgrv1al
 
 		asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 		if err != nil {
-			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+			return fmt.Errorf("unable to load ASG with name: %s", ruObj.Name)
 		}
 
 		inServiceCount := getInServiceCount(asg.Instances)
@@ -286,7 +285,7 @@ func (r *RollingUpgradeReconciler) WaitForDesiredNodes(ruObj *upgrademgrv1alpha1
 
 		asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 		if err != nil {
-			return fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+			return fmt.Errorf("unable to load ASG with name: %s", ruObj.Name)
 		}
 
 		// get list of inService instance IDs
@@ -346,7 +345,7 @@ func (r *RollingUpgradeReconciler) WaitForTermination(ruObj *upgrademgrv1alpha1.
 func (r *RollingUpgradeReconciler) GetAutoScalingGroup(namespacedName string) (*autoscaling.Group, error) {
 	val, ok := r.ruObjNameToASG.Load(namespacedName)
 	if !ok {
-		return &autoscaling.Group{}, fmt.Errorf("Unable to load ASG for %s from cache", namespacedName)
+		return &autoscaling.Group{}, fmt.Errorf("unable to load ASG for %s from cache", namespacedName)
 	}
 	return val, nil
 }
@@ -392,15 +391,15 @@ func (r *RollingUpgradeReconciler) SetStandby(ruObj *upgrademgrv1alpha1.RollingU
 func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	instanceID string,
 	nodeName string,
-	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	nodeSteps map[string][]upgrademgrv1alpha1.NodeStepDuration,
+	inProcessingNodes map[string]*upgrademgrv1alpha1.NodeInProcessing,
 	mutex *sync.Mutex) error {
 
 	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 		InstanceId:                     aws.String(instanceID),
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationTerminate, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationTerminate, mutex)
 
 	var err error
 	var ieb *iebackoff.IEBackoff
@@ -431,7 +430,7 @@ func (r *RollingUpgradeReconciler) TerminateNode(ruObj *upgrademgrv1alpha1.Rolli
 	r.info(ruObj, "Instance terminated.", "instanceID", instanceID)
 	r.info(ruObj, "starting post termination sleep", "instanceID", instanceID, "nodeIntervalSeconds", ruObj.Spec.NodeIntervalSeconds)
 	time.Sleep(time.Duration(ruObj.Spec.NodeIntervalSeconds) * time.Second)
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationPostTerminate, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationPostTerminate, mutex)
 	return r.ScriptRunner.PostTerminate(instanceID, nodeName, ruObj)
 }
 
@@ -539,7 +538,7 @@ func (r *RollingUpgradeReconciler) runRestack(ctx *context.Context, ruObj *upgra
 
 	asg, err := r.GetAutoScalingGroup(ruObj.NamespacedName())
 	if err != nil {
-		return 0, fmt.Errorf("Unable to load ASG with name: %s", ruObj.Name)
+		return 0, fmt.Errorf("unable to load ASG with name: %s", ruObj.Name)
 	}
 
 	r.info(ruObj, "Nodes in ASG that *might* need to be updated", "asgName", *asg.AutoScalingGroupName, "asgSize", len(asg.Instances))
@@ -959,9 +958,9 @@ func (r *RollingUpgradeReconciler) UpdateInstances(ctx *context.Context,
 	}
 
 	//A map to retain the steps for multiple nodes
-	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
+	nodeSteps := make(map[string][]upgrademgrv1alpha1.NodeStepDuration)
 
-	inProcessingNodes := make(map[string]*v1alpha1.NodeInProcessing)
+	inProcessingNodes := make(map[string]*upgrademgrv1alpha1.NodeInProcessing)
 
 	mutex := &sync.Mutex{}
 
@@ -1016,8 +1015,8 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
 	targetInstanceID string,
-	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	nodeSteps map[string][]upgrademgrv1alpha1.NodeStepDuration,
+	inProcessingNodes map[string]*upgrademgrv1alpha1.NodeInProcessing,
 	mutex *sync.Mutex) error {
 
 	// Set instance to standby
@@ -1026,7 +1025,7 @@ func (r *RollingUpgradeReconciler) UpdateInstanceEager(
 		return err
 	}
 
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationDesiredNodeReady, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationDesiredNodeReady, mutex)
 
 	// Wait for new instance to be created
 	err = r.WaitForDesiredInstances(ruObj)
@@ -1048,8 +1047,8 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 	ruObj *upgrademgrv1alpha1.RollingUpgrade,
 	nodeName,
 	targetInstanceID string,
-	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	nodeSteps map[string][]upgrademgrv1alpha1.NodeStepDuration,
+	inProcessingNodes map[string]*upgrademgrv1alpha1.NodeInProcessing,
 	mutex *sync.Mutex) error {
 
 	// Drain and wait for draining node.
@@ -1067,7 +1066,7 @@ func (r *RollingUpgradeReconciler) DrainTerminate(
 	}
 
 	ruObj.Status.LastNodeTerminationTime = &metav1.Time{Time: time.Now()}
-	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationCompleted, mutex)
+	ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationCompleted, mutex)
 
 	return nil
 }
@@ -1078,8 +1077,8 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	i *autoscaling.Instance,
 	launchDefinition *launchDefinition,
 	ch chan error,
-	nodeSteps map[string][]v1alpha1.NodeStepDuration,
-	inProcessingNodes map[string]*v1alpha1.NodeInProcessing,
+	nodeSteps map[string][]upgrademgrv1alpha1.NodeStepDuration,
+	inProcessingNodes map[string]*upgrademgrv1alpha1.NodeInProcessing,
 	mutex *sync.Mutex) {
 	targetInstanceID := aws.StringValue(i.InstanceId)
 	// If an instance was marked as "in-progress" in ClusterState, it has to be marked
@@ -1127,12 +1126,12 @@ func (r *RollingUpgradeReconciler) UpdateInstance(ctx *context.Context,
 	if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeEager.String() {
 		r.info(ruObj, "starting replacement with eager mode", "mode", mode)
 		//Add statistics
-		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff, mutex)
+		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationKickoff, mutex)
 		err = r.UpdateInstanceEager(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes, mutex)
 	} else if strings.ToLower(mode) == upgrademgrv1alpha1.UpdateStrategyModeLazy.String() {
 		r.info(ruObj, "starting replacement with lazy mode", "mode", mode)
 		//Add statistics
-		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff, mutex)
+		ruObj.Status.NodeStep(inProcessingNodes, nodeSteps, ruObj.Spec.AsgName, nodeName, upgrademgrv1alpha1.NodeRotationKickoff, mutex)
 		err = r.DrainTerminate(ruObj, nodeName, targetInstanceID, nodeSteps, inProcessingNodes, mutex)
 	} else {
 		err = fmt.Errorf("%s: unhandled strategy mode: %s", ruObj.NamespacedName(), mode)
