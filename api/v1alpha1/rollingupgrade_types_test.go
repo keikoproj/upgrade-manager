@@ -19,8 +19,8 @@ import (
 	"sync"
 	"testing"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 
 	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,24 +30,24 @@ import (
 // These tests are written in BDD-style using Ginkgo framework. Refer to
 // http://onsi.github.io/ginkgo to learn more.
 
-var _ = Describe("RollingUpgrade", func() {
+var _ = ginkgo.Describe("RollingUpgrade", func() {
 	var (
 		key              types.NamespacedName
 		created, fetched *RollingUpgrade
 	)
 
-	BeforeEach(func() {
+	ginkgo.BeforeEach(func() {
 		// Add any setup steps that needs to be executed before each test
 	})
 
-	AfterEach(func() {
+	ginkgo.AfterEach(func() {
 		// Add any teardown steps that needs to be executed after each test
 	})
 
-	Context("NamespacedName", func() {
-		It("generates qualified name", func() {
+	ginkgo.Context("NamespacedName", func() {
+		ginkgo.It("generates qualified name", func() {
 			ru := &RollingUpgrade{ObjectMeta: metav1.ObjectMeta{Namespace: "namespace-foo", Name: "object-bar"}}
-			Expect(ru.NamespacedName()).To(Equal("namespace-foo/object-bar"))
+			gomega.Expect(ru.NamespacedName()).To(gomega.Equal("namespace-foo/object-bar"))
 		})
 	})
 
@@ -55,9 +55,9 @@ var _ = Describe("RollingUpgrade", func() {
 	// your API definition.
 	// Avoid adding tests for vanilla CRUD operations because they would
 	// test Kubernetes API server, which isn't the goal here.
-	Context("Create API", func() {
+	ginkgo.Context("Create API", func() {
 
-		It("should create an object successfully", func() {
+		ginkgo.It("should create an object successfully", func() {
 
 			key = types.NamespacedName{
 				Name:      "foo",
@@ -69,16 +69,16 @@ var _ = Describe("RollingUpgrade", func() {
 					Namespace: "default",
 				}}
 
-			By("creating an API obj")
-			Expect(k8sClient.Create(context.TODO(), created)).To(Succeed())
+			ginkgo.By("creating an API obj")
+			gomega.Expect(k8sClient.Create(context.TODO(), created)).To(gomega.Succeed())
 
 			fetched = &RollingUpgrade{}
-			Expect(k8sClient.Get(context.TODO(), key, fetched)).To(Succeed())
-			Expect(fetched).To(Equal(created))
+			gomega.Expect(k8sClient.Get(context.TODO(), key, fetched)).To(gomega.Succeed())
+			gomega.Expect(fetched).To(gomega.Equal(created))
 
-			By("deleting the created object")
-			Expect(k8sClient.Delete(context.TODO(), created)).To(Succeed())
-			Expect(k8sClient.Get(context.TODO(), key, created)).ToNot(Succeed())
+			ginkgo.By("deleting the created object")
+			gomega.Expect(k8sClient.Delete(context.TODO(), created)).To(gomega.Succeed())
+			gomega.Expect(k8sClient.Get(context.TODO(), key, created)).ToNot(gomega.Succeed())
 		})
 
 	})
@@ -87,7 +87,7 @@ var _ = Describe("RollingUpgrade", func() {
 
 // Test
 func TestNodeTurnsOntoStep(t *testing.T) {
-	g := NewGomegaWithT(t)
+	g := gomega.NewGomegaWithT(t)
 
 	r := &RollingUpgradeStatus{}
 	//A map to retain the steps for multiple nodes
@@ -97,42 +97,42 @@ func TestNodeTurnsOntoStep(t *testing.T) {
 
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationKickoff, mutex)
 
-	g.Expect(inProcessingNodes).NotTo(BeNil())
-	g.Expect(nodeSteps["node-1"]).To(BeNil())
+	g.Expect(inProcessingNodes).NotTo(gomega.BeNil())
+	g.Expect(nodeSteps["node-1"]).To(gomega.BeNil())
 
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationDesiredNodeReady, mutex)
 
-	g.Expect(len(nodeSteps["node-1"])).To(Equal(1))
-	g.Expect(nodeSteps["node-1"][0].StepName).To(Equal(NodeRotationKickoff))
+	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(1))
+	g.Expect(nodeSteps["node-1"][0].StepName).To(gomega.Equal(NodeRotationKickoff))
 
 	//Retry desired_node_ready
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationDesiredNodeReady, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(Equal(1))
-	g.Expect(nodeSteps["node-1"][0].StepName).To(Equal(NodeRotationKickoff))
+	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(1))
+	g.Expect(nodeSteps["node-1"][0].StepName).To(gomega.Equal(NodeRotationKickoff))
 
 	//Retry desired_node_ready again
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationDesiredNodeReady, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(Equal(1))
-	g.Expect(nodeSteps["node-1"][0].StepName).To(Equal(NodeRotationKickoff))
+	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(1))
+	g.Expect(nodeSteps["node-1"][0].StepName).To(gomega.Equal(NodeRotationKickoff))
 
 	//Completed
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-1", NodeRotationCompleted, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(Equal(3))
-	g.Expect(nodeSteps["node-1"][1].StepName).To(Equal(NodeRotationDesiredNodeReady))
-	g.Expect(nodeSteps["node-1"][2].StepName).To(Equal(NodeRotationTotal))
+	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(3))
+	g.Expect(nodeSteps["node-1"][1].StepName).To(gomega.Equal(NodeRotationDesiredNodeReady))
+	g.Expect(nodeSteps["node-1"][2].StepName).To(gomega.Equal(NodeRotationTotal))
 
 	//Second node
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-2", NodeRotationKickoff, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(Equal(3))
+	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(3))
 
 	r.NodeStep(inProcessingNodes, nodeSteps, "test-asg", "node-2", NodeRotationDesiredNodeReady, mutex)
-	g.Expect(len(nodeSteps["node-1"])).To(Equal(3))
+	g.Expect(len(nodeSteps["node-1"])).To(gomega.Equal(3))
 
 	r.UpdateLastBatchNodes(inProcessingNodes)
-	g.Expect(len(r.LastBatchNodes)).To(Equal(2))
+	g.Expect(len(r.LastBatchNodes)).To(gomega.Equal(2))
 
 	r.UpdateStatistics(nodeSteps)
-	g.Expect(r.Statistics).ToNot(BeEmpty())
-	g.Expect(len(r.Statistics)).To(Equal(3))
+	g.Expect(r.Statistics).ToNot(gomega.BeEmpty())
+	g.Expect(len(r.Statistics)).To(gomega.Equal(3))
 
 }
