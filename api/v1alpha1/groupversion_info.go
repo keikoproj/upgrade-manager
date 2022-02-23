@@ -1,4 +1,5 @@
 /*
+Copyright 2021 Intuit Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,8 +15,8 @@ limitations under the License.
 */
 
 // Package v1alpha1 contains API Schema definitions for the upgrademgr v1alpha1 API group
-// +kubebuilder:object:generate=true
-// +groupName=upgrademgr.keikoproj.io
+//+kubebuilder:object:generate=true
+//+groupName=upgrademgr.keikoproj.io
 package v1alpha1
 
 import (
