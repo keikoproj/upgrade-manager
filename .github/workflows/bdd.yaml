@@ -3,7 +3,7 @@ name: BDD
 on:
   push:
     branches:
-      - controller-v2
+      - master
 
 jobs:
   build:
