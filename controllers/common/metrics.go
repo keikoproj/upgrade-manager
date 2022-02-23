@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/keikoproj/upgrade-manager/pkg/log"
+	"github.com/keikoproj/upgrade-manager/controllers/common/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -61,7 +61,7 @@ func InitMetrics() {
 	metrics.Registry.MustRegister(CRStatus)
 }
 
-//Observe total processing time
+// observe total processing time
 func TotalProcessingTime(groupName string, duration time.Duration) {
 	var summary prometheus.Summary
 	if s, ok := totalProcessingTime[groupName]; !ok {
