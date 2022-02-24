@@ -1,4 +1,4 @@
-package main
+package test
 
 import (
 	"os"
@@ -7,10 +7,12 @@ import (
 
 	"github.com/cucumber/godog"
 	kdog "github.com/keikoproj/kubedog"
-	"github.com/keikoproj/upgrade-manager/pkg/log"
+	"github.com/sirupsen/logrus"
 )
 
 var t kdog.Test
+
+var log = logrus.New()
 
 func TestMain(m *testing.M) {
 	opts := godog.Options{

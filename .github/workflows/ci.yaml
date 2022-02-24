@@ -14,6 +14,7 @@ on:
 jobs:
   build:
     name: CI # Lint, Test, Codecov, Docker build & Push
+    if: github.repository == 'keikoproj/upgrade-manager'
     runs-on: ubuntu-latest
     steps:
 
@@ -39,7 +40,6 @@ jobs:
          mv kubebuilder_${version}_linux_${arch} kubebuilder && sudo mv kubebuilder /usr/local/
         # update your PATH to include /usr/local/kubebuilder/bin
          export PATH=$PATH:/usr/local/kubebuilder/bin
-
     - name: Run Tests
       run: make test
 

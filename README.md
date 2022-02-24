@@ -28,6 +28,7 @@ RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates 
     - `uniformAcrossAzUpdate` - Picks same number of nodes or same percentage of nodes from each AZ for update. Refer to [uniform_across_az_update_strategy.yaml](examples/uniform_across_az_update_strategy.yaml) for sample custom resource definition.
   - `strategy.maxUnavailable`: Optional field. The number of nodes that can be unavailable during rolling upgrade, can be specified as number of nodes or the percent of total number of nodes. Default is "1".
   - `strategy.drainTimeout`: Optional field. Node will be terminated after drain timeout even if `kubectl drain` has not been completed and value has to be specified in seconds. Default is -1.
+  - `ignoreDrainFailures` : Optional field. Default value is false. If this field is set to true, drain failures will be ignored and the instances will proceed to termination.
 
 - After performing the rolling-update of the nodes in the ASG, RollingUpgrade puts the following data in the "Status" field.
   - `currentStatus`: Whether the rolling-update completed or errored out.
@@ -38,7 +39,7 @@ RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates 
 
 ## Design
 
-For each RollingUpgrade custom resource that is submitted, the following flowchart shows the sequence of actions taken to [perform the rolling-update](docs/RollingUpgradeDesign.png)
+For each RollingUpgrade custom resource that is submitted, the following flowchart shows the sequence of actions taken to perform the rolling-update. [part-1](docs/reconcile.png), [part-2](docs/replaceNodeBatch.png)
 
 ## Dependencies
 

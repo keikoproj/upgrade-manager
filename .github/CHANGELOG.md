@@ -1,33 +1,84 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [v0.19] - 2021-05-18
+## [v1.0.4] - 2021-10-04
+995b81b controller flags for ignoreDrainFailures and drainTimeout (#307)
 
-d6c90bb #2286: removed version from metric namespace (#226)
-5860eb7 #2285: renamed some methods related to metrics (#223)
-4da0472 feat: add go-env support (#207)
-cc1d2f6 fix: documentation and minor naming changes (#208)
-3c26418 fix: log testenv errors (#209)
-67cbab6 fix: logging improvements (#211)
-708d88e fix: documentation improvements (#210)
-95e28cd #2285: updated metric namespace for consistency with others (#219)
-30b9ad9 #2285: added CR status metrics (#217)
-51e3ff8 Issue 2108: step duration metrics to v1 (#216)
-a1af90b Cache the ASG before nodes are rotated in a loop (#212)
 
-## [v0.18] - 2021-03-23
+## [v1.0.3] - 2021-09-03
+6252725 revert #300 (#305)
+df08ab0 Set Instances to StandBy in batches (#303)
+e77431c fix: fix panic when using MixedInstancesPolicy (#298)
+1e6d29d Add ignoreDrainFailure and DrainTimeout as controller arguements (#300)
 
-8b2d320 Fix for Launch definition validation. Consider only the "InService" instances. (#197)
-42f810c Fail the CR for drain failures, when IgnoreDrainFailures isn't set. (#185)
-f5c9457 output can contain other messages from API Server, so be more relaxed (#174)
-391b2fb Expose template list and other execution errors to logs (#166)
-757b669 Bump golang and busybox (#172)
-b8f69e8 Add instance id to the logs (#173)
-ac7be6b Fix namespaced name order (#170)
-51f469d use standard fmt.Errorf to format error message; unify error format (#171)
-b552c69 Bump dependencies. (#169)
-36a2784 Remove separate module for pkg/log (#168)
-237f93d Move constants to types so that they can be reused (#167)
+
+## [v1.0.2] - 2021-08-05
+d73da1b replace launchTemplate latest string with version number (#296)
+
+## [v1.0.1] - 2021-08-05
+52d80d9 check for ASG's launch template version instead latest. (#293)
+c35445d Controller v2: fix BDD template and update Dockerfile with bash  (#292)
+db54e0b Controller v2: fix BDD template (#291)
+b698dd6 Controller v2: remove cleaning up ruObject as BDD already does. (#290)
+86412d5 Controller v2: increase memory/CPU limit and update args (#289)
+2d8651c Controller v2: update args (#288)
+835fd0d V2 bdd (#286)
+998de0d V2 bdd (#285)
+3841cc7 #2122: bdd changes for v2 (#284)
+93626b4 Controller v2: BDD cron update (#283)
+1be8190 Controller v2: BDD cron update (#282)
+62c2255 Controller v2: BDD cron update (#280)
+42abe52 Controller v2: BDD cron update (#279)
+5bdc134 Controller v2 bdd changes (#278)
+
+## [v1.0.0] - 2021-07-21
+ 7a4766d (HEAD -> controller-v2, origin/controller-v2) upgrade-manager-v2: Add CI github action, fix lint errors. (#276)
+ 00f7e89 upgrade-manager-v2: Fix unit tests (#275)
+ 0e64929 upgrade-manager-v2: Process next batch while waiting on nodeInterval period. (#273)
+ b2b39a0 upgrade-manager-v2: Add nodeEvents handler instead of a watch handler (#272)
+ c0a163b move cloud discovery after nodeInterval / drainInterval wait (#270)
+ b15838e Carry the metrics status in RollingUpgrade CR (#267)
+ 610f454 upgrade-manager-v2: remove function duplicate declaration. (#266)
+ a4e0e84 upgrade-manager-v2: expose totalProcessing time and other metrics (#265)
+ 2390ea0 and CR end time (#264)
+ 79db022 (tag: v1.0.0-RC1) Add a mock for test and update version in Makefile (#262)
+ 3eafd00 Fix metrics calculation issue (#258)
+ 376657f Revert "Fix metrics collecting issue (#249)" (#256)
+ f5dd1cb Fix metrics collecting issue (#249)
+ 066731d final push before RC release. (#254)
+ 18e0e75 upgrade-manager-v2: Load test fixes (#245)
+ 1fc5847 metricsMutex should be initialized (#240)
+ a9ac50f add missing parenthesis (#239)
+ 6fef5fd V2 controller metrics concurrency fix (#231)
+ a490333 upgrade-manager-v2: Move DrainManager back to Reconciler (#236)
+ b659e0f Resolve compile errors caused by merge conflict. (#235)
+ b664fdd Create RollingUpgradeContext (#234)
+ b8d0e72 #2286: removed version from metric namespace (#227)
+ c445af9 #2285: renamed some methods related to metrics (#224)
+ 1f0f075 #2285: rollup CR statistic metrics in v2 (#218)
+ d5935e3 Unit tests for controller-v2 (#215)
+ 665c64b Fix bug in deleting the entry in syncMap (#203)
+ 77f985c Ignore generated code  (#201)
+ 71b310a Refine metrics implementation to support goroutines (#196)
+ 668c5d8 Move the DrainManager within ReplaceBatch(), to access one per RollingUpgrade CR (#195)
+ 728dae9 Process the batch rotation in parallel (#192)
+ 14e950e Metrics features (#189)
+ 11d3ae6 Eager mode implementation (#183)
+ 57df5a5 Implemented node drain. (#181)
+ dd6a332 Migrate Script Runner (#179)
+ 2c1d8e7 Controller v2: Implementation of Instance termination (#178)
+ 7cb15b0 Fix all the "make vet" errors in Controller V2 branch. (#177)
+ 59e9b0d Implemented RollingUpgrade object validation. (#176)
+ 5cb9efb initial rotation logic
+ 6b8dad5 AWS API calls & Drift detection
+ 335fb4f aws API calls
+ 41bd571 Add kubernetes API calls
+ 8f33f1e add more scaffolding
+ 25644a6 initial code
+ 87afbd6 add API
+ 2816490 scaffolding
+ 3ad13b8 delete all
+ 6ce7953 Delete README.md
 
 ## [v0.17] - 2020-12-11
 
