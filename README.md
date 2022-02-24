@@ -39,7 +39,7 @@ RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates 
 
 ## Design
 
-For each RollingUpgrade custom resource that is submitted, the following flowchart shows the sequence of actions taken to [perform the rolling-update](docs/RollingUpgradeDesign.png)
+For each RollingUpgrade custom resource that is submitted, the following flowchart shows the sequence of actions taken to perform the rolling-update. [part-1](docs/reconcile.png), [part-2](docs/replaceNodeBatch.png)
 
 ## Dependencies
 
