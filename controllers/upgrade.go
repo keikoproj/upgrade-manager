@@ -62,6 +62,7 @@ type RollingUpgradeContext struct {
 	metricsMutex        *sync.Mutex
 	DrainTimeout        int
 	IgnoreDrainFailures bool
+	Reconciler          *RollingUpgradeReconciler
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
@@ -148,7 +149,17 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
 		// Tag and set to StandBy only the InService instances.
+
+		r.Info("@@@@@@@@@@ [rakshrey] Replacement nodes so far @@@@@@@@@@", "replacementNodes", r.Reconciler.ReplacementNodes, "name", r.RollingUpgrade.NamespacedName())
 		if len(inServiceInstanceIDs) > 0 {
+			// check if total nodes are more than max-Ballooning, if so, then delay getting more replacement nodes.
+			totalInstances := awsprovider.GetTotalInstancesAcrossAllScalingGroups(r.Cloud.ScalingGroups)
+			r.Info("checking if cluster has hit max node ballooning capacity.", "TotalInstances", totalInstances, "MaxBallooning", r.Reconciler.MaxBallooning, "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
+			if totalInstances+r.Reconciler.ReplacementNodes >= r.Reconciler.MaxBallooning {
+				r.Info("cluster has hit max node ballooning capacity, requeuing rollingUpgrade CR. ", "TotalInstances", totalInstances, "MaxBallooning", r.Reconciler.MaxBallooning, "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
+				return true, nil
+			}
+
 			// Add in-progress tag
 			r.Info("setting instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
@@ -156,11 +167,14 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return false, err
 			}
+
 			// Standby
 			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			if err := r.SetBatchStandBy(batchInstanceIDs); err != nil {
 				r.Info("failed to set instances to stand-by", "instances", batch, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
+
+			r.Reconciler.ReplacementNodes += 1
 
 			// requeue until there are no InService instances in the batch
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
@@ -273,7 +287,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				defer r.DrainManager.DrainGroup.Done()
 
 				// Turns onto PreDrain script
-				r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
+				//r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationPredrainScript)
 
 				// Predrain script
 				if err := r.ScriptRunner.PreDrain(scriptTarget); err != nil {
@@ -361,6 +375,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return true, nil
 			}
 
+			r.Reconciler.ReplacementNodes -= 1
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
 
 			// Turns onto NodeRotationTerminate
