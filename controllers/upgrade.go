@@ -152,6 +152,8 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
 
 		// Tag and set to StandBy only the InService instances.
+
+		r.Info("@@@@@@@@@@ [rakshrey] Replacement nodes so far @@@@@@@@@@", "replacementNodes", r.Reconciler.ReplacementNodes, "name", r.RollingUpgrade.NamespacedName())
 		if len(inServiceInstanceIDs) > 0 {
 			// Check if replacement nodes are causing cluster to balloon
 			if r.ClusterBallooning(len(inServiceInstanceIDs)) {
@@ -172,6 +174,8 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			if err := r.SetBatchStandBy(batchInstanceIDs); err != nil {
 				r.Info("failed to set instances to stand-by", "instances", batch, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
+
+			r.Reconciler.ReplacementNodes += 1
 
 			// requeue until there are no InService instances in the batch
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
