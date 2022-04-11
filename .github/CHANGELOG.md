@@ -1,6 +1,11 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.5] - 2021-10-04
+8e0f67d Flush EC2 cache when using launch templates  (#322)
+9b1d11c add README (#320)
+167e10b EOL of upgrade-manager-v0 and make upgrade-manager-v1 the default. (#319)
+
 ## [v1.0.4] - 2021-10-04
 995b81b controller flags for ignoreDrainFailures and drainTimeout (#307)
 
