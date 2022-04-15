@@ -78,7 +78,6 @@ type RollingUpgradeAuthenticator struct {
 // and the details in the RollingUpgrade.Spec
 func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Info("***Reconciling***")
-	r.Info("++++++++++ [shreyraksh] Replacement nodes so far ++++++++++", "replacementNodes", r.ReplacementNodes)
 	rollingUpgrade := &v1alpha1.RollingUpgrade{}
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
