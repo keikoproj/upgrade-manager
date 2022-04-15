@@ -76,6 +76,14 @@ func SelectScalingGroupInstance(instanceID string, group *autoscaling.Group) *au
 	return &autoscaling.Instance{}
 }
 
+func GetTotalInstancesAcrossAllScalingGroups(groups []*autoscaling.Group) int {
+	var totalInstances int = 0
+	for _, group := range groups {
+		totalInstances += len(group.Instances)
+	}
+	return totalInstances
+}
+
 func GetScalingAZs(instances []*autoscaling.Instance) []string {
 	AZs := make([]string, 0)
 	for _, instance := range instances {
