@@ -55,8 +55,8 @@ type RollingUpgradeReconciler struct {
 	ReconcileMap        *sync.Map
 	DrainTimeout        int
 	IgnoreDrainFailures bool
-	MaxBallooning       int
-	ReplacementNodes    int
+	ReplacementNodesMap sync.Map
+	MaxReplacementNodes int
 }
 
 // RollingUpgradeAuthenticator has the clients for providers
@@ -78,7 +78,6 @@ type RollingUpgradeAuthenticator struct {
 // and the details in the RollingUpgrade.Spec
 func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Info("***Reconciling***")
-	r.Info("++++++++++ [shreyraksh] Replacement nodes so far ++++++++++", "replacementNodes", r.ReplacementNodes)
 	rollingUpgrade := &v1alpha1.RollingUpgrade{}
 	err := r.Get(ctx, req.NamespacedName, rollingUpgrade)
 	if err != nil {
@@ -175,6 +174,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		DrainTimeout:        r.DrainTimeout,
 		IgnoreDrainFailures: r.IgnoreDrainFailures,
 		Reconciler:          r,
+		AllowReplacements:   false,
 	}
 
 	// process node rotation
@@ -242,10 +242,10 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 }
 
 // max number of nodes allowed in a cluster. This can be used to cap the number of replacement nodes in a cluster.
-func (r *RollingUpgradeReconciler) SetMaxBallooning(n int) {
+func (r *RollingUpgradeReconciler) SetMaxReplacementNodes(n int) {
 	if n >= 1 {
 		r.Info("setting max cluster ballooning", "value", n)
-		r.MaxBallooning = n
+		r.MaxReplacementNodes = n
 	}
 }
 
