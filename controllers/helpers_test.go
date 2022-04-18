@@ -72,8 +72,10 @@ func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeCon
 			DrainErrors: drainErrs.(chan error),
 			DrainGroup:  drainGroup.(*sync.WaitGroup),
 		},
-		RollingUpgrade: rollingUpgrade,
-		metricsMutex:   &sync.Mutex{},
+		RollingUpgrade:      rollingUpgrade,
+		metricsMutex:        &sync.Mutex{},
+		ReplacementNodesMap: r.ReplacementNodesMap,
+		MaxReplacementNodes: r.MaxReplacementNodes,
 	}
 
 }
