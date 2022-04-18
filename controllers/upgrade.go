@@ -373,7 +373,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			count, _ := r.Reconciler.ReplacementNodesMap.Load("ReplacementNodes")
 			if count != nil && count.(int) > 0 {
 				r.Reconciler.ReplacementNodesMap.Store("ReplacementNodes", count.(int)-1)
-				r.Info("Decrementing replacementNodes count", "ReplacementNodes", count.(int)-1, "name", r.RollingUpgrade.NamespacedName())
+				r.Info("decrementing replacementNodes count", "ReplacementNodes", count.(int)-1, "name", r.RollingUpgrade.NamespacedName())
 			}
 
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
