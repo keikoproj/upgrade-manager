@@ -517,3 +517,62 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestClusterBallooning(t *testing.T) {
+	var tests = []struct {
+		TestDescription string
+		Reconciler      *RollingUpgradeReconciler
+		RollingUpgrade  *v1alpha1.RollingUpgrade
+		AsgClient       *MockAutoscalingGroup
+		ClusterNodes    []*corev1.Node
+		ExpectedValue   bool
+	}{
+		{
+			"ClusterBallooning - maxReplacementNodes is not set, expect no clusterBallooning",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			false,
+		},
+		{
+			"ClusterBallooning - cluster is below maxReplacementNodes capacity, expect no clusterBallooning",
+			func() *RollingUpgradeReconciler {
+				reconciler := createRollingUpgradeReconciler(t)
+				reconciler.MaxReplacementNodes = 500
+				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 500)
+				return reconciler
+			}(),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			false,
+		},
+		{
+			"ClusterBallooning - cluster has hit maxReplacementNodes capacity, expect clusterBallooning to be true",
+			func() *RollingUpgradeReconciler {
+				reconciler := createRollingUpgradeReconciler(t)
+				reconciler.MaxReplacementNodes = 500
+				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 100)
+				return reconciler
+			}(),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			true,
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		response := rollupCtx.ClusterBallooning(5)
+		if response != test.ExpectedValue {
+			t.Errorf("Test Description: %s \n expected: %v \n actual: %v", test.TestDescription, test.ExpectedValue, response)
+		}
+
+	}
+}
