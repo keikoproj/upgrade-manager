@@ -87,6 +87,7 @@ func main() {
 		logMode              string
 		drainTimeout         int
 		ignoreDrainFailures  bool
+		maxReplacementNodes  int
 	)
 
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
@@ -100,6 +101,7 @@ func main() {
 	flag.IntVar(&maxAPIRetries, "max-api-retries", 12, "The number of maximum retries for failed/rate limited AWS API calls")
 	flag.IntVar(&drainTimeout, "drain-timeout", 900, "when the drain command should timeout")
 	flag.BoolVar(&ignoreDrainFailures, "ignore-drain-failures", false, "proceed with instance termination despite drain failures.")
+	flag.IntVar(&maxReplacementNodes, "max-replacement-nodes", 0, "The max number of replacement nodes allowed in a cluster. Avoids cluster-ballooning")
 
 	opts := zap.Options{
 		Development: true,
@@ -210,6 +212,7 @@ func main() {
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
+	reconciler.SetMaxReplacementNodes(maxReplacementNodes)
 
 	if err = (reconciler).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RollingUpgrade")
