@@ -62,6 +62,8 @@ type RollingUpgradeContext struct {
 	metricsMutex        *sync.Mutex
 	DrainTimeout        int
 	IgnoreDrainFailures bool
+	Reconciler          *RollingUpgradeReconciler
+	AllowReplacements   bool
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
@@ -149,6 +151,12 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
 		// Tag and set to StandBy only the InService instances.
 		if len(inServiceInstanceIDs) > 0 {
+			// Check if replacement nodes are causing cluster to balloon
+			if r.ClusterBallooning(len(inServiceInstanceIDs)) {
+				// Allowing more replacement nodes can cause cluster ballooning. Requeue CR.
+				return true, nil
+			}
+
 			// Add in-progress tag
 			r.Info("setting instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
@@ -359,6 +367,13 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return true, nil
+			}
+
+			// Once instances are terminated, decrease them from the count.
+			count, _ := r.Reconciler.ReplacementNodesMap.Load("ReplacementNodes")
+			if count != nil && count.(int) > 0 {
+				r.Reconciler.ReplacementNodesMap.Store("ReplacementNodes", count.(int)-1)
+				r.Info("decrementing replacementNodes count", "ReplacementNodes", count.(int)-1, "name", r.RollingUpgrade.NamespacedName())
 			}
 
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
@@ -661,4 +676,19 @@ func (r *RollingUpgradeContext) SetBatchStandBy(instanceIDs []string) error {
 		}
 	}
 	return nil
+}
+
+// Checks for how many replacement nodes exists across all the IGs in the cluster
+func (r *RollingUpgradeContext) ClusterBallooning(batchSize int) bool {
+	count, _ := r.Reconciler.ReplacementNodesMap.LoadOrStore("ReplacementNodes", 0)
+	newReplacementCount := count.(int) + batchSize
+	if newReplacementCount <= r.Reconciler.MaxReplacementNodes && !r.AllowReplacements {
+		r.Reconciler.ReplacementNodesMap.Store("ReplacementNodes", newReplacementCount)
+		r.Info("incrementing replacementNodes count", "ReplacementNodes", newReplacementCount, "name", r.RollingUpgrade.NamespacedName())
+		r.AllowReplacements = true
+	} else if !r.AllowReplacements {
+		r.Info("cluster has hit max replacement nodes capacity, requeuing rollingUpgrade CR. ", "replacementNodes", count.(int), "MaxReplacementNodes", r.Reconciler.MaxReplacementNodes, "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
+		return true
+	}
+	return false
 }
