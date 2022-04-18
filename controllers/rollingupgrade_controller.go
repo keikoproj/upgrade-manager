@@ -55,6 +55,8 @@ type RollingUpgradeReconciler struct {
 	ReconcileMap        *sync.Map
 	DrainTimeout        int
 	IgnoreDrainFailures bool
+	ReplacementNodesMap sync.Map
+	MaxReplacementNodes int
 }
 
 // RollingUpgradeAuthenticator has the clients for providers
@@ -243,6 +245,14 @@ func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.Rolling
 	r.ReconcileMap.LoadAndDelete(rollingUpgrade.NamespacedName())
 	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
 		r.Info("failed to update status", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
+	}
+}
+
+// max number of replacement nodes allowed in a cluster. This will ensure we avoid cluster ballooning.
+func (r *RollingUpgradeReconciler) SetMaxReplacementNodes(n int) {
+	if n >= 1 {
+		r.Info("setting max replacement nodes", "value", n)
+		r.MaxReplacementNodes = n
 	}
 }
 
