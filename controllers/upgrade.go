@@ -62,7 +62,8 @@ type RollingUpgradeContext struct {
 	metricsMutex        *sync.Mutex
 	DrainTimeout        int
 	IgnoreDrainFailures bool
-	Reconciler          *RollingUpgradeReconciler
+	ReplacementNodesMap *sync.Map
+	MaxReplacementNodes int
 	AllowReplacements   bool
 }
 
@@ -370,9 +371,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 
 			// Once instances are terminated, decrease them from the count.
-			count, _ := r.Reconciler.ReplacementNodesMap.Load("ReplacementNodes")
+			count, _ := r.ReplacementNodesMap.Load("ReplacementNodes")
 			if count != nil && count.(int) > 0 {
-				r.Reconciler.ReplacementNodesMap.Store("ReplacementNodes", count.(int)-1)
+				r.ReplacementNodesMap.Store("ReplacementNodes", count.(int)-1)
 				r.Info("decrementing replacementNodes count", "ReplacementNodes", count.(int)-1, "name", r.RollingUpgrade.NamespacedName())
 			}
 
@@ -680,14 +681,19 @@ func (r *RollingUpgradeContext) SetBatchStandBy(instanceIDs []string) error {
 
 // Checks for how many replacement nodes exists across all the IGs in the cluster
 func (r *RollingUpgradeContext) ClusterBallooning(batchSize int) bool {
-	count, _ := r.Reconciler.ReplacementNodesMap.LoadOrStore("ReplacementNodes", 0)
+	count, _ := r.ReplacementNodesMap.LoadOrStore("ReplacementNodes", 0)
 	newReplacementCount := count.(int) + batchSize
-	if newReplacementCount <= r.Reconciler.MaxReplacementNodes && !r.AllowReplacements {
-		r.Reconciler.ReplacementNodesMap.Store("ReplacementNodes", newReplacementCount)
+
+	// By default, no limits on replacement nodes.
+	if r.MaxReplacementNodes == 0 {
+		return false
+	}
+	if newReplacementCount <= r.MaxReplacementNodes && !r.AllowReplacements {
+		r.ReplacementNodesMap.Store("ReplacementNodes", newReplacementCount)
 		r.Info("incrementing replacementNodes count", "ReplacementNodes", newReplacementCount, "name", r.RollingUpgrade.NamespacedName())
 		r.AllowReplacements = true
 	} else if !r.AllowReplacements {
-		r.Info("cluster has hit max replacement nodes capacity, requeuing rollingUpgrade CR. ", "replacementNodes", count.(int), "MaxReplacementNodes", r.Reconciler.MaxReplacementNodes, "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
+		r.Info("cluster has hit max replacement nodes capacity, requeuing rollingUpgrade CR. ", "replacementNodes", count.(int), "MaxReplacementNodes", r.MaxReplacementNodes, "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
 		return true
 	}
 	return false

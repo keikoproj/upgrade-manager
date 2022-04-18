@@ -101,7 +101,7 @@ func main() {
 	flag.IntVar(&maxAPIRetries, "max-api-retries", 12, "The number of maximum retries for failed/rate limited AWS API calls")
 	flag.IntVar(&drainTimeout, "drain-timeout", 900, "when the drain command should timeout")
 	flag.BoolVar(&ignoreDrainFailures, "ignore-drain-failures", false, "proceed with instance termination despite drain failures.")
-	flag.IntVar(&maxReplacementNodes, "max-replacement-nodes", 5, "The max number of replacement nodes allowed in a cluster. Avoids cluster-ballooning")
+	flag.IntVar(&maxReplacementNodes, "max-replacement-nodes", 0, "The max number of replacement nodes allowed in a cluster. Avoids cluster-ballooning")
 
 	opts := zap.Options{
 		Development: true,
