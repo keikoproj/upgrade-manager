@@ -55,7 +55,7 @@ type RollingUpgradeReconciler struct {
 	ReconcileMap        *sync.Map
 	DrainTimeout        int
 	IgnoreDrainFailures bool
-	ReplacementNodesMap sync.Map
+	ReplacementNodesMap *sync.Map
 	MaxReplacementNodes int
 }
 
@@ -174,6 +174,8 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		DrainTimeout:        r.DrainTimeout,
 		IgnoreDrainFailures: r.IgnoreDrainFailures,
+		ReplacementNodesMap: r.ReplacementNodesMap,
+		MaxReplacementNodes: r.MaxReplacementNodes,
 	}
 
 	// process node rotation
