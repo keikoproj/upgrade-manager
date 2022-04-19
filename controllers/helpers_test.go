@@ -51,8 +51,9 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 		ScriptRunner: ScriptRunner{
 			Logger: logger,
 		},
-		DrainGroupMapper: &sync.Map{},
-		DrainErrorMapper: &sync.Map{},
+		DrainGroupMapper:    &sync.Map{},
+		DrainErrorMapper:    &sync.Map{},
+		ReplacementNodesMap: &sync.Map{},
 	}
 	return reconciler
 
