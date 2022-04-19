@@ -520,12 +520,14 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 
 func TestClusterBallooning(t *testing.T) {
 	var tests = []struct {
-		TestDescription string
-		Reconciler      *RollingUpgradeReconciler
-		RollingUpgrade  *v1alpha1.RollingUpgrade
-		AsgClient       *MockAutoscalingGroup
-		ClusterNodes    []*corev1.Node
-		ExpectedValue   bool
+		TestDescription     string
+		Reconciler          *RollingUpgradeReconciler
+		RollingUpgrade      *v1alpha1.RollingUpgrade
+		AsgClient           *MockAutoscalingGroup
+		ClusterNodes        []*corev1.Node
+		BatchSize           int
+		IsClusterBallooning bool
+		AllowedBatchSize    int
 	}{
 		{
 			"ClusterBallooning - maxReplacementNodes is not set, expect no clusterBallooning",
@@ -533,10 +535,12 @@ func TestClusterBallooning(t *testing.T) {
 			createRollingUpgrade(),
 			createASGClient(),
 			createNodeSlice(),
+			3,
 			false,
+			3, // because mock-asg-1 has 3 instances
 		},
 		{
-			"ClusterBallooning - cluster is below maxReplacementNodes capacity, expect no clusterBallooning",
+			"ClusterBallooning - cluster has hit maxReplacementNodes capacity, expect clusterBallooning to be true",
 			func() *RollingUpgradeReconciler {
 				reconciler := createRollingUpgradeReconciler(t)
 				reconciler.MaxReplacementNodes = 500
@@ -546,10 +550,12 @@ func TestClusterBallooning(t *testing.T) {
 			createRollingUpgrade(),
 			createASGClient(),
 			createNodeSlice(),
-			false,
+			3,
+			true,
+			0,
 		},
 		{
-			"ClusterBallooning - cluster has hit maxReplacementNodes capacity, expect clusterBallooning to be true",
+			"ClusterBallooning - cluster is below maxReplacementNodes capacity, expect no clusterBallooning",
 			func() *RollingUpgradeReconciler {
 				reconciler := createRollingUpgradeReconciler(t)
 				reconciler.MaxReplacementNodes = 500
@@ -559,7 +565,39 @@ func TestClusterBallooning(t *testing.T) {
 			createRollingUpgrade(),
 			createASGClient(),
 			createNodeSlice(),
-			true,
+			400,
+			false,
+			400,
+		},
+		{
+			"ClusterBallooning - cluster is about to hit maxReplacementNodes capacity, expect reduced batchSize",
+			func() *RollingUpgradeReconciler {
+				reconciler := createRollingUpgradeReconciler(t)
+				reconciler.MaxReplacementNodes = 100
+				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 97)
+				return reconciler
+			}(),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			100,
+			false,
+			3,
+		},
+		{
+			"ClusterBallooning - cluster is about to hit maxReplacementNodes capacity, expect reduced batchSize",
+			func() *RollingUpgradeReconciler {
+				reconciler := createRollingUpgradeReconciler(t)
+				reconciler.MaxReplacementNodes = 5
+				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 3)
+				return reconciler
+			}(),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			3,
+			false,
+			2,
 		},
 	}
 	for _, test := range tests {
@@ -569,9 +607,12 @@ func TestClusterBallooning(t *testing.T) {
 		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
-		response := rollupCtx.ClusterBallooning(5)
-		if response != test.ExpectedValue {
-			t.Errorf("Test Description: %s \n expected: %v \n actual: %v", test.TestDescription, test.ExpectedValue, response)
+		isClusterBallooning, allowedBatchSize := rollupCtx.ClusterBallooning(test.BatchSize)
+		if isClusterBallooning != test.IsClusterBallooning {
+			t.Errorf("Test Description: %s \n isClusterBallooning, expected: %v \n actual: %v", test.TestDescription, test.IsClusterBallooning, isClusterBallooning)
+		}
+		if allowedBatchSize != test.AllowedBatchSize {
+			t.Errorf("Test Description: %s \n allowedBatchSize expected: %v \n actual: %v", test.TestDescription, test.AllowedBatchSize, allowedBatchSize)
 		}
 
 	}
