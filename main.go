@@ -209,6 +209,7 @@ func main() {
 		ReconcileMap:        &sync.Map{},
 		DrainTimeout:        drainTimeout,
 		IgnoreDrainFailures: ignoreDrainFailures,
+		ReplacementNodesMap: &sync.Map{},
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
