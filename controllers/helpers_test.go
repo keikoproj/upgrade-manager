@@ -51,8 +51,9 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 		ScriptRunner: ScriptRunner{
 			Logger: logger,
 		},
-		DrainGroupMapper: &sync.Map{},
-		DrainErrorMapper: &sync.Map{},
+		DrainGroupMapper:    &sync.Map{},
+		DrainErrorMapper:    &sync.Map{},
+		ReplacementNodesMap: &sync.Map{},
 	}
 	return reconciler
 
@@ -72,8 +73,10 @@ func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeCon
 			DrainErrors: drainErrs.(chan error),
 			DrainGroup:  drainGroup.(*sync.WaitGroup),
 		},
-		RollingUpgrade: rollingUpgrade,
-		metricsMutex:   &sync.Mutex{},
+		RollingUpgrade:      rollingUpgrade,
+		metricsMutex:        &sync.Mutex{},
+		ReplacementNodesMap: r.ReplacementNodesMap,
+		MaxReplacementNodes: r.MaxReplacementNodes,
 	}
 
 }
