@@ -160,7 +160,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return true, nil
 			}
 			if len(inServiceInstanceIDs) != allowedBatchSize {
-				r.Info("cluster is about to hit max-replacement-nodes capacity, reducing batchSize", "prevBatchSize", len(inServiceInstanceIDs), "currBatchSize", allowedBatchSize)
+				r.Info("cluster is about to hit max-replacement-nodes capacity, reducing batchSize", "prevBatchSize", len(inServiceInstanceIDs), "currBatchSize", allowedBatchSize, "name", r.RollingUpgrade.NamespacedName())
 				inServiceInstanceIDs = inServiceInstanceIDs[:allowedBatchSize]
 			}
 
@@ -381,6 +381,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			if count != nil && count.(int) > 0 {
 				r.ReplacementNodesMap.Store("ReplacementNodes", count.(int)-1)
 				r.Info("decrementing replacementNodes count", "ReplacementNodes", count.(int)-1, "name", r.RollingUpgrade.NamespacedName())
+				r.AllowReplacements = false
 			}
 
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
@@ -699,15 +700,15 @@ func (r *RollingUpgradeContext) ClusterBallooning(batchSize int) (bool, int) {
 	// Handle 3 different cases. 1) When entire batch can have replacement nodes. 2) When partial batch can have replacement nodes 3) When there is no availability for replacement nodes and CR has to re-queue
 	if newReplacementCount <= r.MaxReplacementNodes {
 		r.ReplacementNodesMap.Store("ReplacementNodes", newReplacementCount)
-		r.Info("incrementing replacementNodes count", "replacementNodes", newReplacementCount, "name", r.RollingUpgrade.NamespacedName())
+		r.Info("incrementing replacementNodes count", "ReplacementNodes", newReplacementCount, "name", r.RollingUpgrade.NamespacedName())
 		r.AllowReplacements = true
 	} else if partialReplacementCount < batchSize && partialReplacementCount > 0 {
 		r.ReplacementNodesMap.Store("ReplacementNodes", count.(int)+partialReplacementCount)
-		r.Info("incrementing replacementNodes count", "replacementNodes", partialReplacementCount, "name", r.RollingUpgrade.NamespacedName())
+		r.Info("incrementing replacementNodes count", "ReplacementNodes", count.(int)+partialReplacementCount, "name", r.RollingUpgrade.NamespacedName())
 		r.AllowReplacements = true
 		batchSize = partialReplacementCount
 	} else if !r.AllowReplacements {
-		r.Info("cluster has hit max-replacement-nodes capacity, requeuing rollingUpgrade CR. ", "replacementNodes", count.(int), "maxReplacementNodes", r.MaxReplacementNodes, "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
+		r.Info("cluster has hit max-replacement-nodes capacity, requeuing rollingUpgrade CR. ", "replacementNodes", count.(int), "maxReplacementNodes", r.MaxReplacementNodes, "name", r.RollingUpgrade.NamespacedName())
 		return true, 0
 	}
 	return false, batchSize
