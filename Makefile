@@ -47,7 +47,7 @@ undeploy:
 	$(KUSTOMIZE) build config/default | kubectl delete -f -
 
 # Generate manifests e.g. CRD, RBAC etc.
-manifests: controller-gen
+manifests: controller-gen debug
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 # Run go fmt against code
@@ -83,6 +83,11 @@ kustomize:
 clean:
 	rm -rf bin/*
 	go clean --modcache
+
+debug:
+	pwd
+	ls /home/runner/work/upgrade-manager/upgrade-manager
+	ls /home/runner/work/upgrade-manager/upgrade-manager/bin/
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
