@@ -13,8 +13,7 @@ on:
 
 jobs:
   build:
-    name: CI # Lint, Test, Codecov, Docker build & Push
-    if: github.repository == 'keikoproj/upgrade-manager'
+    name: CI # Lint, Test, Codecov, Docker build & Push 
     runs-on: ubuntu-latest
     steps:
 
