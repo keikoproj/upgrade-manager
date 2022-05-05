@@ -59,7 +59,7 @@ vet:
 	go vet ./...
 
 # Generate code
-generate: controller-gen
+generate: clean controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 # Build the docker image
@@ -69,6 +69,10 @@ docker-build: test
 # Push the docker image
 docker-push:
 	docker push ${IMG}
+
+clean: 
+	rm -rf bin/*
+	go clean --modcache
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
