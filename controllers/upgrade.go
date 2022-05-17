@@ -158,7 +158,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			}
 			// Standby
 			r.Info("setting instances to stand-by", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
-			if err := r.SetBatchStandBy(batchInstanceIDs); err != nil {
+			if err := r.SetBatchStandBy(inServiceInstanceIDs); err != nil {
 				r.Info("failed to set instances to stand-by", "instances", batch, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 			}
 
