@@ -62,6 +62,9 @@ type RollingUpgradeContext struct {
 	metricsMutex        *sync.Mutex
 	DrainTimeout        int
 	IgnoreDrainFailures bool
+	ReplacementNodesMap *sync.Map
+	MaxReplacementNodes int
+	AllowReplacements   bool
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
@@ -149,6 +152,18 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
 		// Tag and set to StandBy only the InService instances.
 		if len(inServiceInstanceIDs) > 0 {
+
+			// Check if replacement nodes are causing cluster to balloon
+			clusterIsBallooning, allowedBatchSize := r.ClusterBallooning(len(inServiceInstanceIDs))
+			if clusterIsBallooning || allowedBatchSize == 0 {
+				// Allowing more replacement nodes can cause cluster ballooning. Requeue CR.
+				return true, nil
+			}
+			if len(inServiceInstanceIDs) != allowedBatchSize {
+				r.Info("cluster is about to hit max-replacement-nodes capacity, reducing batchSize", "prevBatchSize", len(inServiceInstanceIDs), "currBatchSize", allowedBatchSize, "name", r.RollingUpgrade.NamespacedName())
+				inServiceInstanceIDs = inServiceInstanceIDs[:allowedBatchSize]
+			}
+
 			// Add in-progress tag
 			r.Info("setting instances to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 			if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
@@ -359,6 +374,14 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				r.Info("failed to terminate instance", "instance", instanceID, "message", err.Error(), "name", r.RollingUpgrade.NamespacedName())
 				r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 				return true, nil
+			}
+
+			// Once instances are terminated, decrease them from the count.
+			count, _ := r.ReplacementNodesMap.Load("ReplacementNodes")
+			if count != nil && count.(int) > 0 {
+				r.ReplacementNodesMap.Store("ReplacementNodes", count.(int)-1)
+				r.Info("decrementing replacementNodes count", "ReplacementNodes", count.(int)-1, "name", r.RollingUpgrade.NamespacedName())
+				r.AllowReplacements = false
 			}
 
 			r.RollingUpgrade.SetLastNodeTerminationTime(&metav1.Time{Time: time.Now()})
@@ -661,4 +684,32 @@ func (r *RollingUpgradeContext) SetBatchStandBy(instanceIDs []string) error {
 		}
 	}
 	return nil
+}
+
+// Checks for how many replacement nodes exists across all the IGs in the cluster
+func (r *RollingUpgradeContext) ClusterBallooning(batchSize int) (bool, int) {
+	count, _ := r.ReplacementNodesMap.LoadOrStore("ReplacementNodes", 0)
+	newReplacementCount := count.(int) + batchSize
+	partialReplacementCount := r.MaxReplacementNodes - count.(int)
+
+	// By default, no limits on replacement nodes.
+	if r.MaxReplacementNodes == 0 {
+		return false, batchSize
+	}
+
+	// Handle 3 different cases. 1) When entire batch can have replacement nodes. 2) When partial batch can have replacement nodes 3) When there is no availability for replacement nodes and CR has to re-queue
+	if newReplacementCount <= r.MaxReplacementNodes {
+		r.ReplacementNodesMap.Store("ReplacementNodes", newReplacementCount)
+		r.Info("incrementing replacementNodes count", "ReplacementNodes", newReplacementCount, "name", r.RollingUpgrade.NamespacedName())
+		r.AllowReplacements = true
+	} else if partialReplacementCount < batchSize && partialReplacementCount > 0 {
+		r.ReplacementNodesMap.Store("ReplacementNodes", count.(int)+partialReplacementCount)
+		r.Info("incrementing replacementNodes count", "ReplacementNodes", count.(int)+partialReplacementCount, "name", r.RollingUpgrade.NamespacedName())
+		r.AllowReplacements = true
+		batchSize = partialReplacementCount
+	} else if !r.AllowReplacements {
+		r.Info("cluster has hit max-replacement-nodes capacity, requeuing rollingUpgrade CR. ", "replacementNodes", count.(int), "maxReplacementNodes", r.MaxReplacementNodes, "name", r.RollingUpgrade.NamespacedName())
+		return true, 0
+	}
+	return false, batchSize
 }
