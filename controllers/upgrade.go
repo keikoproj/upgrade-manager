@@ -418,7 +418,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) []*autoscaling.Instance {
 	var (
 		batchSize  = r.RollingUpgrade.MaxUnavailable()
-		totalNodes = len(scalingGroup.Instances)
+		totalNodes = int(aws.Int64Value(scalingGroup.DesiredCapacity))
 		targets    = make([]*autoscaling.Instance, 0)
 	)
 	unavailableInt := CalculateMaxUnavailable(batchSize, totalNodes)
@@ -645,14 +645,17 @@ func CalculateMaxUnavailable(batchSize intstr.IntOrString, totalNodes int) int {
 }
 
 func (r *RollingUpgradeContext) SetProgress(nodesProcessed int, totalNodes int) {
-	completePercentage := int(math.Round(float64(nodesProcessed) / float64(totalNodes) * 100))
-	r.RollingUpgrade.SetTotalNodes(totalNodes)
-	r.RollingUpgrade.SetNodesProcessed(nodesProcessed)
-	r.RollingUpgrade.SetCompletePercentage(completePercentage)
+	if totalNodes > 0 && nodesProcessed >= 0 {
+		r.RollingUpgrade.SetTotalNodes(totalNodes)
+		r.RollingUpgrade.SetNodesProcessed(nodesProcessed)
 
-	// expose total nodes and nodes processed to prometheus
-	common.SetTotalNodesMetric(r.RollingUpgrade.ScalingGroupName(), totalNodes)
-	common.SetNodesProcessedMetric(r.RollingUpgrade.ScalingGroupName(), nodesProcessed)
+		completePercentage := int(math.Round(float64(nodesProcessed) / float64(totalNodes) * 100))
+		r.RollingUpgrade.SetCompletePercentage(completePercentage)
+
+		// expose total nodes and nodes processed to prometheus
+		common.SetTotalNodesMetric(r.RollingUpgrade.ScalingGroupName(), totalNodes)
+		common.SetNodesProcessedMetric(r.RollingUpgrade.ScalingGroupName(), nodesProcessed)
+	}
 
 }
 
