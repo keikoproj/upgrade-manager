@@ -1,6 +1,16 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.5] - 2022-06-02
+d6994b8 fix minor bugs (#334)
+b33f5ae "max-replacement-nodes" feature to avoid cluster ballooning during upgrades. (#328)
+51fef36 fix error 'failed to set instances to stand-by' (#329)
+af9c12d Fix bdd (#332)
+fa47143 Add a "clean" target in Makefile (#331)
+16ed0fc Fix CI Github action (#330)
+8e0f67d Update rollingupgrade_controller.go (#322)
+9b1d11c add README (#320)
+167e10b EOL of upgrade-manager-v0 and make upgrade-manager-v1 the default. (#319)
 ## [v1.0.4] - 2021-10-04
 995b81b controller flags for ignoreDrainFailures and drainTimeout (#307)
 
