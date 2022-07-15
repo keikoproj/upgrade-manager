@@ -1,4 +1,4 @@
-VERSION=1.0.5
+VERSION=1.0.6
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
