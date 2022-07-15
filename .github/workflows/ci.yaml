@@ -62,7 +62,6 @@ jobs:
         password: ${{ secrets.DOCKER_PASSWORD }}
         repository: keikoproj/rolling-upgrade-controller
         platforms: linux/amd64,linux/arm/v7,linux/arm64
-        push: true
         tags: master
     
     - name: Build and push Docker image with tag latest # only on releases of keikoproj/upgrade-manager
