@@ -68,7 +68,7 @@ jobs:
       run: make docker-build
     
     - name: Build and push Docker image with tag master # only on pushes to keikoproj/upgrade-manager
-      if: github.event_name == 'push' && github.repository == 'keikoproj/upgrade-manager'
+      if: github.event_name == 'pull_request' && github.repository == 'keikoproj/upgrade-manager'
       uses: docker/build-push-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
