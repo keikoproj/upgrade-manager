@@ -631,14 +631,14 @@ func CalculateMaxUnavailable(batchSize intstr.IntOrString, totalNodes int) int {
 		unavailableInt = batchSize.IntValue()
 	}
 
-	// batch size should be atleast 1
-	if unavailableInt == 0 {
-		unavailableInt = 1
-	}
-
 	// batch size should be atmost the number of nodes
 	if unavailableInt > totalNodes {
 		unavailableInt = totalNodes
+	}
+
+	// batch size should be atleast 1
+	if unavailableInt == 0 {
+		unavailableInt = 1
 	}
 
 	return unavailableInt
