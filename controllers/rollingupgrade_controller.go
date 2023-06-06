@@ -104,6 +104,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return reconcile.Result{}, nil
 	}
 
+	// validate the rolling upgrade resource
 	if ok, err := rollingUpgrade.Validate(); !ok {
 		return reconcile.Result{}, err
 	}
@@ -137,6 +138,14 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if inProgress {
 		// requeue any resources which are already being processed by a different resource, until the resource is completed/deleted
 		return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
+	}
+
+	// only reconcile maxParallel number of CRs at a time
+	if common.GetSyncMapLen(&r.AdmissionMap) >= r.maxParallel {
+		if _, present := r.AdmissionMap.Load(rollingUpgrade.NamespacedName()); !present {
+			r.Info("number of ongoing CRs has reached the max-parallel limit, requeuing", "name", rollingUpgrade.NamespacedName())
+			return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
+		}
 	}
 
 	// store the rolling upgrade in admission map
