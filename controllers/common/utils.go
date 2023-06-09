@@ -18,6 +18,7 @@ package common
 
 import (
 	"strings"
+	"sync"
 )
 
 // ContainsEqualFold returns true if a given slice 'slice' contains string 's' under unicode case-folding
@@ -51,4 +52,14 @@ func GetChunks(items []string, chunkSize int) [][]string {
 		chunks = append(chunks, items[i:end])
 	}
 	return chunks
+}
+
+// GetSyncMapLen returns the length of a sync.Map
+func GetSyncMapLen(m *sync.Map) int {
+	count := 0
+	m.Range(func(_, _ interface{}) bool {
+		count++
+		return true
+	})
+	return count
 }

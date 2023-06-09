@@ -104,12 +104,13 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return reconcile.Result{}, nil
 	}
 
+	// validate the rolling upgrade resource
 	if ok, err := rollingUpgrade.Validate(); !ok {
 		return reconcile.Result{}, err
 	}
 
 	// defer a status update on the resource
-	defer r.UpdateStatus(rollingUpgrade)
+	defer r.Update(rollingUpgrade)
 
 	var (
 		scalingGroupName = rollingUpgrade.ScalingGroupName()
@@ -120,6 +121,20 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if _, present := r.ReconcileMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); present {
 		r.Info("a reconcile operation is already in progress for this ASG, requeuing", "scalingGroup", scalingGroupName, "name", rollingUpgrade.NamespacedName())
 		return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
+	}
+
+	// if the admissionMap is empty, it is possible that the controller was restarted, fetch all running CRs
+	if common.GetSyncMapLen(&r.AdmissionMap) == 0 {
+		r.Info("admission map is empty, fetching all running CRs")
+		var rollingUpgradeList v1alpha1.RollingUpgradeList
+		err := r.List(ctx, &rollingUpgradeList, client.MatchingLabels{v1alpha1.LabelKeyRollingUpgradeCurrentStatus: v1alpha1.StatusRunning})
+		if err != nil {
+			r.Error(err, "failed to fetch running CRs")
+			return ctrl.Result{}, err
+		}
+		for _, cr := range rollingUpgradeList.Items {
+			r.AdmissionMap.Store(cr.NamespacedName(), cr.ScalingGroupName())
+		}
 	}
 
 	// handle condition where multiple resources submitted targeting the same scaling group by requeing
@@ -139,6 +154,19 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
 	}
 
+	// only reconcile maxParallel number of CRs at a time
+	runningCRs := common.GetSyncMapLen(&r.AdmissionMap)
+	if runningCRs >= r.maxParallel {
+		if _, present := r.AdmissionMap.Load(rollingUpgrade.NamespacedName()); !present {
+			r.Info("number of running rolling upgrades has reached the max-parallel limit, not able to admit new, requeuing", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
+			return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
+		} else {
+			r.Info("number of running rolling upgrades has reached the max-parallel limit, but this is already admitted, proceeding", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
+		}
+	} else {
+		r.Info("number of running rolling upgrades is within the max-parallel limit, proceeding", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
+	}
+
 	// store the rolling upgrade in admission map
 	if _, present := r.AdmissionMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); !present {
 		r.Info("admitted new rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
@@ -148,6 +176,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		r.Info("operating on existing rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
 	}
 	rollingUpgrade.SetCurrentStatus(v1alpha1.StatusInit)
+	rollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusInit)
 	common.SetMetricRollupInitOrRunning(rollingUpgrade.Name)
 
 	// setup the RollingUpgradeContext needed for node rotations.
@@ -181,6 +210,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// process node rotation
 	if err := rollupCtx.RotateNodes(); err != nil {
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		rollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusError)
 		common.SetMetricRollupFailed(rollingUpgrade.Name)
 		return ctrl.Result{}, err
 	}
@@ -242,11 +272,11 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 	}
 }
 
-// at the end of every reconcile, update the RollingUpgrade  object
-func (r *RollingUpgradeReconciler) UpdateStatus(rollingUpgrade *v1alpha1.RollingUpgrade) {
+// at the end of every reconcile, update the RollingUpgrade object
+func (r *RollingUpgradeReconciler) Update(rollingUpgrade *v1alpha1.RollingUpgrade) {
 	r.ReconcileMap.LoadAndDelete(rollingUpgrade.NamespacedName())
-	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
-		r.Info("failed to update status", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
+	if err := r.Client.Update(context.Background(), rollingUpgrade); err != nil {
+		r.Info("failed to update the CR", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
 	}
 }
 
