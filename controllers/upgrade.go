@@ -70,6 +70,7 @@ type RollingUpgradeContext struct {
 func (r *RollingUpgradeContext) RotateNodes() error {
 	// set status to running
 	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
+	r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusRunning)
 	common.SetMetricRollupInitOrRunning(r.RollingUpgrade.Name)
 
 	// set start time
@@ -81,6 +82,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	if err := r.Cloud.Discover(); err != nil {
 		r.Info("failed to discover the cloud", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
+		r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusError)
 		common.SetMetricRollupFailed(r.RollingUpgrade.Name)
 		return err
 	}
@@ -104,6 +106,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	// check if all instances are rotated.
 	if !r.IsScalingGroupDrifted() {
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
+		r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusComplete)
 		common.SetMetricRollupCompleted(r.RollingUpgrade.Name)
 		r.endTimeUpdate()
 		return nil
