@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -140,7 +141,9 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 		for _, cr := range rollingUpgradeList.Items {
-			r.AdmissionMap.Store(cr.NamespacedName(), cr.ScalingGroupName())
+			if cr.CurrentStatus() == v1alpha1.StatusRunning {
+				r.AdmissionMap.Store(cr.NamespacedName(), cr.ScalingGroupName())
+			}
 		}
 	}
 
@@ -279,8 +282,14 @@ func (r *RollingUpgradeReconciler) SetMaxParallel(n int) {
 // at the end of every reconcile, update the RollingUpgrade object
 func (r *RollingUpgradeReconciler) Update(rollingUpgrade *v1alpha1.RollingUpgrade) {
 	r.ReconcileMap.LoadAndDelete(rollingUpgrade.NamespacedName())
-	if err := r.Client.Update(context.Background(), rollingUpgrade); err != nil {
-		r.Info("failed to update the CR", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
+	// update the status subresource
+	if err := r.Status().Update(context.Background(), rollingUpgrade); err != nil {
+		r.Info("failed to update the status", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
+		return
+	}
+	// patch the label
+	if err := r.Client.Patch(context.Background(), rollingUpgrade, client.RawPatch(types.MergePatchType, []byte(fmt.Sprintf(`{"metadata":{"labels":{"%s":"%s"}}}`, v1alpha1.LabelKeyRollingUpgradeCurrentStatus, rollingUpgrade.CurrentStatus())))); err != nil {
+		r.Info("failed to patch the label", "message", err.Error(), "name", rollingUpgrade.NamespacedName())
 	}
 }
 
