@@ -171,10 +171,10 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			r.Info("number of running rolling upgrades has reached the max-parallel limit, not able to admit new, requeuing", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
 			return ctrl.Result{RequeueAfter: v1alpha1.DefaultRequeueTime}, nil
 		} else {
-			r.Info("number of running rolling upgrades has reached the max-parallel limit, but this is already admitted, proceeding", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
+			log.Debug("number of running rolling upgrades has reached the max-parallel limit, but this is already admitted, proceeding", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
 		}
 	} else {
-		r.Info("number of running rolling upgrades is within the max-parallel limit, proceeding", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
+		log.Debug("number of running rolling upgrades is within the max-parallel limit, proceeding", "running", runningCRs, "max-parallel", r.maxParallel, "name", rollingUpgrade.NamespacedName())
 	}
 
 	// store the rolling upgrade in admission map
