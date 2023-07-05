@@ -171,6 +171,9 @@ const (
 	NodeRotationPostTerminate    RollingUpgradeStep = "post_terminate"
 	NodeRotationTerminated       RollingUpgradeStep = "terminated"
 	NodeRotationCompleted        RollingUpgradeStep = "completed"
+
+	// Label keys
+	LabelKeyRollingUpgradeCurrentStatus = "rollingupgrade.keikoproj.io/current-status"
 )
 
 var NodeRotationStepOrders = map[RollingUpgradeStep]int{
@@ -290,6 +293,13 @@ func (r *RollingUpgrade) PostDrainDelaySeconds() int {
 
 func (r *RollingUpgrade) SetCurrentStatus(status string) {
 	r.Status.CurrentStatus = status
+}
+
+func (r *RollingUpgrade) SetLabel(key, value string) {
+	if r.Labels == nil {
+		r.Labels = make(map[string]string)
+	}
+	r.Labels[key] = value
 }
 
 func (r *RollingUpgrade) SetStartTime(t string) {
