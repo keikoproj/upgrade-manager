@@ -1,8 +1,15 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [v1.0.5] - 2022-06-02
+## [v1.0.7] - 2023-07-05
+* 23f4ba8 Only allow maxParallel number of running CRs (#351)
+* 79b38c0 Add Apache-2.0 license (#344)
+* fc20675 Fix ci (#340)
+* f73f5c1 Update docker actions to v2 (#339)
+
+## [v1.0.6] - 2022-06-02
 * c45365b multi arch support
+
 ## [v1.0.5] - 2022-06-02
 * d6994b8 fix minor bugs (#334)
 * b33f5ae "max-replacement-nodes" feature to avoid cluster ballooning during upgrades. (#328)
