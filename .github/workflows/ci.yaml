@@ -49,6 +49,10 @@ jobs:
         flags: unittests # optional
         name: codecov-umbrella # optional
         fail_ci_if_error: true # optional (default = false)
+        
+    - name: Docker build
+      if: github.event_name == 'pull_request' || (github.repository != 'keikoproj/upgrade-manager' && github.event_name == 'push')
+      run: make docker-build
 
     - name: Set up Docker Buildx
       if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
@@ -56,10 +60,12 @@ jobs:
       uses: docker/setup-buildx-action@v2
       with:
         install: true
-        
-    - name: Docker build
-      if: github.event_name == 'pull_request' || (github.repository != 'keikoproj/upgrade-manager' && github.event_name == 'push')
-      run: make docker-build
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
     
     - name: Build and push Docker image with tag master # only on pushes to keikoproj/upgrade-manager
       if: github.event_name == 'push' && github.repository == 'keikoproj/upgrade-manager'
