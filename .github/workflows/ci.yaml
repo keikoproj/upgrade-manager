@@ -49,10 +49,6 @@ jobs:
         flags: unittests # optional
         name: codecov-umbrella # optional
         fail_ci_if_error: true # optional (default = false)
-        
-    - name: Docker build
-      if: github.event_name == 'pull_request' || (github.repository != 'keikoproj/upgrade-manager' && github.event_name == 'push')
-      run: make docker-build
 
     - name: Set up Docker Buildx
       if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
