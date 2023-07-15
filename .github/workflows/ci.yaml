@@ -50,6 +50,13 @@ jobs:
         name: codecov-umbrella # optional
         fail_ci_if_error: true # optional (default = false)
 
+    - name: Set up QEMU
+      if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
+      id: qemu
+      uses: docker/setup-qemu-action@v2
+      with:
+        platforms: all
+
     - name: Set up Docker Buildx
       if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
       id: buildx
