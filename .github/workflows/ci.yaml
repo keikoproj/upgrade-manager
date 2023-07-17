@@ -99,4 +99,4 @@ jobs:
         file: ./Dockerfile
         platforms: linux/amd64,linux/arm/v7,linux/arm64
         push: true
-        tag_with_ref: true
+        tags: keikoproj/rolling-upgrade-controller:${{ github.event.release.tag_name }}
