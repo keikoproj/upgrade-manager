@@ -23,9 +23,9 @@ jobs:
     - name: Golangci-lint
       uses: golangci/golangci-lint-action@v3
       with:
-        # Optional: version of golangci-lint to use in form of v1.2 or v1.2.3 or `latest` to use the latest version
-        # version: v1.45.2
-        args: --timeout 2m
+        # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
+        version: v1.53.2
+        args: --timeout 3m
 
     - name: Get kubebuilder
       env:
@@ -50,36 +50,53 @@ jobs:
         name: codecov-umbrella # optional
         fail_ci_if_error: true # optional (default = false)
 
-    - name: Docker build
-      if: github.event_name == 'pull_request' || (github.repository != 'keikoproj/upgrade-manager' && github.event_name == 'push')
-      run: make docker-build
+    - name: Set up QEMU
+      if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
+      id: qemu
+      uses: docker/setup-qemu-action@v2
+      with:
+        platforms: all
+
+    - name: Set up Docker Buildx
+      if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
+      id: buildx
+      uses: docker/setup-buildx-action@v2
+      with:
+        install: true
+
+    - name: Login to DockerHub
+      if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
     
     - name: Build and push Docker image with tag master # only on pushes to keikoproj/upgrade-manager
       if: github.event_name == 'push' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v2
+      uses: docker/build-push-action@v4
       with:
         context: .
         file: ./Dockerfile
         platforms: linux/amd64,linux/arm/v7,linux/arm64
         push: true
-        tags: master
+        tags: keikoproj/rolling-upgrade-controller:master
     
     - name: Build and push Docker image with tag latest # only on releases of keikoproj/upgrade-manager
       if: github.event_name == 'release' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v2
+      uses: docker/build-push-action@v4
       with:
         context: .
         file: ./Dockerfile
         platforms: linux/amd64,linux/arm/v7,linux/arm64
         push: true
-        tags: latest
+        tags: keikoproj/rolling-upgrade-controller:latest
 
     - name: Build and push Docker image with tag git-tag # only on releases of keikoproj/upgrade-manager
       if: github.event_name == 'release' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v2
+      uses: docker/build-push-action@v4
       with:
         context: .
         file: ./Dockerfile
         platforms: linux/amd64,linux/arm/v7,linux/arm64
         push: true
-        tag_with_ref: true
+        tags: keikoproj/rolling-upgrade-controller:${{ github.event.release.tag_name }}
