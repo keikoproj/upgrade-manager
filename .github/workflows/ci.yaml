@@ -79,7 +79,7 @@ jobs:
         file: ./Dockerfile
         platforms: linux/amd64,linux/arm/v7,linux/arm64
         push: true
-        tags: ${{ env.REGISTRY }}/keikoproj/rolling-upgrade-controller:latest
+        tags: ${{ env.REGISTRY }}/keikoproj/rolling-upgrade-controller:master
     
     - name: Build and push Docker image with tag latest # only on releases of keikoproj/upgrade-manager
       if: github.event_name == 'release' && github.repository == 'keikoproj/upgrade-manager'
