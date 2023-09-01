@@ -7,13 +7,17 @@ import (
 	"time"
 
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/kubectl/pkg/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	controllerRuntimeClientFake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	//AWS
 	"github.com/aws/aws-sdk-go/aws"
@@ -25,7 +29,14 @@ import (
 )
 
 // K8s
-func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
+func createRollingUpgradeReconciler(t *testing.T, objects ...runtime.Object) *RollingUpgradeReconciler {
+	// add v1alpha1 scheme
+	s := scheme.Scheme
+	err := v1alpha1.AddToScheme(s)
+	if err != nil {
+		t.Errorf("Test Description: %s \n error: %v", "failed to add v1alpha1 scheme", err)
+	}
+
 	// amazon client
 	amazonClient := createAmazonClient(t)
 
@@ -33,7 +44,6 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 	kubeClient := &kubeprovider.KubernetesClientSet{
 		Kubernetes: fake.NewSimpleClientset(createNodeList()),
 	}
-
 	// logger
 	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
 
@@ -45,6 +55,8 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 
 	// reconciler object
 	reconciler := &RollingUpgradeReconciler{
+		Client:      controllerRuntimeClientFake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objects...).Build(),
+		Scheme:      s,
 		Logger:      logger,
 		Auth:        auth,
 		EventWriter: kubeprovider.NewEventWriter(kubeClient, logger),
@@ -54,7 +66,18 @@ func createRollingUpgradeReconciler(t *testing.T) *RollingUpgradeReconciler {
 		DrainGroupMapper:    &sync.Map{},
 		DrainErrorMapper:    &sync.Map{},
 		ReplacementNodesMap: &sync.Map{},
+		ReconcileMap:        &sync.Map{},
+		AdmissionMap:        sync.Map{},
+		CacheConfig:         cache.NewConfig(0, 0, 0),
+		ClusterNodesMap:     &sync.Map{},
 	}
+
+	// set up fake admission map
+	reconciler.AdmissionMap.Store("default/2", "mock-asg-2")
+	reconciler.AdmissionMap.Store("default/3", "mock-asg-3")
+	reconciler.AdmissionMap.Store("default/4", "mock-asg-4")
+	reconciler.AdmissionMap.Store("default/5", "mock-asg-5")
+
 	return reconciler
 
 }
@@ -83,7 +106,7 @@ func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeCon
 
 func createRollingUpgrade() *v1alpha1.RollingUpgrade {
 	return &v1alpha1.RollingUpgrade{
-		ObjectMeta: metav1.ObjectMeta{Name: "0", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "1", Namespace: "default"},
 		Spec: v1alpha1.RollingUpgradeSpec{
 			AsgName:               "mock-asg-1",
 			PostDrainDelaySeconds: 30,
