@@ -11,10 +11,10 @@ require (
 	github.com/prometheus/client_golang v1.11.1
 	github.com/sirupsen/logrus v1.6.0
 	go.uber.org/zap v1.15.0
-	k8s.io/api v0.20.4
-	k8s.io/apimachinery v0.20.4
-	k8s.io/client-go v0.20.4
-	k8s.io/kubectl v0.20.4
+	k8s.io/api v0.20.15
+	k8s.io/apimachinery v0.20.15
+	k8s.io/client-go v0.20.15
+	k8s.io/kubectl v0.20.15
 	sigs.k8s.io/controller-runtime v0.7.0
 
 )
