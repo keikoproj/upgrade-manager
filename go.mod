@@ -9,7 +9,7 @@ require (
 	github.com/onsi/gomega v1.10.2
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.1
-	github.com/sirupsen/logrus v1.6.0
+	github.com/sirupsen/logrus v1.9.3
 	go.uber.org/zap v1.15.0
 	k8s.io/api v0.20.4
 	k8s.io/apimachinery v0.20.4
