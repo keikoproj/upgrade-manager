@@ -60,7 +60,7 @@ jobs:
     - name: Set up Docker Buildx
       if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
       id: buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3
       with:
         install: true
 
