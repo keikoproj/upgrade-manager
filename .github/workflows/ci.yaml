@@ -73,7 +73,7 @@ jobs:
     
     - name: Build and push Docker image with tag master # only on pushes to keikoproj/upgrade-manager
       if: github.event_name == 'push' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile
@@ -83,7 +83,7 @@ jobs:
     
     - name: Build and push Docker image with tag latest # only on releases of keikoproj/upgrade-manager
       if: github.event_name == 'release' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile
@@ -93,7 +93,7 @@ jobs:
 
     - name: Build and push Docker image with tag git-tag # only on releases of keikoproj/upgrade-manager
       if: github.event_name == 'release' && github.repository == 'keikoproj/upgrade-manager'
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile
