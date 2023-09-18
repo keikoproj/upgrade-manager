@@ -9,7 +9,7 @@ require (
 	github.com/onsi/gomega v1.10.2
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.1
-	github.com/sirupsen/logrus v1.6.0
+	github.com/sirupsen/logrus v1.9.3
 	go.uber.org/zap v1.15.0
 	k8s.io/api v0.20.15
 	k8s.io/apimachinery v0.20.15
@@ -62,7 +62,6 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
 	github.com/karlseguin/ccache v2.0.3+incompatible // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/mailru/easyjson v0.7.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
