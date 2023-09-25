@@ -3,7 +3,7 @@ module github.com/keikoproj/upgrade-manager
 go 1.19
 
 require (
-	github.com/aws/aws-sdk-go v1.38.24
+	github.com/aws/aws-sdk-go v1.45.15
 	github.com/go-logr/logr v0.3.0
 	github.com/keikoproj/aws-sdk-go-cache v0.0.0-20201118182730-f6f418a4e2df
 	github.com/onsi/gomega v1.10.2
