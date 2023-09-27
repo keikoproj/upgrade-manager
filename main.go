@@ -160,7 +160,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	cacheCfg := cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
+	cacheCfg := cache.NewConfig(CacheDefaultTTL, 1*time.Hour, CacheMaxItems, CacheItemsToPrune)
 	cache.AddCaching(sess, cacheCfg)
 	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
 	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
