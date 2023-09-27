@@ -68,7 +68,7 @@ func createRollingUpgradeReconciler(t *testing.T, objects ...runtime.Object) *Ro
 		ReplacementNodesMap: &sync.Map{},
 		ReconcileMap:        &sync.Map{},
 		AdmissionMap:        sync.Map{},
-		CacheConfig:         cache.NewConfig(0, 0, 0),
+		CacheConfig:         cache.NewConfig(0, 0, 0, 0),
 		ClusterNodesMap:     &sync.Map{},
 	}
 
