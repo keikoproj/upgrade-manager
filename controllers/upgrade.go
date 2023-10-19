@@ -120,7 +120,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	rotationTargets := r.SelectTargets(scalingGroup, failedDrainInstances)
 
 	if len(rotationTargets) == 0 && len(failedDrainInstances) > 0 {
-		// If there are failed instances, but no rotation targets, then we need to requeue.
+		// If there are failed instances, but no rotation targets, then select failed isntances anyway
 		r.Info("selecting from failed instances since there are no rotation targets", "failedDrainInstances", failedDrainInstances, "name", r.RollingUpgrade.NamespacedName())
 		rotationTargets = r.SelectTargets(scalingGroup, []string{})
 	}
@@ -462,7 +462,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, f
 	// select via strategy if there are no in-progress instances
 	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !contains(failedDrainInstances, aws.StringValue(instance.InstanceId)) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(failedDrainInstances, aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
@@ -473,7 +473,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, f
 
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !contains(failedDrainInstances, aws.StringValue(instance.InstanceId)) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(failedDrainInstances, aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
@@ -495,16 +495,6 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, f
 		return AZtargets[:unavailableInt]
 	}
 	return targets
-}
-
-func contains(s []string, v string) bool {
-	// check if the v is present in s
-	for _, i := range s {
-		if i == v {
-			return true
-		}
-	}
-	return false
 }
 
 func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance) bool {
