@@ -29,6 +29,7 @@ import (
 var (
 	instanceStateTagKey = "upgrademgr.keikoproj.io/state"
 	inProgressTagValue  = "in-progress"
+	failedDrainTagValue = "failed-drain"
 )
 
 type DiscoveredState struct {
