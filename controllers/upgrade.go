@@ -70,7 +70,7 @@ type RollingUpgradeContext struct {
 func (r *RollingUpgradeContext) RotateNodes() error {
 	failedDrainInstances, err := r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, failedDrainTagValue)
 	if err != nil {
-		r.Error(err, "Failed to discover ec2 instances with drain-failed tag", "name", r.RollingUpgrade.NamespacedName())
+		r.Error(err, "failed to discover ec2 instances with drain-failed tag", "name", r.RollingUpgrade.NamespacedName())
 	}
 
 	// set status to running
@@ -121,7 +121,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 
 	if len(rotationTargets) == 0 && len(failedDrainInstances) > 0 {
 		// If there are failed instances, but no rotation targets, then we need to requeue.
-		r.Info("Selecting from failed instances since there are no rotation targets", "failedDrainInstances", failedDrainInstances, "name", r.RollingUpgrade.NamespacedName())
+		r.Info("selecting from failed instances since there are no rotation targets", "failedDrainInstances", failedDrainInstances, "name", r.RollingUpgrade.NamespacedName())
 		rotationTargets = r.SelectTargets(scalingGroup, []string{})
 	}
 
