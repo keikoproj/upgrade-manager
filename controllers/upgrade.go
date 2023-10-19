@@ -433,7 +433,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	return true, nil
 }
 
-func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, failedDrainInstances []string) []*autoscaling.Instance {
+func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, excludedInstances []string) []*autoscaling.Instance {
 	var (
 		batchSize  = r.RollingUpgrade.MaxUnavailable()
 		totalNodes = int(aws.Int64Value(scalingGroup.DesiredCapacity))
@@ -443,8 +443,8 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, f
 
 	// first process all in progress instances
 	r.Info("selecting batch for rotation", "batch size", unavailableInt, "name", r.RollingUpgrade.NamespacedName())
-	if len(failedDrainInstances) > 0 {
-		r.Info("ignoring failed drain instances", "instances", failedDrainInstances, "name", r.RollingUpgrade.NamespacedName())
+	if len(excludedInstances) > 0 {
+		r.Info("ignoring failed drain instances", "instances", excludedInstances, "name", r.RollingUpgrade.NamespacedName())
 	}
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
@@ -462,7 +462,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, f
 	// select via strategy if there are no in-progress instances
 	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(failedDrainInstances, aws.StringValue(instance.InstanceId)) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
@@ -473,7 +473,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, f
 
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(failedDrainInstances, aws.StringValue(instance.InstanceId)) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
