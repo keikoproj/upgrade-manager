@@ -120,7 +120,7 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	rotationTargets := r.SelectTargets(scalingGroup, failedDrainInstances)
 
 	if len(rotationTargets) == 0 && len(failedDrainInstances) > 0 {
-		// If there are failed instances, but no rotation targets, then select failed isntances anyway
+		// If there are failed instances, but no rotation targets, then select failed instances anyway
 		r.Info("selecting from failed instances since there are no rotation targets", "failedDrainInstances", failedDrainInstances, "name", r.RollingUpgrade.NamespacedName())
 		rotationTargets = r.SelectTargets(scalingGroup, []string{})
 	}
