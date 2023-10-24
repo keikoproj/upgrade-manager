@@ -11,7 +11,7 @@ import (
 
 func TestScriptSuccess(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	r := &ScriptRunner{Logger: runtimelog.NullLogger{}}
+	r := &ScriptRunner{Logger: runtimelog.Log.WithName("controllers").WithName("RollingUpgrade")}
 	target := ScriptTarget{
 		InstanceID: "instance",
 		NodeName:   "node",
@@ -30,7 +30,7 @@ func TestScriptSuccess(t *testing.T) {
 
 func TestScriptFailure(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	r := &ScriptRunner{Logger: runtimelog.NullLogger{}}
+	r := &ScriptRunner{Logger: runtimelog.Log.WithName("controllers").WithName("RollingUpgrade")}
 	target := ScriptTarget{
 		InstanceID: "instance",
 		NodeName:   "node",
