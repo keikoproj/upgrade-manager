@@ -461,16 +461,29 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 		}
 
 		var AZtargets = make([]*autoscaling.Instance, 0)
-		AZs := awsprovider.GetScalingAZs(targets)
-		if len(AZs) == 0 {
-			return AZtargets
-		}
+
+		// split targets into groups based on their AZ
+		targetsByAZ := map[string][]*autoscaling.Instance{}
 		for _, target := range targets {
-			AZ := aws.StringValue(target.AvailabilityZone)
-			if strings.EqualFold(AZ, AZs[0]) {
-				AZtargets = append(AZtargets, target)
+			az := aws.StringValue(target.AvailabilityZone)
+			targetsByAZ[az] = append(targetsByAZ[az], target)
+		}
+
+		// round-robin across the AZs with targets uniformly first and then best effort with remaining
+		for {
+			if len(AZtargets) == len(targets) {
+				break
+			}
+
+			for az := range targetsByAZ {
+				targetsByAZGroupSize := len(targetsByAZ[az])
+				if targetsByAZGroupSize > 0 {
+					AZtargets = append(AZtargets, targetsByAZ[az][targetsByAZGroupSize-1]) // append last target
+					targetsByAZ[az] = targetsByAZ[az][:targetsByAZGroupSize-1]             // pop last target
+				}
 			}
 		}
+
 		if unavailableInt > len(AZtargets) {
 			unavailableInt = len(AZtargets)
 		}
