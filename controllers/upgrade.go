@@ -149,6 +149,36 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
+		//Experiment: Cordon all the nodes as soon as the rolling-upgrade CR is admitted.
+		scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+
+		uncordonedInstances, err := r.Cloud.AmazonClientSet.DescribeInstancesWithoutTag(instanceCordonTagKey, inProgressTagValue)
+		if err != nil {
+			return false, errors.Wrap(err, "failed to discover instances for early-cordoning")
+		}
+
+		for _, instance := range uncordonedInstances {
+			if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
+				//Don't consider if the instance is in terminating state.
+				if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
+					node := kubeprovider.SelectNodeByInstanceID(*selectedInstance.InstanceId, r.Cloud.ClusterNodes)
+					if node == nil {
+						r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+						continue
+					}
+					if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes); err != nil {
+						return false, err
+					}
+				}
+				// Add node-cordoned tag
+				if err := r.Auth.TagEC2instances([]string{*selectedInstance.InstanceId}, instanceCordonTagKey, "True"); err != nil {
+					r.Error(err, "failed to tag instances with cordoned=true", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					return false, err
+				}
+				r.Info("early cordoning node", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+			}
+		}
+
 		for _, target := range batch {
 			instanceID := aws.StringValue(target.InstanceId)
 			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
@@ -243,6 +273,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return false, err
 		}
+
 	}
 
 	var (
