@@ -87,6 +87,7 @@ func (k *KubernetesClientSet) CordonUncordonNode(node *corev1.Node, client kuber
 	}
 
 	helper := &drain.Helper{
+		Ctx:                 context.Background(),
 		Client:              client,
 		Force:               true,
 		GracePeriodSeconds:  -1,
