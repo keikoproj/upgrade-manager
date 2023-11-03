@@ -66,18 +66,17 @@ func (a *AmazonClientSet) DescribeInstancesWithoutTag(tagKey, tagValue string) (
 	instances := []string{}
 	input := &ec2.DescribeInstancesInput{}
 	tagIsPresent := false
-	key := fmt.Sprintf("tag:%v", tagKey)
 
 	err := a.Ec2Client.DescribeInstancesPages(input, func(page *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, res := range page.Reservations {
 			for _, instance := range res.Instances {
-				for _,t := range instance.Tags{
-					if *t.Key == key{
+				for _, t := range instance.Tags {
+					if *t.Key == tagKey {
 						tagIsPresent = true
 						break
 					}
 				}
-				if !tagIsPresent{
+				if !tagIsPresent {
 					instances = append(instances, aws.StringValue(instance.InstanceId))
 				}
 			}
