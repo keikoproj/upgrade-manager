@@ -62,7 +62,7 @@ func (a *AmazonClientSet) DescribeTaggedInstanceIDs(tagKey, tagValue string) ([]
 	return instances, err
 }
 
-func (a *AmazonClientSet) DescribeInstancesWithoutTag(tagKey, tagValue string) ([]string, error) {
+func (a *AmazonClientSet) DescribeInstancesWithoutTag(tagKey string) ([]string, error) {
 	instances := []string{}
 	input := &ec2.DescribeInstancesInput{}
 	tagIsPresent := false
@@ -79,6 +79,7 @@ func (a *AmazonClientSet) DescribeInstancesWithoutTag(tagKey, tagValue string) (
 				if !tagIsPresent {
 					instances = append(instances, aws.StringValue(instance.InstanceId))
 				}
+				tagIsPresent = false
 			}
 		}
 		return page.NextToken != nil

@@ -151,7 +151,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	case v1alpha1.UpdateStrategyModeEager:
 		//Cordon all the nodes as soon as the rolling-upgrade CR is admitted.
 		scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
-		uncordonedInstances, err := r.Cloud.AmazonClientSet.DescribeInstancesWithoutTag(instanceCordonTagKey, inProgressTagValue)
+		uncordonedInstances, err := r.Cloud.AmazonClientSet.DescribeInstancesWithoutTag(instanceCordonTagKey)
 		if err != nil {
 			return false, errors.Wrap(err, "failed to discover instances for early-cordoning")
 		}
@@ -164,6 +164,10 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					if node == nil {
 						r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 						continue
+					}
+					//Early cordon only the dirfted instances and not the instances that have same scaling-config as the scaling-group
+					if !r.IsInstanceDrifted(selectedInstance) {
+						break
 					}
 					r.Info("early cordoning node", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 					if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes); err != nil {
