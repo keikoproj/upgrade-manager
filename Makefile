@@ -1,4 +1,4 @@
-VERSION=1.0.7
+VERSION=1.0.8
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 
