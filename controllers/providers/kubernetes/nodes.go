@@ -50,6 +50,7 @@ func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds
 	}
 
 	helper := &drain.Helper{
+		Ctx:                 context.Background(),
 		Client:              client,
 		Force:               true,
 		GracePeriodSeconds:  -1,
