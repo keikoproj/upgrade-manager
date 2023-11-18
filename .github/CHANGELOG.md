@@ -1,6 +1,38 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.8] - 2023-10-30
+* e4a79bf Process drain-failure nodes at the end (#394)
+* 7c245ca Update aws-sdk-go-cache to v0.0.2 (#399)
+* 4c5949f Update K8s client-go and kubectl to v0.25.15 (#398)
+* 7801676 Bump github.com/aws/aws-sdk-go from 1.45.19 to 1.46.2 (#396)
+* 1f5011c Fix: modified UniformAcrossAzUpdateStrategy update strategy to be as expected (#395)
+* 84dd4a7 Bump github.com/go-logr/logr from 0.3.0 to 0.4.0 (#384)
+* a1fef90 Bump github.com/aws/aws-sdk-go from 1.45.14 to 1.45.19 (#389)
+* a91fc0e Update to new aws-sdk-go-cache version v0.0.2 (#387)
+* 062f732 Bump k8s.io/kubectl from 0.20.4 to 0.20.15 (#369)
+* a5abef4 Bump github.com/emicklei/go-restful (#382)
+* 0006697 Bump sigs.k8s.io/controller-runtime from 0.7.0 to 0.7.2 (#368)
+* 3cf7079 Bump gopkg.in/yaml.v3 from 3.0.0-20200615113413-eeeca48fe776 to 3.0.0 (#377)
+* e72cfc6 Bump github.com/sirupsen/logrus from 1.6.0 to 1.9.3 (#370)
+* 80f7f55 Bump golang.org/x/crypto from 0.0.0-20201002170205-7f63de1d35b0 to 0.1.0 (#378)
+* 7c6e516 Bump golang.org/x/net from 0.0.0-20201110031124-69a78807bb2b to 0.7.0 (#375)
+* 5a05e91 Bump busybox from 1.32.1 to 1.36.1 (#362)
+* 4452f9c Bump golang.org/x/text from 0.3.4 to 0.3.8 (#376)
+* 5bf555a Bump k8s.io/client-go from 0.20.4 to 0.20.15 (#372)
+* b413a61 Bump codecov/codecov-action from 1 to 3 (#381)
+* 645b834 Bump docker/setup-qemu-action from 2 to 3 (#380)
+* dd6adac Bump docker/setup-buildx-action from 2 to 3 (#366)
+* 76b0603 Bump docker/build-push-action from 4 to 5 (#367)
+* 656e654 Bump actions/checkout from 2 to 4 (#364)
+* 1a9feb1 Bump aws-actions/configure-aws-credentials from 1 to 4 (#365)
+* 3f9ed7f Bump docker/login-action from 2 to 3 (#363)
+* 2e2b323 Add CODEOWNERS (#379)
+* 86b11a9 Update to Golang 1.19 (#373)
+* 5d940a3 Create dependabot.yml (#361)
+* 7e9a401 Chore: updating kube-rbac-proxy to 0.13.0 (#343)
+* 9f9d313 Bump github.com/prometheus/client_golang from 1.7.1 to 1.11.1 (#355)
+
 ## [v1.0.7] - 2023-07-05
 * 23f4ba8 Only allow maxParallel number of running CRs (#351)
 * 79b38c0 Add Apache-2.0 license (#344)
