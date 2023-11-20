@@ -77,17 +77,18 @@ func init() {
 func main() {
 
 	var (
-		metricsAddr          string
-		probeAddr            string
-		enableLeaderElection bool
-		namespace            string
-		maxParallel          int
-		maxAPIRetries        int
-		debugMode            bool
-		logMode              string
-		drainTimeout         int
-		ignoreDrainFailures  bool
-		maxReplacementNodes  int
+		metricsAddr          	string
+		probeAddr            	string
+		enableLeaderElection 	bool
+		namespace            	string
+		maxParallel          	int
+		maxAPIRetries        	int
+		debugMode            	bool
+		logMode              	string
+		drainTimeout         	int
+		ignoreDrainFailures  	bool
+		maxReplacementNodes  	int
+		earlyCordonNodes		bool
 	)
 
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
@@ -102,6 +103,7 @@ func main() {
 	flag.IntVar(&drainTimeout, "drain-timeout", 900, "when the drain command should timeout")
 	flag.BoolVar(&ignoreDrainFailures, "ignore-drain-failures", false, "proceed with instance termination despite drain failures.")
 	flag.IntVar(&maxReplacementNodes, "max-replacement-nodes", 0, "The max number of replacement nodes allowed in a cluster. Avoids cluster-ballooning")
+	flag.BoolVar(&earlyCordonNodes, "early-cordon-nodes", true, "when enabled, will cordon all the nodes in the node-group even before processing the nodes")
 
 	opts := zap.Options{
 		Development: true,
@@ -203,13 +205,14 @@ func main() {
 		ScriptRunner: controllers.ScriptRunner{
 			Logger: logger,
 		},
-		DrainGroupMapper:    &sync.Map{},
-		DrainErrorMapper:    &sync.Map{},
-		ClusterNodesMap:     &sync.Map{},
-		ReconcileMap:        &sync.Map{},
-		DrainTimeout:        drainTimeout,
-		IgnoreDrainFailures: ignoreDrainFailures,
-		ReplacementNodesMap: &sync.Map{},
+		DrainGroupMapper:		&sync.Map{},
+		DrainErrorMapper:		&sync.Map{},
+		ClusterNodesMap:		&sync.Map{},
+		ReconcileMap:			&sync.Map{},
+		DrainTimeout:			drainTimeout,
+		IgnoreDrainFailures:	ignoreDrainFailures,
+		ReplacementNodesMap:	&sync.Map{},
+		EarlyCordonNodes:		earlyCordonNodes,
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
