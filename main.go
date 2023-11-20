@@ -77,18 +77,18 @@ func init() {
 func main() {
 
 	var (
-		metricsAddr          	string
-		probeAddr            	string
-		enableLeaderElection 	bool
-		namespace            	string
-		maxParallel          	int
-		maxAPIRetries        	int
-		debugMode            	bool
-		logMode              	string
-		drainTimeout         	int
-		ignoreDrainFailures  	bool
-		maxReplacementNodes  	int
-		earlyCordonNodes		bool
+		metricsAddr          string
+		probeAddr            string
+		enableLeaderElection bool
+		namespace            string
+		maxParallel          int
+		maxAPIRetries        int
+		debugMode            bool
+		logMode              string
+		drainTimeout         int
+		ignoreDrainFailures  bool
+		maxReplacementNodes  int
+		earlyCordonNodes     bool
 	)
 
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
@@ -205,14 +205,14 @@ func main() {
 		ScriptRunner: controllers.ScriptRunner{
 			Logger: logger,
 		},
-		DrainGroupMapper:		&sync.Map{},
-		DrainErrorMapper:		&sync.Map{},
-		ClusterNodesMap:		&sync.Map{},
-		ReconcileMap:			&sync.Map{},
-		DrainTimeout:			drainTimeout,
-		IgnoreDrainFailures:	ignoreDrainFailures,
-		ReplacementNodesMap:	&sync.Map{},
-		EarlyCordonNodes:		earlyCordonNodes,
+		DrainGroupMapper:    &sync.Map{},
+		DrainErrorMapper:    &sync.Map{},
+		ClusterNodesMap:     &sync.Map{},
+		ReconcileMap:        &sync.Map{},
+		DrainTimeout:        drainTimeout,
+		IgnoreDrainFailures: ignoreDrainFailures,
+		ReplacementNodesMap: &sync.Map{},
+		EarlyCordonNodes:    earlyCordonNodes,
 	}
 
 	reconciler.SetMaxParallel(maxParallel)

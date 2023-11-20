@@ -620,12 +620,12 @@ func TestClusterBallooning(t *testing.T) {
 
 func TestEarlyCordon(t *testing.T) {
 	var tests = []struct {
-		TestDescription     			string
-		Reconciler          			*RollingUpgradeReconciler
-		RollingUpgrade      			*v1alpha1.RollingUpgrade
-		AsgClient           			*MockAutoscalingGroup
-		ClusterNodes        			[]*corev1.Node
-		ExpectedUnschdeulableValue 		bool
+		TestDescription            string
+		Reconciler                 *RollingUpgradeReconciler
+		RollingUpgrade             *v1alpha1.RollingUpgrade
+		AsgClient                  *MockAutoscalingGroup
+		ClusterNodes               []*corev1.Node
+		ExpectedUnschdeulableValue bool
 	}{
 		{
 			"CR spec has IgnoreDrainFailures as nil, so default false should be considered",
@@ -647,9 +647,9 @@ func TestEarlyCordon(t *testing.T) {
 		if err != nil {
 			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
 		}
-		for node := range rollupCtx.Cloud.ClusterNodes{
-			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable{
-					t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
+		for _, node := range rollupCtx.Cloud.ClusterNodes {
+			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable {
+				t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
 			}
 		}
 	}

@@ -65,7 +65,7 @@ type RollingUpgradeContext struct {
 	ReplacementNodesMap *sync.Map
 	MaxReplacementNodes int
 	AllowReplacements   bool
-	EarlyCordonNodes	bool
+	EarlyCordonNodes    bool
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
@@ -149,8 +149,8 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	}
 
 	//Early-Cordon - Cordon all the nodes to avoid any further scheduling of new pods.
-	if r.EarlyCordonNodes{
-		if ok, err := r.EarlyCordonAllNodes(); !ok{
+	if r.EarlyCordonNodes {
+		if ok, err := r.EarlyCordonAllNodes(); !ok {
 			return ok, err
 		}
 	}
