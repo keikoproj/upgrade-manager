@@ -12,7 +12,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	go.uber.org/zap v1.26.0
 	k8s.io/api v0.25.15
-	k8s.io/apimachinery v0.25.15
+	k8s.io/apimachinery v0.25.16
 	k8s.io/client-go v0.25.15
 	k8s.io/kubectl v0.25.15
 	sigs.k8s.io/controller-runtime v0.12.1
