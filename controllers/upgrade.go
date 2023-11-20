@@ -251,7 +251,6 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.UpdateMetricsStatus(inProcessingNodes, nodeSteps)
 			return false, err
 		}
-
 	}
 
 	var (

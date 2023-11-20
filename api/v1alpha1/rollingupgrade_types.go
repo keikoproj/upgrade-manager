@@ -210,8 +210,8 @@ const (
 	RandomUpdateStrategy          UpdateStrategyType = "randomUpdate"
 	UniformAcrossAzUpdateStrategy UpdateStrategyType = "uniformAcrossAzUpdate"
 
-	UpdateStrategyModeLazy           UpdateStrategyMode = "lazy"
-	UpdateStrategyModeEager          UpdateStrategyMode = "eager"
+	UpdateStrategyModeLazy  UpdateStrategyMode = "lazy"
+	UpdateStrategyModeEager UpdateStrategyMode = "eager"
 )
 
 // UpdateStrategy holds the information needed to perform update based on different update strategies

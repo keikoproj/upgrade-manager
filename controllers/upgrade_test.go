@@ -545,6 +545,7 @@ func TestClusterBallooning(t *testing.T) {
 				reconciler := createRollingUpgradeReconciler(t)
 				reconciler.MaxReplacementNodes = 500
 				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 500)
+				reconciler.EarlyCordonNodes = true
 				return reconciler
 			}(),
 			createRollingUpgrade(),
