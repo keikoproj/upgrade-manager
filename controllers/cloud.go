@@ -27,9 +27,10 @@ import (
 )
 
 var (
-	instanceStateTagKey = "upgrademgr.keikoproj.io/state"
-	inProgressTagValue  = "in-progress"
-	failedDrainTagValue = "failed-drain"
+	instanceStateTagKey  = "upgrademgr.keikoproj.io/state"
+	inProgressTagValue   = "in-progress"
+	failedDrainTagValue  = "failed-drain"
+	instanceCordonTagKey = "upgrademgr.keikoproj.io/cordon"
 )
 
 type DiscoveredState struct {
