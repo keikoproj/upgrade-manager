@@ -545,6 +545,7 @@ func TestClusterBallooning(t *testing.T) {
 				reconciler := createRollingUpgradeReconciler(t)
 				reconciler.MaxReplacementNodes = 500
 				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 500)
+				reconciler.EarlyCordonNodes = true
 				return reconciler
 			}(),
 			createRollingUpgrade(),
@@ -615,5 +616,42 @@ func TestClusterBallooning(t *testing.T) {
 			t.Errorf("Test Description: %s \n allowedBatchSize expected: %v \n actual: %v", test.TestDescription, test.AllowedBatchSize, allowedBatchSize)
 		}
 
+	}
+}
+
+func TestEarlyCordon(t *testing.T) {
+	var tests = []struct {
+		TestDescription            string
+		Reconciler                 *RollingUpgradeReconciler
+		RollingUpgrade             *v1alpha1.RollingUpgrade
+		AsgClient                  *MockAutoscalingGroup
+		ClusterNodes               []*corev1.Node
+		ExpectedUnschdeulableValue bool
+	}{
+		{
+			"CR spec has IgnoreDrainFailures as nil, so default false should be considered",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			true,
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		_, err := rollupCtx.EarlyCordonAllNodes()
+		if err != nil {
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
+		}
+		for _, node := range rollupCtx.Cloud.ClusterNodes {
+			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable {
+				t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
+			}
+		}
 	}
 }
