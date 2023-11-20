@@ -50,6 +50,7 @@ func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds
 	}
 
 	helper := &drain.Helper{
+		Ctx:                 context.Background(),
 		Client:              client,
 		Force:               true,
 		GracePeriodSeconds:  -1,
@@ -72,6 +73,36 @@ func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds
 			return err
 		}
 		return fmt.Errorf("error draining node: %v", err)
+	}
+	return nil
+}
+
+// CordonNode cordons a node.
+func (k *KubernetesClientSet) CordonUncordonNode(node *corev1.Node, client kubernetes.Interface) error {
+	if client == nil {
+		return fmt.Errorf("K8sClient not set")
+	}
+
+	if node == nil {
+		return fmt.Errorf("node not set")
+	}
+
+	helper := &drain.Helper{
+		Ctx:                 context.Background(),
+		Client:              client,
+		Force:               true,
+		GracePeriodSeconds:  -1,
+		IgnoreAllDaemonSets: true,
+		Out:                 os.Stdout,
+		ErrOut:              os.Stdout,
+		DeleteEmptyDirData:  true,
+	}
+
+	if err := drain.RunCordonOrUncordon(helper, node, true); err != nil {
+		if apierrors.IsNotFound(err) {
+			return err
+		}
+		return fmt.Errorf("error cordoning node: %v", err)
 	}
 	return nil
 }
