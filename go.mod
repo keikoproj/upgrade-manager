@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/aws/aws-sdk-go v1.47.9
-	github.com/go-logr/logr v1.2.4
+	github.com/go-logr/logr v1.3.0
 	github.com/keikoproj/aws-sdk-go-cache v0.0.2
 	github.com/onsi/gomega v1.30.0
 	github.com/pkg/errors v0.9.1
