@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // This test checks implementation of our DrainNode which does both cordon + drain
@@ -545,6 +548,7 @@ func TestClusterBallooning(t *testing.T) {
 				reconciler := createRollingUpgradeReconciler(t)
 				reconciler.MaxReplacementNodes = 500
 				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 500)
+				reconciler.EarlyCordonNodes = true
 				return reconciler
 			}(),
 			createRollingUpgrade(),
@@ -615,5 +619,114 @@ func TestClusterBallooning(t *testing.T) {
 			t.Errorf("Test Description: %s \n allowedBatchSize expected: %v \n actual: %v", test.TestDescription, test.AllowedBatchSize, allowedBatchSize)
 		}
 
+	}
+}
+
+func TestEarlyCordon(t *testing.T) {
+	var tests = []struct {
+		TestDescription            string
+		Reconciler                 *RollingUpgradeReconciler
+		RollingUpgrade             *v1alpha1.RollingUpgrade
+		AsgClient                  *MockAutoscalingGroup
+		ClusterNodes               []*corev1.Node
+		ExpectedUnschdeulableValue bool
+	}{
+		{
+			"CR spec has IgnoreDrainFailures as nil, so default false should be considered",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			true,
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		_, err := rollupCtx.EarlyCordonAllNodes()
+		if err != nil {
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
+		}
+		for _, node := range rollupCtx.Cloud.ClusterNodes {
+			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable {
+				t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
+			}
+		}
+	}
+}
+
+func TestEarlyCordonFunction(t *testing.T) {
+	var tests = []struct {
+		TestDescription            string
+		Reconciler                 *RollingUpgradeReconciler
+		RollingUpgrade             *v1alpha1.RollingUpgrade
+		AsgClient                  *MockAutoscalingGroup
+		ClusterNodes               []*corev1.Node
+		ExpectedUnschdeulableValue bool
+	}{
+		{
+			"Test if all the nodes are cordoned by default.",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			true,
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		_, err := rollupCtx.EarlyCordonAllNodes()
+		if err != nil {
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
+		}
+		for _, node := range rollupCtx.Cloud.ClusterNodes {
+			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable {
+				t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
+			}
+		}
+	}
+}
+
+func TestEarlyCordonCompleteFlow(t *testing.T) {
+	var tests = []struct {
+		TestDescription string
+		Reconciler      *RollingUpgradeReconciler
+		RollingUpgrade  *v1alpha1.RollingUpgrade
+		AsgClient       *MockAutoscalingGroup
+		ClusterNodes    []*corev1.Node
+	}{
+		{
+			"Test for Reconcile()",
+			func() *RollingUpgradeReconciler {
+				reconciler := createRollingUpgradeReconciler(t)
+				reconciler.MaxReplacementNodes = 500
+				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 500)
+				reconciler.EarlyCordonNodes = true
+				return reconciler
+			}(),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+		},
+	}
+	for _, test := range tests {
+		request := reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      test.RollingUpgrade.Name,
+				Namespace: test.RollingUpgrade.Namespace,
+			},
+		}
+		if _, err := test.Reconciler.Reconcile(context.Background(), request); err != nil {
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
+		}
 	}
 }

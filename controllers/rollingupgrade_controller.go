@@ -58,6 +58,7 @@ type RollingUpgradeReconciler struct {
 	IgnoreDrainFailures bool
 	ReplacementNodesMap *sync.Map
 	MaxReplacementNodes int
+	EarlyCordonNodes    bool
 }
 
 // RollingUpgradeAuthenticator has the clients for providers
@@ -212,6 +213,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		IgnoreDrainFailures: r.IgnoreDrainFailures,
 		ReplacementNodesMap: r.ReplacementNodesMap,
 		MaxReplacementNodes: r.MaxReplacementNodes,
+		EarlyCordonNodes:    r.EarlyCordonNodes,
 	}
 
 	// process node rotation
