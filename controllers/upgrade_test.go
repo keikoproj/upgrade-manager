@@ -302,6 +302,7 @@ func TestRotateNodes(t *testing.T) {
 		rollupCtx := test.RollingUpgradeContext
 		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+		rollupCtx.EarlyCordonNodes = true
 
 		err := rollupCtx.RotateNodes()
 		if err != nil {
@@ -510,6 +511,7 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
 		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+		rollupCtx.EarlyCordonNodes = true
 
 		err := rollupCtx.RotateNodes()
 		if err != nil {
@@ -692,41 +694,6 @@ func TestEarlyCordonFunction(t *testing.T) {
 			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable {
 				t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
 			}
-		}
-	}
-}
-
-func TestEarlyCordonCompleteFlow(t *testing.T) {
-	var tests = []struct {
-		TestDescription string
-		Reconciler      *RollingUpgradeReconciler
-		RollingUpgrade  *v1alpha1.RollingUpgrade
-		AsgClient       *MockAutoscalingGroup
-		ClusterNodes    []*corev1.Node
-	}{
-		{
-			"Test for Reconcile()",
-			func() *RollingUpgradeReconciler {
-				reconciler := createRollingUpgradeReconciler(t)
-				reconciler.MaxReplacementNodes = 500
-				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 500)
-				reconciler.EarlyCordonNodes = true
-				return reconciler
-			}(),
-			createRollingUpgrade(),
-			createASGClient(),
-			createNodeSlice(),
-		},
-	}
-	for _, test := range tests {
-		request := reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      test.RollingUpgrade.Name,
-				Namespace: test.RollingUpgrade.Namespace,
-			},
-		}
-		if _, err := test.Reconciler.Reconcile(context.Background(), request); err != nil {
-			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
 		}
 	}
 }
