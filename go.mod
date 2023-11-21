@@ -4,16 +4,16 @@ go 1.19
 
 require (
 	github.com/aws/aws-sdk-go v1.47.9
-	github.com/go-logr/logr v1.2.4
+	github.com/go-logr/logr v1.3.0
 	github.com/keikoproj/aws-sdk-go-cache v0.0.2
 	github.com/onsi/gomega v1.30.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.17.0
 	github.com/sirupsen/logrus v1.9.3
 	go.uber.org/zap v1.26.0
-	k8s.io/api v0.25.15
-	k8s.io/apimachinery v0.25.15
-	k8s.io/client-go v0.25.15
+	k8s.io/api v0.25.16
+	k8s.io/apimachinery v0.25.16
+	k8s.io/client-go v0.25.16
 	k8s.io/kubectl v0.25.15
 	sigs.k8s.io/controller-runtime v0.12.1
 
