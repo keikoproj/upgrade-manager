@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -17,8 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // This test checks implementation of our DrainNode which does both cordon + drain
