@@ -221,6 +221,9 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		rollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		rollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusError)
 		common.SetMetricRollupFailed(rollingUpgrade.Name)
+
+		// try to uncordon all the cordoned nodes.
+		rollupCtx.CordonUncordonAllNodes(false)
 		return ctrl.Result{}, err
 	}
 

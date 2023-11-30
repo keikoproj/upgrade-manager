@@ -646,7 +646,7 @@ func TestEarlyCordonFunction(t *testing.T) {
 		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
-		_, err := rollupCtx.EarlyCordonAllNodes()
+		_, err := rollupCtx.CordonUncordonAllNodes(true)
 		if err != nil {
 			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
 		}

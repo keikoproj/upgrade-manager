@@ -150,7 +150,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	//Early-Cordon - Cordon all the nodes to avoid any further scheduling of new pods.
 	if r.EarlyCordonNodes {
-		if ok, err := r.EarlyCordonAllNodes(); !ok {
+		if ok, err := r.CordonUncordonAllNodes(true); !ok {
 			return ok, err
 		}
 	}
@@ -759,37 +759,47 @@ func (r *RollingUpgradeContext) ClusterBallooning(batchSize int) (bool, int) {
 	return false, batchSize
 }
 
-func (r *RollingUpgradeContext) EarlyCordonAllNodes() (bool, error) {
+func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, error) {
 	scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
-	uncordonedInstances, err := r.Cloud.AmazonClientSet.DescribeInstancesWithoutTag(instanceCordonTagKey)
-	if err != nil {
-		r.Error(err, "failed to describe instances for early-cordoning", "name", r.RollingUpgrade.NamespacedName())
-		return false, errors.Wrap(err, "failed to describe instances for early-cordoning")
+	var instances []*autoscaling.Instance
+
+	if cordonNode {
+		instanceIDs, err := r.Cloud.AmazonClientSet.DescribeInstancesWithoutTag(instanceCordonTagKey)
+		if err != nil {
+			r.Error(err, "failed to describe instances for early-cordoning", "name", r.RollingUpgrade.NamespacedName())
+			return false, errors.Wrap(err, "failed to describe instances for early-cordoning")
+		}
+		for _, instanceID := range instanceIDs {
+			instance := awsprovider.SelectScalingGroupInstance(instanceID, scalingGroup)
+			instances = append(instances, instance)
+		}
+	} else {
+		instances = scalingGroup.Instances
 	}
 
-	for _, instance := range uncordonedInstances {
-		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
+	for _, instance := range instances {
+		if !reflect.DeepEqual(instance, &autoscaling.Instance{}) {
 			//Don't consider if the instance is in terminating state.
-			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
-				node := kubeprovider.SelectNodeByInstanceID(*selectedInstance.InstanceId, r.Cloud.ClusterNodes)
+			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+				node := kubeprovider.SelectNodeByInstanceID(*instance.InstanceId, r.Cloud.ClusterNodes)
 				if node == nil {
-					r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 					continue
 				}
 				//Early cordon only the dirfted instances and not the instances that have same scaling-config as the scaling-group
-				if !r.IsInstanceDrifted(selectedInstance) {
+				if !r.IsInstanceDrifted(instance) {
 					break
 				}
-				r.Info("early cordoning node", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-				if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes); err != nil {
-					r.Error(err, "failed to early cordon the nodes", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+				r.Info("early cordoning node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+				if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, true); err != nil {
+					r.Error(err, "failed to early cordon the nodes", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 					return false, err
 				}
 			}
 			// Add node-cordoned tag
-			r.Info("tagging instances with cordoned=true", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-			if err := r.Auth.TagEC2instances([]string{*selectedInstance.InstanceId}, instanceCordonTagKey, "True"); err != nil {
-				r.Error(err, "failed to tag instances with cordoned=true", "instanceID", selectedInstance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+			r.Info("tagging instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+			if err := r.Auth.TagEC2instances([]string{*instance.InstanceId}, instanceCordonTagKey, "True"); err != nil {
+				r.Error(err, "failed to tag instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 				return true, err
 			}
 		}
