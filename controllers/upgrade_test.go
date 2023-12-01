@@ -299,6 +299,7 @@ func TestRotateNodes(t *testing.T) {
 		rollupCtx := test.RollingUpgradeContext
 		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+		rollupCtx.EarlyCordonNodes = true
 
 		err := rollupCtx.RotateNodes()
 		if err != nil {
@@ -507,6 +508,7 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
 		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+		rollupCtx.EarlyCordonNodes = true
 
 		err := rollupCtx.RotateNodes()
 		if err != nil {
@@ -545,6 +547,7 @@ func TestClusterBallooning(t *testing.T) {
 				reconciler := createRollingUpgradeReconciler(t)
 				reconciler.MaxReplacementNodes = 500
 				reconciler.ReplacementNodesMap.Store("ReplacementNodes", 500)
+				reconciler.EarlyCordonNodes = true
 				return reconciler
 			}(),
 			createRollingUpgrade(),
@@ -615,5 +618,53 @@ func TestClusterBallooning(t *testing.T) {
 			t.Errorf("Test Description: %s \n allowedBatchSize expected: %v \n actual: %v", test.TestDescription, test.AllowedBatchSize, allowedBatchSize)
 		}
 
+	}
+}
+
+func TestEarlyCordonFunction(t *testing.T) {
+	var tests = []struct {
+		TestDescription            string
+		Reconciler                 *RollingUpgradeReconciler
+		RollingUpgrade             *v1alpha1.RollingUpgrade
+		AsgClient                  *MockAutoscalingGroup
+		ClusterNodes               []*corev1.Node
+		CordonNodeFlag             bool
+		ExpectedUnschdeulableValue bool
+	}{
+		{
+			"Test if all the nodes are cordoned by default.",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			true,
+			true,
+		},
+		{
+			"Test if all the nodes are cordoned by default.",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			false,
+			false,
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		_, err := rollupCtx.CordonUncordonAllNodes(test.CordonNodeFlag)
+		if err != nil {
+			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
+		}
+		for _, node := range rollupCtx.Cloud.ClusterNodes {
+			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable {
+				t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
+			}
+		}
 	}
 }
