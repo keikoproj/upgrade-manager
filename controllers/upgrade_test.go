@@ -628,6 +628,7 @@ func TestEarlyCordonFunction(t *testing.T) {
 		RollingUpgrade             *v1alpha1.RollingUpgrade
 		AsgClient                  *MockAutoscalingGroup
 		ClusterNodes               []*corev1.Node
+		CordonNodeFlag             bool
 		ExpectedUnschdeulableValue bool
 	}{
 		{
@@ -637,6 +638,16 @@ func TestEarlyCordonFunction(t *testing.T) {
 			createASGClient(),
 			createNodeSlice(),
 			true,
+			true,
+		},
+		{
+			"Test if all the nodes are cordoned by default.",
+			createRollingUpgradeReconciler(t),
+			createRollingUpgrade(),
+			createASGClient(),
+			createNodeSlice(),
+			false,
+			false,
 		},
 	}
 	for _, test := range tests {
@@ -646,7 +657,7 @@ func TestEarlyCordonFunction(t *testing.T) {
 		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
-		_, err := rollupCtx.CordonUncordonAllNodes(true)
+		_, err := rollupCtx.CordonUncordonAllNodes(test.CordonNodeFlag)
 		if err != nil {
 			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
 		}

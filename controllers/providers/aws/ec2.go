@@ -62,24 +62,24 @@ func (a *AmazonClientSet) DescribeTaggedInstanceIDs(tagKey, tagValue string) ([]
 	return instances, err
 }
 
-func (a *AmazonClientSet) DescribeInstancesWithoutTag(tagKey string) ([]string, error) {
+func (a *AmazonClientSet) DescribeInstancesWithoutTagValue(tagKey string, tagValue string) ([]string, error) {
 	instances := []string{}
 	input := &ec2.DescribeInstancesInput{}
-	tagIsPresent := false
+	tagAndValueIsPresent := false
 
 	err := a.Ec2Client.DescribeInstancesPages(input, func(page *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, res := range page.Reservations {
 			for _, instance := range res.Instances {
 				for _, t := range instance.Tags {
-					if *t.Key == tagKey {
-						tagIsPresent = true
+					if *t.Key == tagKey && *t.Value == tagValue {
+						tagAndValueIsPresent = true
 						break
 					}
 				}
-				if !tagIsPresent {
+				if !tagAndValueIsPresent {
 					instances = append(instances, aws.StringValue(instance.InstanceId))
 				}
-				tagIsPresent = false
+				tagAndValueIsPresent = false
 			}
 		}
 		return page.NextToken != nil
@@ -98,5 +98,19 @@ func (a *AmazonClientSet) TagEC2instances(instanceIDs []string, tagKey, tagValue
 		},
 	}
 	_, err := a.Ec2Client.CreateTags(input)
+	return err
+}
+
+func (a *AmazonClientSet) UntagEC2instances(instanceIDs []string, tagKey, tagValue string) error {
+	input := &ec2.DeleteTagsInput{
+		Resources: aws.StringSlice(instanceIDs),
+		Tags: []*ec2.Tag{
+			{
+				Key:   aws.String(tagKey),
+				Value: aws.String(tagValue),
+			},
+		},
+	}
+	_, err := a.Ec2Client.DeleteTags(input)
 	return err
 }
