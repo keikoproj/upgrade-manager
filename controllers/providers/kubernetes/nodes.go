@@ -77,7 +77,7 @@ func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds
 	return nil
 }
 
-// CordonNode cordons a node.
+// CordonUncordonNode cordons a node.
 func (k *KubernetesClientSet) CordonUncordonNode(node *corev1.Node, client kubernetes.Interface, cordonNode bool) error {
 	if client == nil {
 		return fmt.Errorf("K8sClient not set")
