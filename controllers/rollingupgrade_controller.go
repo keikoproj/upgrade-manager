@@ -224,7 +224,7 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// try to uncordon all the cordoned nodes.
 		if _, err2 := rollupCtx.CordonUncordonAllNodes(false); err2 != nil {
-			r.Error(err2, "failed touncordon the nodes.", "name", rollingUpgrade.NamespacedName())
+			r.Error(err2, "failed to uncordon the nodes.", "name", rollingUpgrade.NamespacedName())
 		}
 
 		return ctrl.Result{}, err
