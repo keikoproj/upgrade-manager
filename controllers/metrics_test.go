@@ -11,8 +11,8 @@ import (
 func TestNodeTurnsOntoStep(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	reconsiler := createRollingUpgradeReconciler(t)
-	r := createRollingUpgradeContext(reconsiler)
+	reconciler := createRollingUpgradeReconciler(t)
+	r := createRollingUpgradeContext(reconciler)
 
 	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
