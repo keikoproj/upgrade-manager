@@ -103,7 +103,7 @@ func main() {
 	flag.IntVar(&drainTimeout, "drain-timeout", 900, "when the drain command should timeout")
 	flag.BoolVar(&ignoreDrainFailures, "ignore-drain-failures", false, "proceed with instance termination despite drain failures.")
 	flag.IntVar(&maxReplacementNodes, "max-replacement-nodes", 0, "The max number of replacement nodes allowed in a cluster. Avoids cluster-ballooning")
-	flag.BoolVar(&earlyCordonNodes, "early-cordon-nodes", true, "when enabled, will cordon all the nodes in the node-group even before processing the nodes")
+	flag.BoolVar(&earlyCordonNodes, "early-cordon-nodes", false, "when enabled, will cordon all the nodes in the node-group even before processing the nodes")
 
 	opts := zap.Options{
 		Development: true,
