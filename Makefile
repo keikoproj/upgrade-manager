@@ -14,6 +14,7 @@ all: manager
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: manifests generate fmt vet envtest
+	go test ./controllers/... ./api/...
 	go tool cover -html=./coverage.txt -o cover.html
 
 # Build manager binary
