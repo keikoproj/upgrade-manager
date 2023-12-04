@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -105,6 +106,7 @@ func TestRunCordonOrUncordon(t *testing.T) {
 	for _, test := range tests {
 		rollupCtx := createRollingUpgradeContext(test.Reconciler)
 		helper := &drain.Helper{
+			Ctx:                 context.Background(),
 			Client:              rollupCtx.Auth.Kubernetes,
 			Force:               true,
 			GracePeriodSeconds:  -1,
@@ -621,50 +623,58 @@ func TestClusterBallooning(t *testing.T) {
 	}
 }
 
-func TestEarlyCordonFunction(t *testing.T) {
+func TestCordoningAndUncordoningOfNodes(t *testing.T) {
 	var tests = []struct {
 		TestDescription            string
 		Reconciler                 *RollingUpgradeReconciler
-		RollingUpgrade             *v1alpha1.RollingUpgrade
-		AsgClient                  *MockAutoscalingGroup
-		ClusterNodes               []*corev1.Node
+		Node                       *corev1.Node
 		CordonNodeFlag             bool
 		ExpectedUnschdeulableValue bool
+		ExpectedError              bool
 	}{
 		{
-			"Test if all the nodes are cordoned by default.",
+			"Test if all the nodes are cordoned.",
 			createRollingUpgradeReconciler(t),
-			createRollingUpgrade(),
-			createASGClient(),
-			createNodeSlice(),
+			createNode("mock-node-1"),
 			true,
 			true,
+			false,
 		},
 		{
-			"Test if all the nodes are cordoned by default.",
+			"Test if all the nodes are uncordoned",
 			createRollingUpgradeReconciler(t),
-			createRollingUpgrade(),
-			createASGClient(),
-			createNodeSlice(),
+			createNode("mock-node-1"),
 			false,
 			false,
+			false,
+		},
+		{
+			"Try to cordon an unknown node.",
+			createRollingUpgradeReconciler(t),
+			createNode("mock-node-4"),
+			true,
+			true,
+			true,
 		},
 	}
 	for _, test := range tests {
 		rollupCtx := createRollingUpgradeContext(test.Reconciler)
-		rollupCtx.RollingUpgrade = test.RollingUpgrade
-		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
-		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
-		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
-		_, err := rollupCtx.CordonUncordonAllNodes(test.CordonNodeFlag)
-		if err != nil {
+		if err := rollupCtx.Auth.CordonUncordonNode(test.Node, rollupCtx.Auth.Kubernetes, test.CordonNodeFlag); err != nil && test.ExpectedError {
+			continue
+		}
+
+		// By default, nodes are uncordoned. Therefore, before testing uncordoning the node, first cordon it.
+		if !test.CordonNodeFlag {
+			rollupCtx.Auth.CordonUncordonNode(test.Node, rollupCtx.Auth.Kubernetes, true)
+		}
+
+		if err := rollupCtx.Auth.CordonUncordonNode(test.Node, rollupCtx.Auth.Kubernetes, test.CordonNodeFlag); err != nil {
 			t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
 		}
-		for _, node := range rollupCtx.Cloud.ClusterNodes {
-			if test.ExpectedUnschdeulableValue != node.Spec.Unschedulable {
-				t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, node.Spec.Unschedulable)
-			}
+
+		if test.ExpectedUnschdeulableValue != test.Node.Spec.Unschedulable {
+			t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, test.Node.Spec.Unschedulable)
 		}
 	}
 }

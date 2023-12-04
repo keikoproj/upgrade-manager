@@ -802,12 +802,12 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 					r.Error(err, "failed to early cordon the nodes", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 					return false, err
 				}
-			}
-			// Set instance-state to early-cordoned tag
-			r.Info("tagging instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-			if err := r.Auth.TagEC2instances([]string{*instance.InstanceId}, instanceStateTagKey, earlyCordonedTagValue); err != nil {
-				r.Error(err, "failed to tag instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-				return true, err
+				// Set instance-state to early-cordoned tag
+				r.Info("tagging instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+				if err := r.Auth.TagEC2instances([]string{*instance.InstanceId}, instanceStateTagKey, earlyCordonedTagValue); err != nil {
+					r.Error(err, "failed to tag instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					return true, err
+				}
 			}
 		}
 	}
