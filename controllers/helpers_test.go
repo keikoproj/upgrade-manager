@@ -426,3 +426,7 @@ func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(_ *autoscaling.Ent
 	output := &autoscaling.EnterStandbyOutput{}
 	return output, nil
 }
+
+func (m *MockEC2) DeleteTags(input *ec2.DeleteTagsInput) (*ec2.DeleteTagsOutput, error) {
+	return &ec2.DeleteTagsOutput{}, nil
+}
