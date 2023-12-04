@@ -666,7 +666,9 @@ func TestCordoningAndUncordoningOfNodes(t *testing.T) {
 
 		// By default, nodes are uncordoned. Therefore, before testing uncordoning the node, first cordon it.
 		if !test.CordonNodeFlag {
-			rollupCtx.Auth.CordonUncordonNode(test.Node, rollupCtx.Auth.Kubernetes, true)
+			if err := rollupCtx.Auth.CordonUncordonNode(test.Node, rollupCtx.Auth.Kubernetes, true); err != nil {
+				t.Errorf("Test Description: %s \n error: %v", test.TestDescription, err)
+			}
 		}
 
 		if err := rollupCtx.Auth.CordonUncordonNode(test.Node, rollupCtx.Auth.Kubernetes, test.CordonNodeFlag); err != nil {
