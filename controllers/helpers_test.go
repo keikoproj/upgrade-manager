@@ -68,7 +68,7 @@ func createRollingUpgradeReconciler(t *testing.T, objects ...runtime.Object) *Ro
 		ReplacementNodesMap: &sync.Map{},
 		ReconcileMap:        &sync.Map{},
 		AdmissionMap:        sync.Map{},
-		CacheConfig:         cache.NewConfig(0, 0, 0),
+		CacheConfig:         cache.NewConfig(0, 0, 0, 0),
 		ClusterNodesMap:     &sync.Map{},
 	}
 
@@ -425,4 +425,8 @@ func (m *MockEC2) DescribeInstances(*ec2.DescribeInstancesInput) (*ec2.DescribeI
 func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(_ *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
 	output := &autoscaling.EnterStandbyOutput{}
 	return output, nil
+}
+
+func (m *MockEC2) DeleteTags(input *ec2.DeleteTagsInput) (*ec2.DeleteTagsOutput, error) {
+	return &ec2.DeleteTagsOutput{}, nil
 }

@@ -65,9 +65,15 @@ type RollingUpgradeContext struct {
 	ReplacementNodesMap *sync.Map
 	MaxReplacementNodes int
 	AllowReplacements   bool
+	EarlyCordonNodes    bool
 }
 
 func (r *RollingUpgradeContext) RotateNodes() error {
+	failedDrainInstances, err := r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, failedDrainTagValue)
+	if err != nil {
+		r.Error(err, "failed to discover ec2 instances with drain-failed tag", "name", r.RollingUpgrade.NamespacedName())
+	}
+
 	// set status to running
 	r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusRunning)
 	r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusRunning)
@@ -112,7 +118,14 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		return nil
 	}
 
-	rotationTargets := r.SelectTargets(scalingGroup)
+	rotationTargets := r.SelectTargets(scalingGroup, failedDrainInstances)
+
+	if len(rotationTargets) == 0 && len(failedDrainInstances) > 0 {
+		// If there are failed instances, but no rotation targets, then select failed instances anyway
+		r.Info("selecting from failed instances since there are no rotation targets", "failedDrainInstances", failedDrainInstances, "name", r.RollingUpgrade.NamespacedName())
+		rotationTargets = r.SelectTargets(scalingGroup, []string{})
+	}
+
 	if ok, err := r.ReplaceNodeBatch(rotationTargets); !ok {
 		return err
 	}
@@ -133,6 +146,13 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	inProcessingNodes := r.RollingUpgrade.Status.NodeInProcessing
 	if inProcessingNodes == nil {
 		inProcessingNodes = make(map[string]*v1alpha1.NodeInProcessing)
+	}
+
+	//Early-Cordon - Cordon all the nodes to avoid any further scheduling of new pods.
+	if r.EarlyCordonNodes {
+		if ok, err := r.CordonUncordonAllNodes(true); !ok {
+			return ok, err
+		}
 	}
 
 	switch mode {
@@ -308,6 +328,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 					if err := r.Auth.DrainNode(node, time.Duration(r.RollingUpgrade.PostDrainDelaySeconds()), drainTimeout, r.Auth.Kubernetes); err != nil {
 						// ignore drain failures if either of spec or controller args have set ignoreDrainFailures to true.
 						if !ignoreDrainFailures {
+							if err := r.Auth.TagEC2instances([]string{instanceID}, instanceStateTagKey, failedDrainTagValue); err != nil {
+								r.Error(err, "failed to set instances to drain-failed", "batch", instanceID, "name", r.RollingUpgrade.NamespacedName())
+							}
 							r.DrainManager.DrainErrors <- errors.Errorf("DrainNode failed: instanceID - %v, %v", instanceID, err.Error())
 							return
 						}
@@ -418,7 +441,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	return true, nil
 }
 
-func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) []*autoscaling.Instance {
+func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, excludedInstances []string) []*autoscaling.Instance {
 	var (
 		batchSize  = r.RollingUpgrade.MaxUnavailable()
 		totalNodes = int(aws.Int64Value(scalingGroup.DesiredCapacity))
@@ -428,6 +451,9 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 
 	// first process all in progress instances
 	r.Info("selecting batch for rotation", "batch size", unavailableInt, "name", r.RollingUpgrade.NamespacedName())
+	if len(excludedInstances) > 0 {
+		r.Info("ignoring failed drain instances", "instances", excludedInstances, "name", r.RollingUpgrade.NamespacedName())
+	}
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
 			//In-progress instances shouldn't be considered if they are in terminating state.
@@ -444,7 +470,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 	// select via strategy if there are no in-progress instances
 	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
@@ -455,22 +481,35 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group) [
 
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) {
+			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(instance.InstanceId)) {
 				targets = append(targets, instance)
 			}
 		}
 
 		var AZtargets = make([]*autoscaling.Instance, 0)
-		AZs := awsprovider.GetScalingAZs(targets)
-		if len(AZs) == 0 {
-			return AZtargets
-		}
+
+		// split targets into groups based on their AZ
+		targetsByAZ := map[string][]*autoscaling.Instance{}
 		for _, target := range targets {
-			AZ := aws.StringValue(target.AvailabilityZone)
-			if strings.EqualFold(AZ, AZs[0]) {
-				AZtargets = append(AZtargets, target)
+			az := aws.StringValue(target.AvailabilityZone)
+			targetsByAZ[az] = append(targetsByAZ[az], target)
+		}
+
+		// round-robin across the AZs with targets uniformly first and then best effort with remaining
+		for {
+			if len(AZtargets) == len(targets) {
+				break
+			}
+
+			for az := range targetsByAZ {
+				targetsByAZGroupSize := len(targetsByAZ[az])
+				if targetsByAZGroupSize > 0 {
+					AZtargets = append(AZtargets, targetsByAZ[az][targetsByAZGroupSize-1]) // append last target
+					targetsByAZ[az] = targetsByAZ[az][:targetsByAZGroupSize-1]             // pop last target
+				}
 			}
 		}
+
 		if unavailableInt > len(AZtargets) {
 			unavailableInt = len(AZtargets)
 		}
@@ -718,4 +757,59 @@ func (r *RollingUpgradeContext) ClusterBallooning(batchSize int) (bool, int) {
 		return true, 0
 	}
 	return false, batchSize
+}
+
+func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, error) {
+	scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
+	var instanceIDs []string
+	var err error
+
+	if cordonNode {
+		instanceIDs, err = r.Cloud.AmazonClientSet.DescribeInstancesWithoutTagValue(instanceStateTagKey, earlyCordonedTagValue)
+		if err != nil {
+			r.Error(err, "failed to describe instances for early-cordoning", "name", r.RollingUpgrade.NamespacedName())
+			return false, errors.Wrap(err, "failed to describe instances for early-cordoning")
+		}
+	} else {
+		instanceIDs, err = r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, earlyCordonedTagValue)
+		if err != nil {
+			r.Error(err, "failed to discover ec2 instances with early-cordoned tag", "name", r.RollingUpgrade.NamespacedName())
+		}
+
+		r.Info("removing early-cordoning tag while uncordoning instances", "name", r.RollingUpgrade.NamespacedName())
+		if err := r.Auth.UntagEC2instances(instanceIDs, instanceStateTagKey, earlyCordonedTagValue); err != nil {
+			r.Error(err, "failed to delete early-cordoned tag for instances", "name", r.RollingUpgrade.NamespacedName())
+		}
+		// add unit test as well.
+
+	}
+
+	for _, instanceID := range instanceIDs {
+		if instance := awsprovider.SelectScalingGroupInstance(instanceID, scalingGroup); !reflect.DeepEqual(instance, &autoscaling.Instance{}) {
+			//Don't consider if the instance is in terminating state.
+			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+				node := kubeprovider.SelectNodeByInstanceID(*instance.InstanceId, r.Cloud.ClusterNodes)
+				if node == nil {
+					r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					continue
+				}
+				//Early cordon only the dirfted instances and not the instances that have same scaling-config as the scaling-group
+				if !r.IsInstanceDrifted(instance) {
+					break
+				}
+				r.Info("early cordoning node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+				if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, cordonNode); err != nil {
+					r.Error(err, "failed to early cordon the nodes", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					return false, err
+				}
+				// Set instance-state to early-cordoned tag
+				r.Info("tagging instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+				if err := r.Auth.TagEC2instances([]string{*instance.InstanceId}, instanceStateTagKey, earlyCordonedTagValue); err != nil {
+					r.Error(err, "failed to tag instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					return true, err
+				}
+			}
+		}
+	}
+	return true, nil
 }

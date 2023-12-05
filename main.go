@@ -88,6 +88,7 @@ func main() {
 		drainTimeout         int
 		ignoreDrainFailures  bool
 		maxReplacementNodes  int
+		earlyCordonNodes     bool
 	)
 
 	flag.BoolVar(&debugMode, "debug", false, "enable debug logging")
@@ -102,6 +103,7 @@ func main() {
 	flag.IntVar(&drainTimeout, "drain-timeout", 900, "when the drain command should timeout")
 	flag.BoolVar(&ignoreDrainFailures, "ignore-drain-failures", false, "proceed with instance termination despite drain failures.")
 	flag.IntVar(&maxReplacementNodes, "max-replacement-nodes", 0, "The max number of replacement nodes allowed in a cluster. Avoids cluster-ballooning")
+	flag.BoolVar(&earlyCordonNodes, "early-cordon-nodes", false, "when enabled, will cordon all the nodes in the node-group even before processing the nodes")
 
 	opts := zap.Options{
 		Development: true,
@@ -160,7 +162,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	cacheCfg := cache.NewConfig(CacheDefaultTTL, CacheMaxItems, CacheItemsToPrune)
+	cacheCfg := cache.NewConfig(CacheDefaultTTL, 1*time.Hour, CacheMaxItems, CacheItemsToPrune)
 	cache.AddCaching(sess, cacheCfg)
 	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
 	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
@@ -210,6 +212,7 @@ func main() {
 		DrainTimeout:        drainTimeout,
 		IgnoreDrainFailures: ignoreDrainFailures,
 		ReplacementNodesMap: &sync.Map{},
+		EarlyCordonNodes:    earlyCordonNodes,
 	}
 
 	reconciler.SetMaxParallel(maxParallel)
