@@ -1,6 +1,20 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.9] - 2023-12-06
+c2fdb37 Early cordon (#405)
+1201813 Bump sigs.k8s.io/controller-runtime from 0.12.1 to 0.12.3 (#416)
+239f1d6 Bump github.com/aws/aws-sdk-go from 1.48.2 to 1.48.4 (#415)
+fe3a5dc Bump github.com/aws/aws-sdk-go from 1.47.9 to 1.48.2 (#414)
+1e87eea Bump k8s.io/kubectl from 0.25.15 to 0.25.16 (#412)
+1ee2d1e Bump github.com/go-logr/logr from 1.2.4 to 1.3.0 (#411)
+c7c300d Bump k8s.io/client-go from 0.25.15 to 0.25.16 (#409)
+151bd33 Update BDD dependencies (#408)
+48def40 Bump github.com/onsi/gomega from 1.20.1 to 1.30.0 (#407)
+d6cfbdc Bump go.uber.org/zap from 1.15.0 to 1.26.0 (#386)
+aa0a3db Bump github.com/prometheus/client_golang from 1.16.0 to 1.17.0 (#401)
+26075c8 Bump github.com/aws/aws-sdk-go from 1.46.2 to 1.47.9 (#406)
+
 ## [v1.0.8] - 2023-10-30
 * e4a79bf Process drain-failure nodes at the end (#394)
 * 7c245ca Update aws-sdk-go-cache to v0.0.2 (#399)
