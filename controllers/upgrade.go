@@ -513,7 +513,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 		if unavailableInt > len(AZtargets) {
 			unavailableInt = len(AZtargets)
 		}
-		return AZtargets[:unavailableInt]
+		targets = append(targets, AZtargets[:unavailableInt]...)
 	}
 	return targets
 }
