@@ -487,7 +487,10 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 		}
 	}
 
+	r.Info("found unprocessed instances", "instances", unrpocessedTargets, "name", r.RollingUpgrade.NamespacedName())
+
 	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
+
 		finalTargets = append(inprogressTargets, unrpocessedTargets...)
 
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
@@ -515,6 +518,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 				}
 			}
 		}
+		r.Info("uniformAZtargets", "instances", uniformAZTargets, "name", r.RollingUpgrade.NamespacedName())
 
 		finalTargets = append(inprogressTargets, uniformAZTargets...)
 	}
@@ -523,6 +527,7 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 		unavailableInt = len(finalTargets)
 	}
 
+	r.Info("finalTargets", "instances", finalTargets, "name", r.RollingUpgrade.NamespacedName())
 	return finalTargets[:unavailableInt]
 }
 
@@ -567,6 +572,7 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 	} else if scalingGroup.LaunchTemplate != nil {
 		if instance.LaunchTemplate == nil {
+			r.Info("instance is drifted, instance launchtemplate is empty", "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -583,13 +589,16 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
+			r.Info("instance is drifted, mismatch in launchtemplate name", "instanceID", instanceID, "instanceLT", instanceTemplateName, "asgLT", launchTemplateName, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
+			r.Info("instance is drifted, mismatch in launchtemplate version", "instanceID", instanceID, "instanceLT-version", instanceTemplateVersion, "asgLT-version", templateVersion, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
 	} else if scalingGroup.MixedInstancesPolicy != nil {
 		if instance.LaunchTemplate == nil {
+			r.Info("instance is drifted, instance launchtemplate is empty", "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -606,8 +615,10 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
+			r.Info("instance is drifted, mismatch in launchtemplate name", "instanceID", instanceID, "instanceLT", instanceTemplateName, "asgLT", launchTemplateName, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
+			r.Info("instance is drifted, mismatch in launchtemplate version", "instanceID", instanceID, "instanceLT-version", instanceTemplateVersion, "asgLT-version", templateVersion, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	}
@@ -781,12 +792,12 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 	} else {
 		instanceIDs, err = r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, earlyCordonedTagValue)
 		if err != nil {
-			r.Error(err, "failed to discover ec2 instances with early-cordoned tag", "name", r.RollingUpgrade.NamespacedName())
+			r.Info("failed to discover ec2 instances with early-cordoned tag", "name", r.RollingUpgrade.NamespacedName())
 		}
 
 		r.Info("removing early-cordoning tag while uncordoning instances", "name", r.RollingUpgrade.NamespacedName())
 		if err := r.Auth.UntagEC2instances(instanceIDs, instanceStateTagKey, earlyCordonedTagValue); err != nil {
-			r.Error(err, "failed to delete early-cordoned tag for instances", "name", r.RollingUpgrade.NamespacedName())
+			r.Info("failed to delete early-cordoned tag for instances", "name", r.RollingUpgrade.NamespacedName())
 		}
 		// add unit test as well.
 
