@@ -443,9 +443,11 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, excludedInstances []string) []*autoscaling.Instance {
 	var (
-		batchSize  = r.RollingUpgrade.MaxUnavailable()
-		totalNodes = int(aws.Int64Value(scalingGroup.DesiredCapacity))
-		targets    = make([]*autoscaling.Instance, 0)
+		batchSize          = r.RollingUpgrade.MaxUnavailable()
+		totalNodes         = int(aws.Int64Value(scalingGroup.DesiredCapacity))
+		inprogressTargets  = make([]*autoscaling.Instance, 0)
+		unrpocessedTargets = make([]*autoscaling.Instance, 0)
+		finalTargets       = make([]*autoscaling.Instance, 0)
 	)
 	unavailableInt := CalculateMaxUnavailable(batchSize, totalNodes)
 
@@ -458,64 +460,75 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
 			//In-progress instances shouldn't be considered if they are in terminating state.
 			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
-				targets = append(targets, selectedInstance)
+				inprogressTargets = append(inprogressTargets, selectedInstance)
 			}
 		}
 	}
 
-	if len(targets) > 0 {
-		r.Info("found in-progress instances", "instances", awsprovider.GetInstanceIDs(targets))
+	if len(inprogressTargets) > 0 {
+		r.Info("found in-progress instances", "instances", awsprovider.GetInstanceIDs(inprogressTargets), "name", r.RollingUpgrade.NamespacedName())
 	}
 
-	// select via strategy if there are no in-progress instances
+	// continue to select other instances, if any.
+	instances, err := r.Cloud.AmazonClientSet.DescribeInstancesWithoutTagValue(instanceStateTagKey, inProgressTagValue)
+	if err != nil {
+		r.Info("unable to select targets, will retry.", "name", r.RollingUpgrade.NamespacedName())
+		return nil
+	}
+
+	for _, instance := range instances {
+		//don't consider instances when - terminating, empty, duplicates, excluded (errored our previously), not drifted.
+		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
+			if r.IsInstanceDrifted(selectedInstance) && !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
+				if !common.ContainsEqualFold(awsprovider.GetInstanceIDs(unrpocessedTargets), aws.StringValue(selectedInstance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(selectedInstance.InstanceId)) {
+					unrpocessedTargets = append(unrpocessedTargets, selectedInstance)
+				}
+			}
+		}
+	}
+
+	r.Info("found unprocessed instances", "instances", unrpocessedTargets, "name", r.RollingUpgrade.NamespacedName())
+
 	if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.RandomUpdateStrategy {
-		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(instance.InstanceId)) {
-				targets = append(targets, instance)
-			}
-		}
-		if unavailableInt > len(targets) {
-			unavailableInt = len(targets)
-		}
-		return targets[:unavailableInt]
+
+		finalTargets = append(inprogressTargets, unrpocessedTargets...)
 
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
-		for _, instance := range scalingGroup.Instances {
-			if r.IsInstanceDrifted(instance) && !common.ContainsEqualFold(awsprovider.GetInstanceIDs(targets), aws.StringValue(instance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(instance.InstanceId)) {
-				targets = append(targets, instance)
-			}
-		}
 
-		var AZtargets = make([]*autoscaling.Instance, 0)
+		var uniformAZTargets = make([]*autoscaling.Instance, 0)
 
 		// split targets into groups based on their AZ
-		targetsByAZ := map[string][]*autoscaling.Instance{}
-		for _, target := range targets {
+		targetsByAZMap := map[string][]*autoscaling.Instance{}
+		for _, target := range unrpocessedTargets {
 			az := aws.StringValue(target.AvailabilityZone)
-			targetsByAZ[az] = append(targetsByAZ[az], target)
+			targetsByAZMap[az] = append(targetsByAZMap[az], target)
 		}
 
 		// round-robin across the AZs with targets uniformly first and then best effort with remaining
 		for {
-			if len(AZtargets) == len(targets) {
+			if len(uniformAZTargets) == len(unrpocessedTargets) {
 				break
 			}
 
-			for az := range targetsByAZ {
-				targetsByAZGroupSize := len(targetsByAZ[az])
+			for az := range targetsByAZMap {
+				targetsByAZGroupSize := len(targetsByAZMap[az])
 				if targetsByAZGroupSize > 0 {
-					AZtargets = append(AZtargets, targetsByAZ[az][targetsByAZGroupSize-1]) // append last target
-					targetsByAZ[az] = targetsByAZ[az][:targetsByAZGroupSize-1]             // pop last target
+					uniformAZTargets = append(uniformAZTargets, targetsByAZMap[az][targetsByAZGroupSize-1]) // append last target
+					targetsByAZMap[az] = targetsByAZMap[az][:targetsByAZGroupSize-1]                        // pop last target
 				}
 			}
 		}
+		r.Info("uniformAZtargets", "instances", uniformAZTargets, "name", r.RollingUpgrade.NamespacedName())
 
-		if unavailableInt > len(AZtargets) {
-			unavailableInt = len(AZtargets)
-		}
-		return AZtargets[:unavailableInt]
+		finalTargets = append(inprogressTargets, uniformAZTargets...)
 	}
-	return targets
+
+	if unavailableInt > len(finalTargets) {
+		unavailableInt = len(finalTargets)
+	}
+
+	r.Info("finalTargets", "instances", finalTargets, "name", r.RollingUpgrade.NamespacedName())
+	return finalTargets[:unavailableInt]
 }
 
 func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance) bool {
@@ -559,6 +572,7 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 	} else if scalingGroup.LaunchTemplate != nil {
 		if instance.LaunchTemplate == nil {
+			r.Info("instance is drifted, instance launchtemplate is empty", "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -575,13 +589,16 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
+			r.Info("instance is drifted, mismatch in launchtemplate name", "instanceID", instanceID, "instanceLT", instanceTemplateName, "asgLT", launchTemplateName, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
+			r.Info("instance is drifted, mismatch in launchtemplate version", "instanceID", instanceID, "instanceLT-version", instanceTemplateVersion, "asgLT-version", templateVersion, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
 	} else if scalingGroup.MixedInstancesPolicy != nil {
 		if instance.LaunchTemplate == nil {
+			r.Info("instance is drifted, instance launchtemplate is empty", "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 
@@ -598,8 +615,10 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 
 		if !strings.EqualFold(launchTemplateName, instanceTemplateName) {
+			r.Info("instance is drifted, mismatch in launchtemplate name", "instanceID", instanceID, "instanceLT", instanceTemplateName, "asgLT", launchTemplateName, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		} else if !strings.EqualFold(instanceTemplateVersion, templateVersion) {
+			r.Info("instance is drifted, mismatch in launchtemplate version", "instanceID", instanceID, "instanceLT-version", instanceTemplateVersion, "asgLT-version", templateVersion, "name", r.RollingUpgrade.NamespacedName())
 			return true
 		}
 	}
@@ -773,12 +792,12 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 	} else {
 		instanceIDs, err = r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, earlyCordonedTagValue)
 		if err != nil {
-			r.Error(err, "failed to discover ec2 instances with early-cordoned tag", "name", r.RollingUpgrade.NamespacedName())
+			r.Info("failed to discover ec2 instances with early-cordoned tag", "name", r.RollingUpgrade.NamespacedName())
 		}
 
 		r.Info("removing early-cordoning tag while uncordoning instances", "name", r.RollingUpgrade.NamespacedName())
 		if err := r.Auth.UntagEC2instances(instanceIDs, instanceStateTagKey, earlyCordonedTagValue); err != nil {
-			r.Error(err, "failed to delete early-cordoned tag for instances", "name", r.RollingUpgrade.NamespacedName())
+			r.Info("failed to delete early-cordoned tag for instances", "name", r.RollingUpgrade.NamespacedName())
 		}
 		// add unit test as well.
 
