@@ -148,8 +148,9 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		inProcessingNodes = make(map[string]*v1alpha1.NodeInProcessing)
 	}
 
-	//Early-Cordon - Cordon all the nodes to avoid any further scheduling of new pods.
+	//Early-Cordon - Cordon all the nodes to prevent scheduling of new pods on older nodes.
 	if r.EarlyCordonNodes {
+		r.Info("early-cordon has been enabled, all the instances in the node group will be cordoned", "name", r.RollingUpgrade.NamespacedName())
 		if ok, err := r.CordonUncordonAllNodes(true); !ok {
 			return ok, err
 		}
