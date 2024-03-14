@@ -519,7 +519,6 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 				}
 			}
 		}
-		r.Info("uniformAZtargets", "instances", uniformAZTargets, "name", r.RollingUpgrade.NamespacedName())
 
 		finalTargets = append(inprogressTargets, uniformAZTargets...)
 	}
@@ -528,7 +527,6 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 		unavailableInt = len(finalTargets)
 	}
 
-	r.Info("finalTargets", "instances", finalTargets, "name", r.RollingUpgrade.NamespacedName())
 	return finalTargets[:unavailableInt]
 }
 
