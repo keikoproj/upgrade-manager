@@ -680,3 +680,47 @@ func TestCordoningAndUncordoningOfNodes(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectTargets(t *testing.T) {
+	var tests = []struct {
+		TestDescription string
+		Reconciler      *RollingUpgradeReconciler
+		RollingUpgrade  *v1alpha1.RollingUpgrade
+		AsgClient       *MockAutoscalingGroup
+	}{
+		{
+			"Test with RandomUpdate strategy",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+		},
+		{
+			"Test with UniformAcorssAZUpdate strategy",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.UniformAcrossAzUpdateStrategy
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		for _, scalingGroup := range rollupCtx.Cloud.ScalingGroups {
+			selectedInstances := rollupCtx.SelectTargets(scalingGroup, make([]string, 0))
+			if selectedInstances == nil {
+				t.Errorf("Test Description: %s \n error: selectedInstances is nil", test.TestDescription)
+			}
+		}
+
+	}
+}
