@@ -681,7 +681,7 @@ func TestCordoningAndUncordoningOfNodes(t *testing.T) {
 	}
 }
 
-func TestSelectTargets(t *testing.T) {
+func TestSelectTargetsOld(t *testing.T) {
 	var tests = []struct {
 		TestDescription string
 		Reconciler      *RollingUpgradeReconciler
@@ -721,6 +721,53 @@ func TestSelectTargets(t *testing.T) {
 				t.Errorf("Test Description: %s \n error: selectedInstances is nil", test.TestDescription)
 			}
 		}
+	}
+}
 
+func TestSelectTargets(t *testing.T) {
+	// Create a mock autoscaling group
+	scalingGroup := &autoscaling.Group{
+		Instances: []*autoscaling.Instance{
+			{
+				InstanceId: aws.String("instance-1"),
+			},
+			{
+				InstanceId: aws.String("instance-2"),
+			},
+			{
+				InstanceId: aws.String("instance-3"),
+			},
+		},
+	}
+
+	// Create a mock excluded instances list
+	excludedInstances := []string{"instance-2"}
+
+	// Create a mock RollingUpgradeContext
+	rollingUpgradeContext := &RollingUpgradeContext{
+		// Set other required fields
+	}
+
+	// Call the SelectTargets function
+	selectedInstances := rollingUpgradeContext.SelectTargets(scalingGroup, excludedInstances)
+
+	// Verify the result
+	expectedSelectedInstances := []*autoscaling.Instance{
+		{
+			InstanceId: aws.String("instance-1"),
+		},
+		{
+			InstanceId: aws.String("instance-3"),
+		},
+	}
+
+	if len(selectedInstances) != len(expectedSelectedInstances) {
+		t.Errorf("Expected %d selected instances, but got %d", len(expectedSelectedInstances), len(selectedInstances))
+	}
+
+	for i, instance := range selectedInstances {
+		if *instance.InstanceId != *expectedSelectedInstances[i].InstanceId {
+			t.Errorf("Expected instance ID %s, but got %s", *expectedSelectedInstances[i].InstanceId, *instance.InstanceId)
+		}
 	}
 }
