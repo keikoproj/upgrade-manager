@@ -717,6 +717,7 @@ func TestSelectTargetsDifferentStrategy(t *testing.T) {
 		for _, scalingGroup := range rollupCtx.Cloud.ScalingGroups {
 			rollupCtx.RollingUpgrade.Spec.AsgName = *scalingGroup.AutoScalingGroupName
 			selectedInstances := rollupCtx.SelectTargets(scalingGroup, make([]string, 0))
+			t.Log("selectedInstances -", selectedInstances)
 			if selectedInstances == nil {
 				t.Errorf("Test Description: %s \n error: selectedInstances is nil", test.TestDescription)
 			}
