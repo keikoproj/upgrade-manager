@@ -399,6 +399,7 @@ func TestSetBatchStandBy(t *testing.T) {
 			func() *v1alpha1.RollingUpgrade {
 				rollingUpgrade := createRollingUpgrade()
 				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 				return rollingUpgrade
 			}(),
 			createASGClient(),
@@ -473,6 +474,7 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 				rollingUpgrade := createRollingUpgrade()
 				ignoreDrainFailuresValue := true
 				rollingUpgrade.Spec.IgnoreDrainFailures = &ignoreDrainFailuresValue
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 				return rollingUpgrade
 			}(),
 			createASGClient(),
@@ -494,6 +496,7 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 				rollingUpgrade := createRollingUpgrade()
 				drainTimeoutValue := 1800
 				rollingUpgrade.Spec.Strategy.DrainTimeout = &drainTimeoutValue
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 				return rollingUpgrade
 			}(),
 			createASGClient(),
