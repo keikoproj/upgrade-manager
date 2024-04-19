@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [v1.0.10] - 2024-04-01
+b48d119 consider in-progress instances for UniformAcrossAZ update strategy (#438)
+7511a22 Bump github.com/aws/aws-sdk-go from 1.48.4 to 1.48.16 (#419)
+
 ## [v1.0.9] - 2023-12-06
 c2fdb37 Early cordon (#405)
 1201813 Bump sigs.k8s.io/controller-runtime from 0.12.1 to 0.12.3 (#416)
