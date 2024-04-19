@@ -192,12 +192,20 @@ type MockEC2 struct {
 
 var _ ec2iface.EC2API = &MockEC2{}
 
-func createASGInstance(instanceID string, launchConfigName string) *autoscaling.Instance {
+func createASGInstance(instanceID string, launchConfigName string, az string) *autoscaling.Instance {
 	return &autoscaling.Instance{
 		InstanceId:              &instanceID,
 		LaunchConfigurationName: &launchConfigName,
-		AvailabilityZone:        aws.String("az-1"),
+		AvailabilityZone:        aws.String(az),
 		LifecycleState:          aws.String("InService"),
+	}
+}
+
+func createDriftedASGInstance(instanceID string, az string) *autoscaling.Instance {
+	return &autoscaling.Instance{
+		InstanceId:       &instanceID,
+		AvailabilityZone: aws.String(az),
+		LifecycleState:   aws.String("InService"),
 	}
 }
 
@@ -231,9 +239,9 @@ func createASG(asgName string, launchConfigName string) *autoscaling.Group {
 		AutoScalingGroupName:    &asgName,
 		LaunchConfigurationName: &launchConfigName,
 		Instances: []*autoscaling.Instance{
-			createASGInstance("mock-instance-1", launchConfigName),
-			createASGInstance("mock-instance-2", launchConfigName),
-			createASGInstance("mock-instance-3", launchConfigName),
+			createASGInstance("mock-instance-1", launchConfigName, "az-1"),
+			createASGInstance("mock-instance-2", launchConfigName, "az-2"),
+			createASGInstance("mock-instance-3", launchConfigName, "az-3"),
 		},
 		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
 	}
@@ -246,9 +254,9 @@ func createASGWithLaunchTemplate(asgName string, launchTemplate string) *autosca
 			LaunchTemplateName: &asgName,
 		},
 		Instances: []*autoscaling.Instance{
-			createASGInstance("mock-instance-1", launchTemplate),
-			createASGInstance("mock-instance-2", launchTemplate),
-			createASGInstance("mock-instance-3", launchTemplate),
+			createASGInstance("mock-instance-1", launchTemplate, "az-1"),
+			createASGInstance("mock-instance-2", launchTemplate, "az-2"),
+			createASGInstance("mock-instance-3", launchTemplate, "az-3"),
 		},
 		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
 	}
@@ -265,9 +273,9 @@ func createASGWithMixedInstanceLaunchTemplate(asgName string, launchTemplate str
 			},
 		},
 		Instances: []*autoscaling.Instance{
-			createASGInstance("mock-instance-1", launchTemplate),
-			createASGInstance("mock-instance-2", launchTemplate),
-			createASGInstance("mock-instance-3", launchTemplate),
+			createASGInstance("mock-instance-1", launchTemplate, "az-1"),
+			createASGInstance("mock-instance-2", launchTemplate, "az-2"),
+			createASGInstance("mock-instance-3", launchTemplate, "az-3"),
 		},
 		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
 	}
@@ -278,9 +286,9 @@ func createDriftedASG(asgName string, launchConfigName string) *autoscaling.Grou
 		AutoScalingGroupName:    &asgName,
 		LaunchConfigurationName: &launchConfigName,
 		Instances: []*autoscaling.Instance{
-			createASGInstance("mock-instance-1", "different-launch-config"),
-			createASGInstance("mock-instance-2", "different-launch-config"),
-			createASGInstance("mock-instance-3", "different-launch-config"),
+			createDriftedASGInstance("mock-instance-1", "az-1"),
+			createDriftedASGInstance("mock-instance-2", "az-2"),
+			createDriftedASGInstance("mock-instance-3", "az-3"),
 		},
 		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
 	}
