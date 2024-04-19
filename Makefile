@@ -1,4 +1,4 @@
-VERSION=1.0.9
+VERSION=1.0.10
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 
@@ -14,7 +14,7 @@ all: manager
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: manifests generate fmt vet envtest
-	go test ./controllers/... ./api/...
+	go test ./controllers/... ./api/... -coverprofile=coverage.txt 
 	go tool cover -html=./coverage.txt -o cover.html
 
 # Build manager binary

@@ -4,19 +4,16 @@ import (
 	"context"
 	"os"
 	"testing"
-
-	"k8s.io/apimachinery/pkg/util/intstr"
-	drain "k8s.io/kubectl/pkg/drain"
-
 	"time"
-
-	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
-	corev1 "k8s.io/api/core/v1"
 
 	//AWS
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
+	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/kubectl/pkg/drain"
 )
 
 // This test checks implementation of our DrainNode which does both cordon + drain
@@ -186,21 +183,21 @@ func TestIsInstanceDrifted(t *testing.T) {
 		{
 			"Instance has the same launch config as the ASG, expect false from IsInstanceDrifted",
 			createRollingUpgradeReconciler(t),
-			createASGInstance("mock-instance-1", "mock-launch-config-1"),
+			createASGInstance("mock-instance-1", "mock-launch-config-1", "az-1"),
 			aws.String("mock-asg-1"),
 			false,
 		},
 		{
 			"Instance has different launch config from the ASG, expect true from IsInstanceDrifted",
 			createRollingUpgradeReconciler(t),
-			createASGInstance("mock-instance-1", "different-launch-config"),
+			createASGInstance("mock-instance-1", "different-launch-config", "az-1"),
 			aws.String("mock-asg-1"),
 			true,
 		},
 		{
 			"Instance has no launch config, expect true from IsInstanceDrifted",
 			createRollingUpgradeReconciler(t),
-			createASGInstance("mock-instance-1", ""),
+			createASGInstance("mock-instance-1", "", "az-1"),
 			aws.String("mock-asg-1"),
 			true,
 		},
@@ -401,7 +398,8 @@ func TestSetBatchStandBy(t *testing.T) {
 			createRollingUpgradeReconciler(t),
 			func() *v1alpha1.RollingUpgrade {
 				rollingUpgrade := createRollingUpgrade()
-				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%"}
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 				return rollingUpgrade
 			}(),
 			createASGClient(),
@@ -414,7 +412,7 @@ func TestSetBatchStandBy(t *testing.T) {
 			createRollingUpgradeReconciler(t),
 			func() *v1alpha1.RollingUpgrade {
 				rollingUpgrade := createRollingUpgrade()
-				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%"}
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
 				return rollingUpgrade
 			}(),
 			createASGClient(),
@@ -427,7 +425,7 @@ func TestSetBatchStandBy(t *testing.T) {
 			createRollingUpgradeReconciler(t),
 			func() *v1alpha1.RollingUpgrade {
 				rollingUpgrade := createRollingUpgrade()
-				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%"}
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
 				return rollingUpgrade
 			}(),
 			createASGClient(),
@@ -476,6 +474,7 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 				rollingUpgrade := createRollingUpgrade()
 				ignoreDrainFailuresValue := true
 				rollingUpgrade.Spec.IgnoreDrainFailures = &ignoreDrainFailuresValue
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 				return rollingUpgrade
 			}(),
 			createASGClient(),
@@ -497,6 +496,7 @@ func TestIgnoreDrainFailuresAndDrainTimeout(t *testing.T) {
 				rollingUpgrade := createRollingUpgrade()
 				drainTimeoutValue := 1800
 				rollingUpgrade.Spec.Strategy.DrainTimeout = &drainTimeoutValue
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 				return rollingUpgrade
 			}(),
 			createASGClient(),
@@ -677,6 +677,92 @@ func TestCordoningAndUncordoningOfNodes(t *testing.T) {
 
 		if test.ExpectedUnschdeulableValue != test.Node.Spec.Unschedulable {
 			t.Errorf("Test Description: %s \n expectedValue: %v, actualValue: %v", test.TestDescription, test.ExpectedUnschdeulableValue, test.Node.Spec.Unschedulable)
+		}
+	}
+}
+
+func TestSelectTargetsDifferentStrategy(t *testing.T) {
+	var tests = []struct {
+		TestDescription string
+		Reconciler      *RollingUpgradeReconciler
+		RollingUpgrade  *v1alpha1.RollingUpgrade
+		AsgClient       *MockAutoscalingGroup
+	}{
+		{
+			"Test with RandomUpdate strategy",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+		},
+		{
+			"Test with UniformAcorssAZUpdate strategy",
+			createRollingUpgradeReconciler(t),
+			func() *v1alpha1.RollingUpgrade {
+				rollingUpgrade := createRollingUpgrade()
+				rollingUpgrade.Spec.Strategy.Type = v1alpha1.UniformAcrossAzUpdateStrategy
+				rollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
+				return rollingUpgrade
+			}(),
+			createASGClient(),
+		},
+	}
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		rollupCtx.RollingUpgrade = test.RollingUpgrade
+		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
+		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		for _, scalingGroup := range rollupCtx.Cloud.ScalingGroups {
+			rollupCtx.RollingUpgrade.Spec.AsgName = *scalingGroup.AutoScalingGroupName
+			selectedInstances := rollupCtx.SelectTargets(scalingGroup, make([]string, 0))
+			t.Log("selectedInstances -", selectedInstances)
+			if selectedInstances == nil {
+				t.Errorf("Test Description: %s \n error: selectedInstances is nil", test.TestDescription)
+			}
+		}
+	}
+}
+
+func TestSelectTargetsWithExcluededInstances(t *testing.T) {
+	// Create a mock autoscaling group
+	asgClient := createASGClient()
+	scalingGroup := asgClient.autoScalingGroups[1]
+
+	// Create a mock excluded instances list
+	excludedInstances := []string{"mock-instance-1"}
+
+	// Create a mock RollingUpgradeContext
+	rollingUpgradeContext := createRollingUpgradeContext(createRollingUpgradeReconciler(t))
+	rollingUpgradeContext.Cloud.ScalingGroups = asgClient.autoScalingGroups
+	rollingUpgradeContext.RollingUpgrade.Spec.AsgName = *scalingGroup.AutoScalingGroupName
+	rollingUpgradeContext.RollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
+	rollingUpgradeContext.RollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
+
+	// Call the SelectTargets function
+	selectedInstances := rollingUpgradeContext.SelectTargets(scalingGroup, excludedInstances)
+
+	// Verify the result
+	expectedSelectedInstances := []*autoscaling.Instance{
+		{
+			InstanceId: aws.String("mock-instance-2"),
+		},
+		{
+			InstanceId: aws.String("mock-instance-3"),
+		},
+	}
+
+	if len(selectedInstances) != len(expectedSelectedInstances) {
+		t.Errorf("Expected %d selected instances, but got %d", len(expectedSelectedInstances), len(selectedInstances))
+	}
+
+	for i, instance := range selectedInstances {
+		if *instance.InstanceId != *expectedSelectedInstances[i].InstanceId {
+			t.Errorf("Expected instance ID %s, but got %s", *expectedSelectedInstances[i].InstanceId, *instance.InstanceId)
 		}
 	}
 }
