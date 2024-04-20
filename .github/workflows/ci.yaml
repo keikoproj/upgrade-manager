@@ -48,6 +48,7 @@ jobs:
         file: ./coverage.txt # optional
         flags: unittests # optional
         name: codecov-umbrella # optional
+        token: ${{ secrets.CODECOV_TOKEN }} # required
         fail_ci_if_error: true # optional (default = false)
 
     - name: Set up QEMU
