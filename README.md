@@ -1,14 +1,14 @@
-# RollingUpgrade
+# upgrade-manager
 
 ![Build Status](https://github.com/keikoproj/upgrade-manager/workflows/Build-Test/badge.svg) ![Build Status](https://github.com/keikoproj/upgrade-manager/workflows/BDD/badge.svg) [![codecov](https://codecov.io/gh/keikoproj/upgrade-manager/branch/master/graph/badge.svg)](https://codecov.io/gh/keikoproj/upgrade-manager)
 
 > Reliable, extensible rolling-upgrades of Autoscaling groups in Kubernetes
 
-RollingUpgrade provides a Kubernetes native mechanism for doing rolling-updates of instances in an AutoScaling group using a CRD and a controller.
+The upgrade-manager provides a Kubernetes native mechanism for doing rolling-updates of instances in an AutoScaling group using a CRD and a controller.
 
 ## What does it do?
 
-- RollingUpgrade is highly inspired by the way kops does rolling-updates.
+- upgrade-manager is highly inspired by the way kops does rolling-updates.
 
 - It provides similar options for the rolling-updates as kops and more.
 
