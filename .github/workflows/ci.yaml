@@ -52,9 +52,9 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
         file: ./coverage.txt # optional
-        flags: unittests # optional
-        name: codecov-umbrella # optional
-        fail_ci_if_error: true # optional (default = false)
+        # flags: unittests # optional
+        # name: codecov-umbrella # optional
+        # fail_ci_if_error: true # optional (default = false)
 
     - name: Set up QEMU
       if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
