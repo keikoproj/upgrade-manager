@@ -16,15 +16,19 @@ jobs:
     name: CI # Lint, Test, Codecov, Docker build & Push 
     runs-on: ubuntu-latest
     steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.21
 
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Golangci-lint
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v4
       with:
         # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
-        version: v1.53.2
+        version: v1.54
         args: --timeout 3m
 
     - name: Get kubebuilder
@@ -43,12 +47,11 @@ jobs:
       run: make test
 
     - name: Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
-        file: ./coverage.txt # optional
-        flags: unittests # optional
-        name: codecov-umbrella # optional
-        fail_ci_if_error: true # optional (default = false)
+        file: ./coverage.txt
 
     - name: Set up QEMU
       if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
