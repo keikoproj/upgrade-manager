@@ -19,7 +19,7 @@ COPY controllers/ controllers/
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GO111MODULE=on go build -a -o manager main.go
 
 # Add busybox
-FROM busybox:1.36.1 as shelladder
+FROM busybox:1.37.0 as shelladder
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
