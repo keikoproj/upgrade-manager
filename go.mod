@@ -8,7 +8,7 @@ require (
 	github.com/keikoproj/aws-sdk-go-cache v0.0.2
 	github.com/onsi/gomega v1.34.1
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.20.2
+	github.com/prometheus/client_golang v1.20.5
 	github.com/sirupsen/logrus v1.9.3
 	go.uber.org/zap v1.27.0
 	k8s.io/api v0.26.15
