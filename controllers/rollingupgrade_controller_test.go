@@ -79,7 +79,9 @@ func TestControllerSetupWithManager(t *testing.T) {
 	// Create a scheme for the fake client
 	scheme := runtime.NewScheme()
 	// Add the needed types to the scheme
-	corev1.AddToScheme(scheme)
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("Failed to add core types to scheme: %v", err)
+	}
 	
 	// Create a mock manager with the fake config
 	mgr, err := ctrl.NewManager(fakeRestConfig, ctrl.Options{
