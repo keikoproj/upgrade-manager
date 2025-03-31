@@ -6,10 +6,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sync"
@@ -67,21 +70,37 @@ func TestMaxParallel(t *testing.T) {
 func TestControllerSetupWithManager(t *testing.T) {
 	// Create a reconciler
 	reconciler := createRollingUpgradeReconciler(t)
-
-	// Create a mock manager with options that will be used in production
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	
+	// Create a fake REST config instead of using GetConfigOrDie() which fails in CI
+	fakeRestConfig := &rest.Config{
+		Host: "https://example.com",
+	}
+	
+	// Create a scheme for the fake client
+	scheme := runtime.NewScheme()
+	// Add the needed types to the scheme
+	corev1.AddToScheme(scheme)
+	
+	// Create a mock manager with the fake config
+	mgr, err := ctrl.NewManager(fakeRestConfig, ctrl.Options{
 		Scheme: reconciler.Scheme,
+		// Use client.Options with a fake client to avoid needing a real API server
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				Reader: fake.NewClientBuilder().WithScheme(scheme).Build(),
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create manager: %v", err)
 	}
-
+	
 	// Test the SetupWithManager function with the new controller-runtime v0.20.4 API
 	err = reconciler.SetupWithManager(mgr)
 	if err != nil {
 		t.Errorf("SetupWithManager failed with new controller-runtime API: %v", err)
 	}
-
+	
 	// We can't directly test the internal structure of the controller after setup,
 	// but we've verified it doesn't error out with the new API
 }
