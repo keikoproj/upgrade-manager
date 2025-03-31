@@ -47,8 +47,11 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -115,15 +118,17 @@ func main() {
 
 	ctrlOpts := ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
+		WebhookServer:          webhook.NewServer(webhook.Options{Port: 9443}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "d6edb06e.keikoproj.io",
 	}
 
 	if namespace != "" {
-		ctrlOpts.Namespace = namespace
+		ctrlOpts.Cache.DefaultNamespaces = map[string]ctrlcache.Config{
+			namespace: {},
+		}
 		setupLog.Info("starting watch in namespaced mode", "namespace", namespace)
 	} else {
 		setupLog.Info("starting watch in all namespaces")

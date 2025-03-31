@@ -34,9 +34,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // RollingUpgradeReconciler reconciles a RollingUpgrade object
@@ -237,8 +237,22 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.RollingUpgrade{}).
-		Watches(&source.Kind{Type: &corev1.Node{}}, nil).
-		WithEventFilter(r.NodeEventsHandler()).
+		Watches(
+			&corev1.Node{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				// Use the event filtering logic from NodeEventsHandler
+				p := r.NodeEventsHandler()
+				// If the predicate doesn't allow this event, return empty requests
+				if !p.Create(event.CreateEvent{Object: obj}) &&
+					!p.Update(event.UpdateEvent{ObjectNew: obj}) &&
+					!p.Delete(event.DeleteEvent{Object: obj}) &&
+					!p.Generic(event.GenericEvent{Object: obj}) {
+					return []reconcile.Request{}
+				}
+				// Return a default request - the exact implementation would depend on your needs
+				return []reconcile.Request{{}}
+			}),
+		).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
 }
