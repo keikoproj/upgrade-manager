@@ -19,7 +19,7 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v5
       with:
-        go-version: 1.21
+        go-version: 1.24
 
     - name: Checkout code
       uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
       uses: golangci/golangci-lint-action@v6
       with:
         # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
-        version: v1.54
+        version: v1.64
         args: --timeout 3m
 
     - name: Get kubebuilder
