@@ -1,7 +1,6 @@
 module github.com/keikoproj/upgrade-manager/test-bdd
 
-go 1.19
-toolchain go1.24.1
+go 1.24
 
 require (
 	github.com/cucumber/godog v0.13.0

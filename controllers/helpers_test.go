@@ -106,13 +106,16 @@ func createRollingUpgradeContext(r *RollingUpgradeReconciler) *RollingUpgradeCon
 
 func createRollingUpgrade() *v1alpha1.RollingUpgrade {
 	return &v1alpha1.RollingUpgrade{
-		ObjectMeta: metav1.ObjectMeta{Name: "1", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-upgrade",
+			Namespace: "default",
+		},
 		Spec: v1alpha1.RollingUpgradeSpec{
-			AsgName:               "mock-asg-1",
-			PostDrainDelaySeconds: 30,
-			Strategy: v1alpha1.UpdateStrategy{
-				Type: v1alpha1.RandomUpdateStrategy,
-			},
+			AsgName:  "mock-asg-1",
+			Strategy: v1alpha1.UpdateStrategy{},
+		},
+		Status: v1alpha1.RollingUpgradeStatus{
+			CurrentStatus: v1alpha1.StatusInit,
 		},
 	}
 }
