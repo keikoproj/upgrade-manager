@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	drain "k8s.io/kubectl/pkg/drain"
 )
@@ -77,12 +78,12 @@ func (k *KubernetesClientSet) DrainNode(node *corev1.Node, PostDrainDelaySeconds
 	return nil
 }
 
-// CordonUncordonNode cordons a node.
+// CordonUncordonNode cordons a node and then verifies the state has been applied.
+// We use a polling loop to be resilient against race conditions from other controllers.
 func (k *KubernetesClientSet) CordonUncordonNode(node *corev1.Node, client kubernetes.Interface, cordonNode bool) error {
 	if client == nil {
 		return fmt.Errorf("K8sClient not set")
 	}
-
 	if node == nil {
 		return fmt.Errorf("node not set")
 	}
@@ -98,11 +99,40 @@ func (k *KubernetesClientSet) CordonUncordonNode(node *corev1.Node, client kuber
 		DeleteEmptyDirData:  true,
 	}
 
-	if err := drain.RunCordonOrUncordon(helper, node, cordonNode); err != nil {
-		if apierrors.IsNotFound(err) {
-			return err
+	err := wait.PollUntilContextTimeout(context.Background(), 2*time.Second, 15*time.Second, true, func(ctx context.Context) (bool, error) {
+		// First we attempt the cordon/uncordon operation.
+		if err := drain.RunCordonOrUncordon(helper, node, cordonNode); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, err // Stop polling, the node is gone.
+			}
+			// For other transient errors, log it and the poll will retry.
+			fmt.Fprintf(os.Stderr, "transient error during cordon/uncordon for node %s, retrying: %v\n", node.Name, err)
+			return false, nil // Continue polling.
 		}
-		return fmt.Errorf("error cordoning node: %v", err)
+
+		// After a successful API call, we must verify the state from the API server.
+		freshNode, err := client.CoreV1().Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+		if err != nil {
+			// If we can't get the node to verify, retry.
+			fmt.Fprintf(os.Stderr, "failed to get node %s for verification, retrying: %v\n", node.Name, err)
+			return false, nil // Continue polling.
+		}
+
+		// Check if the node's spec matches the desired state.
+		if freshNode.Spec.Unschedulable == cordonNode {
+			return true, nil // The state is correct and verified so we stop polling.
+		}
+
+		// If we are here, the state has not been updated yet or has been reverted.
+		fmt.Fprintf(os.Stderr, "verification failed for node %s: expected unschedulable=%t, but got %t. Retrying.\n", node.Name, cordonNode, freshNode.Spec.Unschedulable)
+		return false, nil // Continue polling.
+	})
+
+	// After the poll, we check if it timed out or returned a hard error.
+	if err != nil {
+		return fmt.Errorf("error setting node %s schedulability: %v", node.Name, err)
 	}
+
+	fmt.Printf("Successfully set node %s schedulability to %t and verified.\n", node.Name, !cordonNode)
 	return nil
 }

@@ -84,6 +84,18 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		r.RollingUpgrade.SetStartTime(time.Now().Format(time.RFC3339))
 	}
 
+	liveNodeList, err := r.Auth.ListClusterNodes()
+	if err != nil {
+		r.Error(err, "failed to perform live discovery of cluster nodes")
+		return err
+	}
+	// The ClusterNodes field expects a slice of node pointers, so we convert the list items.
+	var liveNodes []*corev1.Node
+	for i := range liveNodeList.Items {
+		liveNodes = append(liveNodes, &liveNodeList.Items[i])
+	}
+	r.Cloud.ClusterNodes = liveNodes
+
 	// discover the state of AWS and K8s cluster.
 	if err := r.Cloud.Discover(); err != nil {
 		r.Info("failed to discover the cloud", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
@@ -811,20 +823,28 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 					r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 					continue
 				}
-				//Early cordon only the dirfted instances and not the instances that have same scaling-config as the scaling-group
+				// Early cordon only the drifted instances and not the instances that have same scaling-config as the scaling-group
 				if !r.IsInstanceDrifted(instance) {
-					break
+					continue
 				}
-				r.Info("early cordoning node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-				if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, cordonNode); err != nil {
-					r.Error(err, "failed to early cordon the nodes", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-					return false, err
+
+				// If the node is not already cordoned, then we cordon it.
+				if !node.Spec.Unschedulable {
+					r.Info("early cordoning node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, cordonNode); err != nil {
+						r.Error(err, "failed to early cordon the nodes", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+						return false, err
+					}
+				} else {
+					r.Info("node already cordoned, skipping cordon command", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 				}
-				// Set instance-state to early-cordoned tag
-				r.Info("tagging instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+
+				// Regardless of whether we just cordoned it or it was already cordoned, we must ensure the tag is applied to prevent reprocessing.
+				r.Info("tagging instance as early-cordoned", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
 				if err := r.Auth.TagEC2instances([]string{*instance.InstanceId}, instanceStateTagKey, earlyCordonedTagValue); err != nil {
-					r.Error(err, "failed to tag instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-					return true, err
+					r.Error(err, "failed to tag instance as early-cordoned", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+					// Hard failure because without the tag, we will re-process this node.
+					return false, err
 				}
 			}
 		}
