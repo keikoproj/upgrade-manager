@@ -425,6 +425,12 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return true, nil
 			}
 
+			// Clean up the in-progress tag after successful termination
+			if err := r.Auth.UntagEC2instances([]string{instanceID}, instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to clean up in-progress tag after termination", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				// we won't fail the entire operation due to tag cleanup failure, just log and continue
+			}
+
 			// Once instances are terminated, decrease them from the count.
 			count, _ := r.ReplacementNodesMap.Load("ReplacementNodes")
 			if count != nil && count.(int) > 0 {
@@ -479,12 +485,35 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 	if len(excludedInstances) > 0 {
 		r.Info("ignoring failed drain instances", "instances", excludedInstances, "name", r.RollingUpgrade.NamespacedName())
 	}
+
+	var orphanedInProgressInstances []string
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
-			//In-progress instances shouldn't be considered if they are in terminating state.
+			// In-progress instances shouldn't be considered if they are in terminating state.
 			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
-				inprogressTargets = append(inprogressTargets, selectedInstance)
+				// Check if the instance has a corresponding node in the cluster
+				node := kubeprovider.SelectNodeByInstanceID(instance, r.Cloud.ClusterNodes)
+				if node == nil {
+					// Instance is in-progress but has no corresponding node so this is likely an orphaned tag
+					r.Info("found orphaned in-progress instance (no corresponding node), will clean up tag", "instanceID", instance, "name", r.RollingUpgrade.NamespacedName())
+					orphanedInProgressInstances = append(orphanedInProgressInstances, instance)
+				} else {
+					inprogressTargets = append(inprogressTargets, selectedInstance)
+				}
 			}
+		} else {
+			// Instance is not in the scaling group anymore so we clean up its tag
+			r.Info("found orphaned in-progress instance (not in scaling group), will clean up tag", "instanceID", instance, "name", r.RollingUpgrade.NamespacedName())
+			orphanedInProgressInstances = append(orphanedInProgressInstances, instance)
+		}
+	}
+
+	// Clean up orphaned in-progress tags
+	if len(orphanedInProgressInstances) > 0 {
+		r.Info("cleaning up orphaned in-progress tags", "instances", orphanedInProgressInstances, "name", r.RollingUpgrade.NamespacedName())
+		if err := r.Auth.UntagEC2instances(orphanedInProgressInstances, instanceStateTagKey, inProgressTagValue); err != nil {
+			r.Error(err, "failed to clean up orphaned in-progress tags", "instances", orphanedInProgressInstances, "name", r.RollingUpgrade.NamespacedName())
+			// We won't fail the entire operation due to tag cleanup failure, we can just log and continue
 		}
 	}
 
@@ -684,11 +713,23 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 		return false
 	}
 
-	// wait for desired nodes
-	if r.Cloud.ClusterNodes != nil && !reflect.DeepEqual(r.Cloud.ClusterNodes, &corev1.NodeList{}) {
+	// Refresh cluster nodes to get the latest state including any newly joined nodes
+	// we need to do this as nodes may have joined since the reconciliation started
+	currentClusterNodes, err := r.Auth.ListClusterNodes()
+	if err != nil {
+		r.Error(err, "failed to list current cluster nodes for readiness check", "name", r.RollingUpgrade.NamespacedName())
+		// Fall back to cached nodes if API call fails
+		currentClusterNodes = &corev1.NodeList{}
 		for _, node := range r.Cloud.ClusterNodes {
-			instanceID := kubeprovider.GetNodeInstanceID(node)
-			if common.ContainsEqualFold(inServiceInstanceIDs, instanceID) && kubeprovider.IsNodeReady(node) && kubeprovider.IsNodePassesReadinessGates(node, r.RollingUpgrade.Spec.ReadinessGates) {
+			currentClusterNodes.Items = append(currentClusterNodes.Items, *node)
+		}
+	}
+
+	// wait for desired nodes
+	if currentClusterNodes != nil && len(currentClusterNodes.Items) > 0 {
+		for _, node := range currentClusterNodes.Items {
+			instanceID := kubeprovider.GetNodeInstanceID(&node)
+			if common.ContainsEqualFold(inServiceInstanceIDs, instanceID) && kubeprovider.IsNodeReady(&node) && kubeprovider.IsNodePassesReadinessGates(&node, r.RollingUpgrade.Spec.ReadinessGates) {
 				readyNodes++
 			}
 		}
