@@ -12,6 +12,7 @@ import (
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/kubectl/pkg/drain"
 )
@@ -763,6 +764,155 @@ func TestSelectTargetsWithExcluededInstances(t *testing.T) {
 	for i, instance := range selectedInstances {
 		if *instance.InstanceId != *expectedSelectedInstances[i].InstanceId {
 			t.Errorf("Expected instance ID %s, but got %s", *expectedSelectedInstances[i].InstanceId, *instance.InstanceId)
+		}
+	}
+}
+
+// Test the early cordoning functionality with Kubernetes annotations
+func TestCordonUncordonAllNodesWithAnnotations(t *testing.T) {
+	// This test focuses on the annotation logic
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	// Test the annotation constants are defined
+	if EarlyCordonAnnotationKey != "rollingupgrade.keikoproj.io/early-cordoned-by" {
+		t.Errorf("Expected annotation key 'rollingupgrade.keikoproj.io/early-cordoned-by', got '%s'", EarlyCordonAnnotationKey)
+	}
+
+	if EarlyCordonAnnotationValue != "upgrade-manager" {
+		t.Errorf("Expected annotation value 'upgrade-manager', got '%s'", EarlyCordonAnnotationValue)
+	}
+
+	// Test function call
+	ok, err := rollupCtx.CordonUncordonAllNodes(true)
+	if err == nil && !ok {
+		t.Errorf("Expected function to handle empty scaling group gracefully")
+	}
+}
+
+// Test the cordonAndAnnotateNode helper function
+func TestCordonAndAnnotateNode(t *testing.T) {
+	var tests = []struct {
+		TestDescription string
+		Reconciler      *RollingUpgradeReconciler
+		NodeName        string
+		ExpectError     bool
+	}{
+		{
+			"Test cordoning and annotating a valid node",
+			createRollingUpgradeReconciler(t),
+			"mock-node-1",
+			false,
+		},
+		{
+			"Test cordoning a non-existent node",
+			createRollingUpgradeReconciler(t),
+			"non-existent-node",
+			true,
+		},
+	}
+
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+		node := createNode(test.NodeName)
+
+		err := rollupCtx.cordonAndAnnotateNode(node)
+
+		if test.ExpectError && err == nil {
+			t.Errorf("Test '%s' expected error but got none", test.TestDescription)
+			continue
+		}
+		if !test.ExpectError && err != nil {
+			t.Errorf("Test '%s' unexpected error: %v", test.TestDescription, err)
+			continue
+		}
+
+		if !test.ExpectError {
+			// Verify node is cordoned
+			if !node.Spec.Unschedulable {
+				t.Errorf("Test '%s': node should be cordoned", test.TestDescription)
+			}
+
+			// Verify node has our annotation (check the updated node from fake client)
+			updatedNode, err := rollupCtx.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), test.NodeName, metav1.GetOptions{})
+			if err == nil && updatedNode.Annotations != nil {
+				if updatedNode.Annotations[EarlyCordonAnnotationKey] != EarlyCordonAnnotationValue {
+					t.Errorf("Test '%s': node missing upgrade-manager annotation", test.TestDescription)
+				}
+			}
+		}
+	}
+}
+
+// Test the uncordonAndRemoveAnnotation helper function
+func TestUncordonAndRemoveAnnotation(t *testing.T) {
+	var tests = []struct {
+		TestDescription string
+		Reconciler      *RollingUpgradeReconciler
+		NodeName        string
+		ExpectError     bool
+	}{
+		{
+			"Test uncordoning and removing annotation from valid node",
+			createRollingUpgradeReconciler(t),
+			"mock-node-1", // This node exists in the fake client
+			false,
+		},
+	}
+
+	for _, test := range tests {
+		rollupCtx := createRollingUpgradeContext(test.Reconciler)
+
+		// Get the existing node and add our annotation
+		node, err := rollupCtx.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), test.NodeName, metav1.GetOptions{})
+		if err != nil {
+			t.Errorf("Test '%s': failed to get node for setup: %v", test.TestDescription, err)
+			continue
+		}
+
+		// Add our annotation and cordon the node
+		if node.Annotations == nil {
+			node.Annotations = make(map[string]string)
+		}
+		node.Annotations[EarlyCordonAnnotationKey] = EarlyCordonAnnotationValue
+		node.Spec.Unschedulable = true
+
+		// Update the node in the fake client
+		_, err = rollupCtx.Auth.Kubernetes.CoreV1().Nodes().Update(context.Background(), node, metav1.UpdateOptions{})
+		if err != nil {
+			t.Errorf("Test '%s': failed to update node for setup: %v", test.TestDescription, err)
+			continue
+		}
+
+		// Now we test the uncordonAndRemoveAnnotation function
+		err = rollupCtx.uncordonAndRemoveAnnotation(node)
+
+		if test.ExpectError && err == nil {
+			t.Errorf("Test '%s' expected error but got none", test.TestDescription)
+			continue
+		}
+		if !test.ExpectError && err != nil {
+			t.Errorf("Test '%s' unexpected error: %v", test.TestDescription, err)
+			continue
+		}
+
+		if !test.ExpectError {
+			// Verify annotation is removed and node is uncordoned
+			updatedNode, err := rollupCtx.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), test.NodeName, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Test '%s': failed to get updated node: %v", test.TestDescription, err)
+				continue
+			}
+
+			// Check if node is uncordoned
+			if updatedNode.Spec.Unschedulable {
+				t.Errorf("Test '%s': node should be uncordoned", test.TestDescription)
+			}
+
+			// Check if annotation is removed
+			if updatedNode.Annotations != nil && updatedNode.Annotations[EarlyCordonAnnotationKey] == EarlyCordonAnnotationValue {
+				t.Errorf("Test '%s': upgrade-manager annotation should be removed", test.TestDescription)
+			}
 		}
 	}
 }
