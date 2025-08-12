@@ -922,17 +922,22 @@ func (r *RollingUpgradeContext) cordonAndAnnotateNode(node *corev1.Node) error {
 		return fmt.Errorf("failed to cordon node: %v", err)
 	}
 
-	// Retry annotation update with fresh node objects to handle resource version conflicts
+	// Retry getting fresh node and annotation update to handle transient failures and resource version conflicts
 	maxRetries := 3
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		// Get fresh node object to avoid resource version conflicts
 		freshNode, err := r.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), node.Name, metav1.GetOptions{})
 		if err != nil {
-			// If we can't get the fresh node, try to uncordon to avoid inconsistent state
+			if attempt < maxRetries {
+				r.Info("failed to get fresh node, retrying", "nodeName", node.Name, "attempt", attempt, "maxRetries", maxRetries)
+				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
+				continue
+			}
+			// Rollback, we uncordon the node since we can't get fresh node to annotate it
 			if uncordonErr := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, false); uncordonErr != nil {
 				r.Error(uncordonErr, "failed to rollback cordon after get failure", "nodeName", node.Name)
 			}
-			return fmt.Errorf("failed to get fresh node object: %v", err)
+			return fmt.Errorf("failed to get fresh node object after %d attempts: %v", maxRetries, err)
 		}
 
 		// Add annotation to track that we cordoned it
@@ -948,7 +953,7 @@ func (r *RollingUpgradeContext) cordonAndAnnotateNode(node *corev1.Node) error {
 				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
 				continue
 			}
-			// If annotation fails after all retries, try to uncordon to avoid leaving node in inconsistent state
+			// Rollback, we uncordon the node since we can't annotate it to track our cordon operation
 			if uncordonErr := r.Auth.CordonUncordonNode(freshNode, r.Auth.Kubernetes, false); uncordonErr != nil {
 				r.Error(uncordonErr, "failed to rollback cordon after annotation failure", "nodeName", freshNode.Name)
 			}
