@@ -925,37 +925,37 @@ func (r *RollingUpgradeContext) cordonAndAnnotateNode(node *corev1.Node) error {
 	// Retry getting fresh node and annotation update to handle transient failures and resource version conflicts
 	maxRetries := 3
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		// Get fresh node object to avoid resource version conflicts
-		freshNode, err := r.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), node.Name, metav1.GetOptions{})
+		// Get current node object to avoid resource version conflicts
+		currentNodeObject, err := r.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), node.Name, metav1.GetOptions{})
 		if err != nil {
 			if attempt < maxRetries {
-				r.Info("failed to get fresh node, retrying", "nodeName", node.Name, "attempt", attempt, "maxRetries", maxRetries)
+				r.Info("failed to get current node object, retrying", "nodeName", node.Name, "attempt", attempt, "maxRetries", maxRetries)
 				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
 				continue
 			}
-			// Rollback, we uncordon the node since we can't get fresh node to annotate it
+			// Rollback, we uncordon the node since we can't get current node object to annotate it
 			if uncordonErr := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, false); uncordonErr != nil {
 				r.Error(uncordonErr, "failed to rollback cordon after get failure", "nodeName", node.Name)
 			}
-			return fmt.Errorf("failed to get fresh node object after %d attempts: %v", maxRetries, err)
+			return fmt.Errorf("failed to get current node object after %d attempts: %v", maxRetries, err)
 		}
 
 		// Add annotation to track that we cordoned it
-		if freshNode.Annotations == nil {
-			freshNode.Annotations = make(map[string]string)
+		if currentNodeObject.Annotations == nil {
+			currentNodeObject.Annotations = make(map[string]string)
 		}
-		freshNode.Annotations[EarlyCordonAnnotationKey] = EarlyCordonAnnotationValue
+		currentNodeObject.Annotations[EarlyCordonAnnotationKey] = EarlyCordonAnnotationValue
 
 		// Update the node with the annotation
-		if _, err := r.Auth.Kubernetes.CoreV1().Nodes().Update(context.Background(), freshNode, metav1.UpdateOptions{}); err != nil {
+		if _, err := r.Auth.Kubernetes.CoreV1().Nodes().Update(context.Background(), currentNodeObject, metav1.UpdateOptions{}); err != nil {
 			if attempt < maxRetries && strings.Contains(err.Error(), "the object has been modified") {
-				r.Info("resource version conflict, retrying annotation", "nodeName", freshNode.Name, "attempt", attempt, "maxRetries", maxRetries)
+				r.Info("resource version conflict, retrying annotation", "nodeName", currentNodeObject.Name, "attempt", attempt, "maxRetries", maxRetries)
 				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
 				continue
 			}
 			// Rollback, we uncordon the node since we can't annotate it to track our cordon operation
-			if uncordonErr := r.Auth.CordonUncordonNode(freshNode, r.Auth.Kubernetes, false); uncordonErr != nil {
-				r.Error(uncordonErr, "failed to rollback cordon after annotation failure", "nodeName", freshNode.Name)
+			if uncordonErr := r.Auth.CordonUncordonNode(currentNodeObject, r.Auth.Kubernetes, false); uncordonErr != nil {
+				r.Error(uncordonErr, "failed to rollback cordon after annotation failure", "nodeName", currentNodeObject.Name)
 			}
 			return fmt.Errorf("failed to annotate node after %d attempts: %v", maxRetries, err)
 		}
@@ -973,22 +973,22 @@ func (r *RollingUpgradeContext) uncordonAndRemoveAnnotation(node *corev1.Node) e
 	maxRetries := 3
 	var updatedNode *corev1.Node
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		// Refresh the node object to get the latest resource version
-		freshNode, err := r.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), node.Name, metav1.GetOptions{})
+		// Get current node object to get the latest resource version
+		currentNodeObject, err := r.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), node.Name, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to get fresh node object: %v", err)
+			return fmt.Errorf("failed to get current node object: %v", err)
 		}
 
-		// Remove the annotation from the fresh node
-		if freshNode.Annotations != nil {
-			delete(freshNode.Annotations, EarlyCordonAnnotationKey)
+		// Remove the annotation from the current node object
+		if currentNodeObject.Annotations != nil {
+			delete(currentNodeObject.Annotations, EarlyCordonAnnotationKey)
 		}
 
 		// Update the node to remove annotation
-		updatedNode, err = r.Auth.Kubernetes.CoreV1().Nodes().Update(context.Background(), freshNode, metav1.UpdateOptions{})
+		updatedNode, err = r.Auth.Kubernetes.CoreV1().Nodes().Update(context.Background(), currentNodeObject, metav1.UpdateOptions{})
 		if err != nil {
 			if attempt < maxRetries && strings.Contains(err.Error(), "the object has been modified") {
-				r.Info("resource version conflict, retrying annotation removal", "nodeName", freshNode.Name, "attempt", attempt, "maxRetries", maxRetries)
+				r.Info("resource version conflict, retrying annotation removal", "nodeName", currentNodeObject.Name, "attempt", attempt, "maxRetries", maxRetries)
 				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
 				continue
 			}
