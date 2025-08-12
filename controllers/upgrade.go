@@ -874,11 +874,8 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 		if cordonNode {
 			// Skip already cordoned nodes to avoid unnecessary API calls
 			if node.Spec.Unschedulable {
-				// Check if it was cordoned by upgrade-manager
-				if node.Annotations != nil && node.Annotations[EarlyCordonAnnotationKey] == EarlyCordonAnnotationValue {
-					r.Info("node already cordoned by upgrade-manager, skipping", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
-					continue
-				}
+				r.Info("node already cordoned, skipping", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
+				continue
 			}
 
 			r.Info("early cordoning node", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
