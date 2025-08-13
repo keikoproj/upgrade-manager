@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubectl/pkg/drain"
 )
 
@@ -345,7 +347,7 @@ func TestDesiredNodesReady(t *testing.T) {
 			func() []*corev1.Node {
 				var nodeSlice []*corev1.Node
 				for i := 0; i < 3; i++ {
-					node := createNode("mock-node-1")
+					node := createNode(fmt.Sprintf("mock-node-notready-%d", i+1))
 					node.Status.Conditions = []corev1.NodeCondition{
 						{Type: corev1.NodeReady, Status: corev1.ConditionFalse},
 					}
@@ -376,6 +378,14 @@ func TestDesiredNodesReady(t *testing.T) {
 		rollupCtx.Cloud.ScalingGroups = test.AsgClient.autoScalingGroups
 		rollupCtx.Cloud.ClusterNodes = test.ClusterNodes
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
+
+		// We update the fake Kubernetes client to use the nodes specified by the test case
+		// and this ensures that r.Auth.ListClusterNodes() returns the expected test nodes
+		testNodeList := &corev1.NodeList{}
+		for _, node := range test.ClusterNodes {
+			testNodeList.Items = append(testNodeList.Items, *node)
+		}
+		rollupCtx.Auth.KubernetesClientSet.Kubernetes = fake.NewSimpleClientset(testNodeList)
 
 		actualValue := rollupCtx.DesiredNodesReady()
 		if actualValue != test.ExpectedValue {
