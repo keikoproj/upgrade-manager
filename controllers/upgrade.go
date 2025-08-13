@@ -901,18 +901,33 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 		}
 	}
 
-	if cordonNode {
-		r.Info("early cordon operation completed", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+	// Handle different failure scenarios
+	if errorCount > 0 && processedCount > 0 {
+		// Partial failure, some nodes succeeded, some failed
+		if cordonNode {
+			r.Info("early cordon operation completed with partial failures", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		} else {
+			r.Info("uncordon operation completed with partial failures", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		}
+		// Continue with partial success, we don't fail the entire operation
+		return true, nil
+	} else if errorCount == 0 {
+		// Complete success
+		if cordonNode {
+			r.Info("early cordon operation completed", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		} else {
+			r.Info("uncordon operation completed", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		}
+		return true, nil
 	} else {
-		r.Info("uncordon operation completed", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
-	}
-
-	// Return error only if we had errors and processed no nodes successfully
-	if errorCount > 0 && processedCount == 0 {
+		// Complete failure, all nodes failed
+		if cordonNode {
+			r.Error(fmt.Errorf("failed to process any nodes: %d errors encountered", errorCount), "early cordon operation failed completely", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		} else {
+			r.Error(fmt.Errorf("failed to process any nodes: %d errors encountered", errorCount), "uncordon operation failed completely", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		}
 		return false, fmt.Errorf("failed to process any nodes: %d errors encountered", errorCount)
 	}
-
-	return true, nil
 }
 
 // cordonAndAnnotateNode cordons a node and adds annotation to track it was cordoned by upgrade-manager
