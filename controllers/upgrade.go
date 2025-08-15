@@ -860,8 +860,9 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 			continue
 		}
 
-		// Skip non-drifted instances
-		if !r.IsInstanceDrifted(instance) {
+		// For cordon operations we skip non-drifted instances
+		// For uncordon operations we need to check ALL instances in case they were previously cordoned but are no longer drifted
+		if cordonNode && !r.IsInstanceDrifted(instance) {
 			continue
 		}
 
@@ -888,6 +889,7 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 			processedCount++
 		} else {
 			// Only uncordon nodes that we cordoned (have our annotation)
+			// This handles both drifted and non-drifted instances that were previously cordoned by upgrade-manager
 			if node.Annotations != nil && node.Annotations[EarlyCordonAnnotationKey] == EarlyCordonAnnotationValue {
 				r.Info("uncordoning node that was cordoned by upgrade-manager", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
 				if err := r.uncordonAndRemoveAnnotation(node); err != nil {
