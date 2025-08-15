@@ -856,13 +856,13 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 
 	for _, instance := range scalingGroup.Instances {
 		// Skip terminating instances
-		if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+		if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, string(instance.LifecycleState)) {
 			continue
 		}
 
 		// For cordon operations we skip non-drifted instances
 		// For uncordon operations we need to check ALL instances in case they were previously cordoned but are no longer drifted
-		if cordonNode && !r.IsInstanceDrifted(instance) {
+		if cordonNode && !r.IsInstanceDrifted(&instance) {
 			continue
 		}
 
