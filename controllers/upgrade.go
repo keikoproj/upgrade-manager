@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"reflect"
@@ -90,6 +91,12 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusError)
 		common.SetMetricRollupFailed(r.RollingUpgrade.Name)
+
+		// uncordoning any nodes that were cordoned by early cordon feature
+		if r.EarlyCordonNodes {
+			r.cleanupEarlyCordonedNodes()
+		}
+
 		return err
 	}
 
@@ -115,6 +122,12 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusComplete)
 		common.SetMetricRollupCompleted(r.RollingUpgrade.Name)
 		r.endTimeUpdate()
+
+		// uncordoning any nodes that were cordoned by early cordon feature
+		if r.EarlyCordonNodes {
+			r.cleanupEarlyCordonedNodes()
+		}
+
 		return nil
 	}
 
@@ -131,6 +144,15 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	}
 
 	return nil
+}
+
+// cleanupEarlyCordonedNodes uncordons all nodes that were cordoned by the early cordon feature
+func (r *RollingUpgradeContext) cleanupEarlyCordonedNodes() {
+	r.Info("cleaning up nodes cordoned by early cordon feature", "name", r.RollingUpgrade.NamespacedName())
+
+	if ok, err := r.CordonUncordonAllNodes(false); !ok {
+		r.Error(err, "failed to cleanup early cordoned nodes", "name", r.RollingUpgrade.NamespacedName())
+	}
 }
 
 func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) (bool, error) {
@@ -403,6 +425,12 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 				return true, nil
 			}
 
+			// Clean up the in-progress tag after successful termination
+			if err := r.Auth.UntagEC2instances([]string{instanceID}, instanceStateTagKey, inProgressTagValue); err != nil {
+				r.Error(err, "failed to clean up in-progress tag after termination", "instance", instanceID, "name", r.RollingUpgrade.NamespacedName())
+				// we won't fail the entire operation due to tag cleanup failure, just log and continue
+			}
+
 			// Once instances are terminated, decrease them from the count.
 			count, _ := r.ReplacementNodesMap.Load("ReplacementNodes")
 			if count != nil && count.(int) > 0 {
@@ -457,12 +485,35 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 	if len(excludedInstances) > 0 {
 		r.Info("ignoring failed drain instances", "instances", excludedInstances, "name", r.RollingUpgrade.NamespacedName())
 	}
+
+	var orphanedInProgressInstances []string
 	for _, instance := range r.Cloud.InProgressInstances {
 		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
-			//In-progress instances shouldn't be considered if they are in terminating state.
+			// In-progress instances shouldn't be considered if they are in terminating state.
 			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
-				inprogressTargets = append(inprogressTargets, selectedInstance)
+				// Check if the instance has a corresponding node in the cluster
+				node := kubeprovider.SelectNodeByInstanceID(instance, r.Cloud.ClusterNodes)
+				if node == nil {
+					// Instance is in-progress but has no corresponding node so this is likely an orphaned tag
+					r.Info("found orphaned in-progress instance (no corresponding node), will clean up tag", "instanceID", instance, "name", r.RollingUpgrade.NamespacedName())
+					orphanedInProgressInstances = append(orphanedInProgressInstances, instance)
+				} else {
+					inprogressTargets = append(inprogressTargets, selectedInstance)
+				}
 			}
+		} else {
+			// Instance is not in the scaling group anymore so we clean up its tag
+			r.Info("found orphaned in-progress instance (not in scaling group), will clean up tag", "instanceID", instance, "name", r.RollingUpgrade.NamespacedName())
+			orphanedInProgressInstances = append(orphanedInProgressInstances, instance)
+		}
+	}
+
+	// Clean up orphaned in-progress tags
+	if len(orphanedInProgressInstances) > 0 {
+		r.Info("cleaning up orphaned in-progress tags", "instances", orphanedInProgressInstances, "name", r.RollingUpgrade.NamespacedName())
+		if err := r.Auth.UntagEC2instances(orphanedInProgressInstances, instanceStateTagKey, inProgressTagValue); err != nil {
+			r.Error(err, "failed to clean up orphaned in-progress tags", "instances", orphanedInProgressInstances, "name", r.RollingUpgrade.NamespacedName())
+			// We won't fail the entire operation due to tag cleanup failure, we can just log and continue
 		}
 	}
 
@@ -662,11 +713,23 @@ func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 		return false
 	}
 
-	// wait for desired nodes
-	if r.Cloud.ClusterNodes != nil && !reflect.DeepEqual(r.Cloud.ClusterNodes, &corev1.NodeList{}) {
+	// Refresh cluster nodes to get the latest state including any newly joined nodes
+	// we need to do this as nodes may have joined since the reconciliation started
+	currentClusterNodes, err := r.Auth.ListClusterNodes()
+	if err != nil {
+		r.Error(err, "failed to list current cluster nodes for readiness check", "name", r.RollingUpgrade.NamespacedName())
+		// Fall back to cached nodes if API call fails
+		currentClusterNodes = &corev1.NodeList{}
 		for _, node := range r.Cloud.ClusterNodes {
-			instanceID := kubeprovider.GetNodeInstanceID(node)
-			if common.ContainsEqualFold(inServiceInstanceIDs, instanceID) && kubeprovider.IsNodeReady(node) && kubeprovider.IsNodePassesReadinessGates(node, r.RollingUpgrade.Spec.ReadinessGates) {
+			currentClusterNodes.Items = append(currentClusterNodes.Items, *node)
+		}
+	}
+
+	// wait for desired nodes
+	if currentClusterNodes != nil && len(currentClusterNodes.Items) > 0 {
+		for _, node := range currentClusterNodes.Items {
+			instanceID := kubeprovider.GetNodeInstanceID(&node)
+			if common.ContainsEqualFold(inServiceInstanceIDs, instanceID) && kubeprovider.IsNodeReady(&node) && kubeprovider.IsNodePassesReadinessGates(&node, r.RollingUpgrade.Spec.ReadinessGates) {
 				readyNodes++
 			}
 		}
@@ -777,57 +840,195 @@ func (r *RollingUpgradeContext) ClusterBallooning(batchSize int) (bool, int) {
 	return false, batchSize
 }
 
+const (
+	// Annotation key to track nodes cordoned by the early cordon feature
+	EarlyCordonAnnotationKey   = "rollingupgrade.keikoproj.io/early-cordoned-by"
+	EarlyCordonAnnotationValue = "upgrade-manager"
+)
+
+// CordonUncordonAllNodes cordons or uncordons all drifted nodes in the scaling group
+// When cordonNode is true we cordon all drifted nodes that aren't already cordoned
+// When cordonNode is false we uncordon all nodes that were previously cordoned by upgrade-manager
 func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, error) {
 	scalingGroup := awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
-	var instanceIDs []string
-	var err error
 
-	if cordonNode {
-		instanceIDs, err = r.Cloud.AmazonClientSet.DescribeInstancesWithoutTagValue(instanceStateTagKey, earlyCordonedTagValue)
-		if err != nil {
-			r.Error(err, "failed to describe instances for early-cordoning", "name", r.RollingUpgrade.NamespacedName())
-			return false, errors.Wrap(err, "failed to describe instances for early-cordoning")
-		}
-	} else {
-		instanceIDs, err = r.Auth.DescribeTaggedInstanceIDs(instanceStateTagKey, earlyCordonedTagValue)
-		if err != nil {
-			r.Info("failed to discover ec2 instances with early-cordoned tag", "name", r.RollingUpgrade.NamespacedName())
+	var processedCount, errorCount int
+
+	for _, instance := range scalingGroup.Instances {
+		// Skip terminating instances
+		if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+			continue
 		}
 
-		r.Info("removing early-cordoning tag while uncordoning instances", "name", r.RollingUpgrade.NamespacedName())
-		if err := r.Auth.UntagEC2instances(instanceIDs, instanceStateTagKey, earlyCordonedTagValue); err != nil {
-			r.Info("failed to delete early-cordoned tag for instances", "name", r.RollingUpgrade.NamespacedName())
+		// For cordon operations we skip non-drifted instances
+		// For uncordon operations we need to check ALL instances in case they were previously cordoned but are no longer drifted
+		if cordonNode && !r.IsInstanceDrifted(instance) {
+			continue
 		}
-		// add unit test as well.
 
-	}
+		node := kubeprovider.SelectNodeByInstanceID(*instance.InstanceId, r.Cloud.ClusterNodes)
+		if node == nil {
+			r.Info("node object not found in clusterNodes, unable to process node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+			continue
+		}
 
-	for _, instanceID := range instanceIDs {
-		if instance := awsprovider.SelectScalingGroupInstance(instanceID, scalingGroup); !reflect.DeepEqual(instance, &autoscaling.Instance{}) {
-			//Don't consider if the instance is in terminating state.
-			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
-				node := kubeprovider.SelectNodeByInstanceID(*instance.InstanceId, r.Cloud.ClusterNodes)
-				if node == nil {
-					r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
+		if cordonNode {
+			// Skip already cordoned nodes to avoid unnecessary API calls
+			if node.Spec.Unschedulable {
+				r.Info("node already cordoned, skipping", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
+				continue
+			}
+
+			r.Info("early cordoning node", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
+			if err := r.cordonAndAnnotateNode(node); err != nil {
+				r.Error(err, "failed to cordon and annotate node", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
+				errorCount++
+				// Continue processing other nodes
+				continue
+			}
+			processedCount++
+		} else {
+			// Only uncordon nodes that we cordoned (have our annotation)
+			// This handles both drifted and non-drifted instances that were previously cordoned by upgrade-manager
+			if node.Annotations != nil && node.Annotations[EarlyCordonAnnotationKey] == EarlyCordonAnnotationValue {
+				r.Info("uncordoning node that was cordoned by upgrade-manager", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
+				if err := r.uncordonAndRemoveAnnotation(node); err != nil {
+					r.Error(err, "failed to uncordon and remove annotation", "instanceID", instance.InstanceId, "nodeName", node.Name, "name", r.RollingUpgrade.NamespacedName())
+					errorCount++
+					// Continue with other nodes
 					continue
 				}
-				//Early cordon only the dirfted instances and not the instances that have same scaling-config as the scaling-group
-				if !r.IsInstanceDrifted(instance) {
-					break
-				}
-				r.Info("early cordoning node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-				if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, cordonNode); err != nil {
-					r.Error(err, "failed to early cordon the nodes", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-					return false, err
-				}
-				// Set instance-state to early-cordoned tag
-				r.Info("tagging instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-				if err := r.Auth.TagEC2instances([]string{*instance.InstanceId}, instanceStateTagKey, earlyCordonedTagValue); err != nil {
-					r.Error(err, "failed to tag instances with cordoned=true", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())
-					return true, err
-				}
+				processedCount++
 			}
 		}
 	}
-	return true, nil
+
+	// Handle different failure scenarios
+	if errorCount > 0 && processedCount > 0 {
+		// Partial failure, some nodes succeeded, some failed
+		if cordonNode {
+			r.Info("early cordon operation completed with partial failures", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		} else {
+			r.Info("uncordon operation completed with partial failures", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		}
+		// Continue with partial success, we don't fail the entire operation
+		return true, nil
+	} else if errorCount == 0 {
+		// Complete success
+		if cordonNode {
+			r.Info("early cordon operation completed", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		} else {
+			r.Info("uncordon operation completed", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		}
+		return true, nil
+	} else {
+		// Complete failure, all nodes failed
+		if cordonNode {
+			r.Error(fmt.Errorf("failed to process any nodes: %d errors encountered", errorCount), "early cordon operation failed completely", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		} else {
+			r.Error(fmt.Errorf("failed to process any nodes: %d errors encountered", errorCount), "uncordon operation failed completely", "processedNodes", processedCount, "errors", errorCount, "name", r.RollingUpgrade.NamespacedName())
+		}
+		return false, fmt.Errorf("failed to process any nodes: %d errors encountered", errorCount)
+	}
+}
+
+// cordonAndAnnotateNode cordons a node and adds annotation to track it was cordoned by upgrade-manager
+func (r *RollingUpgradeContext) cordonAndAnnotateNode(node *corev1.Node) error {
+	// First we cordon the node
+	if err := r.Auth.CordonUncordonNode(node, r.Auth.Kubernetes, true); err != nil {
+		return fmt.Errorf("failed to cordon node: %v", err)
+	}
+
+	// Retry getting fresh node and annotation update to handle transient failures and resource version conflicts
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Get current node object to avoid resource version conflicts
+		currentNodeObject, err := r.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			if attempt < maxRetries {
+				r.Info("failed to get current node object, retrying", "nodeName", node.Name, "attempt", attempt, "maxRetries", maxRetries)
+				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
+				continue
+			}
+			// Rollback, we uncordon the node since we can't get current node object to annotate it
+			if uncordonErr := r.uncordonAndRemoveAnnotation(node); uncordonErr != nil {
+				r.Error(uncordonErr, "failed to rollback cordon after get failure", "nodeName", node.Name)
+			}
+			return fmt.Errorf("failed to get current node object after %d attempts: %v", maxRetries, err)
+		}
+
+		// Add annotation to track that we cordoned it
+		if currentNodeObject.Annotations == nil {
+			currentNodeObject.Annotations = make(map[string]string)
+		}
+		currentNodeObject.Annotations[EarlyCordonAnnotationKey] = EarlyCordonAnnotationValue
+
+		// Update the node with the annotation
+		if _, err := r.Auth.Kubernetes.CoreV1().Nodes().Update(context.Background(), currentNodeObject, metav1.UpdateOptions{}); err != nil {
+			if attempt < maxRetries && strings.Contains(err.Error(), "the object has been modified") {
+				r.Info("resource version conflict, retrying annotation", "nodeName", currentNodeObject.Name, "attempt", attempt, "maxRetries", maxRetries)
+				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
+				continue
+			}
+			// Rollback, we uncordon the node since we can't annotate it to track our cordon operation
+			if uncordonErr := r.uncordonAndRemoveAnnotation(currentNodeObject); uncordonErr != nil {
+				r.Error(uncordonErr, "failed to rollback cordon after annotation failure", "nodeName", currentNodeObject.Name)
+			}
+			return fmt.Errorf("failed to annotate node after %d attempts: %v", maxRetries, err)
+		}
+
+		// Success
+		return nil
+	}
+
+	return fmt.Errorf("unexpected exit from retry loop")
+}
+
+// uncordonAndRemoveAnnotation uncordons a node and removes the upgrade-manager annotation if present
+func (r *RollingUpgradeContext) uncordonAndRemoveAnnotation(node *corev1.Node) error {
+	// Retry annotation removal with updated node objects to handle resource version conflicts
+	maxRetries := 3
+	var finalNodeObject *corev1.Node
+
+	// Check if the node has our annotation, if not, we can skip the annotation removal step
+	hasAnnotation := node.Annotations != nil && node.Annotations[EarlyCordonAnnotationKey] == EarlyCordonAnnotationValue
+
+	if hasAnnotation {
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			// Get current node object to get the latest resource version
+			currentNodeObject, err := r.Auth.Kubernetes.CoreV1().Nodes().Get(context.Background(), node.Name, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to get current node object: %v", err)
+			}
+
+			// Remove the annotation from the current node object
+			if currentNodeObject.Annotations != nil {
+				delete(currentNodeObject.Annotations, EarlyCordonAnnotationKey)
+			}
+
+			// Update the node to remove annotation
+			finalNodeObject, err = r.Auth.Kubernetes.CoreV1().Nodes().Update(context.Background(), currentNodeObject, metav1.UpdateOptions{})
+			if err != nil {
+				if attempt < maxRetries && strings.Contains(err.Error(), "the object has been modified") {
+					r.Info("resource version conflict, retrying annotation removal", "nodeName", currentNodeObject.Name, "attempt", attempt, "maxRetries", maxRetries)
+					time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
+					continue
+				}
+				return fmt.Errorf("failed to remove annotation from node after %d attempts: %v", maxRetries, err)
+			}
+
+			// Successfully removed the annotation
+			break
+		}
+	} else {
+		// No annotation to remove so we just use the provided node object
+		finalNodeObject = node
+	}
+
+	// Then uncordon the node
+	if err := r.Auth.CordonUncordonNode(finalNodeObject, r.Auth.Kubernetes, false); err != nil {
+		return fmt.Errorf("failed to uncordon node: %v", err)
+	}
+
+	return nil
 }
