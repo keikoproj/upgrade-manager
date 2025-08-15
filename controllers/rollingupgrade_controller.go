@@ -191,6 +191,12 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	drainGroup, _ := r.DrainGroupMapper.LoadOrStore(rollingUpgrade.NamespacedName(), &sync.WaitGroup{})
 	drainErrs, _ := r.DrainErrorMapper.LoadOrStore(rollingUpgrade.NamespacedName(), make(chan error))
 
+	// Ensure ClusterNodesMap is populated with existing nodes BEFORE creating RollingUpgradeContext
+	if err := r.ensureClusterNodesMapPopulated(); err != nil {
+		r.Error(err, "failed to populate cluster nodes map", "name", rollingUpgrade.NamespacedName())
+		return ctrl.Result{}, err
+	}
+
 	rollupCtx := &RollingUpgradeContext{
 		Logger:       r.Logger,
 		Auth:         r.Auth,
@@ -336,4 +342,50 @@ func (r *RollingUpgradeReconciler) getClusterNodes() []*corev1.Node {
 		clusterNodes = append(clusterNodes, value.(*corev1.Node))
 	}
 	return clusterNodes
+}
+
+// ensureClusterNodesMapPopulated ensures the ClusterNodesMap is populated with existing nodes
+// This is needed because the NodeEventsHandler only captures nodes created/updated after the controller starts
+func (r *RollingUpgradeReconciler) ensureClusterNodesMapPopulated() error {
+	// Quick check if map is already populated (stop early for efficiency)
+	populated := false
+	r.ClusterNodesMap.Range(func(_, _ interface{}) bool {
+		populated = true
+		return false // Stop after finding first entry
+	})
+
+	if populated {
+		return nil
+	}
+
+	// Map is empty so we must populate it with existing nodes
+	r.Info("ClusterNodesMap is empty, populating with existing nodes")
+
+	// Kubernetes client to list nodes
+	k8sClient, err := kubeprovider.GetKubernetesClient()
+	if err != nil {
+		return fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+
+	// KubernetesClientSet to use ListClusterNodes
+	clientSet := &kubeprovider.KubernetesClientSet{
+		Kubernetes: k8sClient,
+	}
+
+	nodeList, err := clientSet.ListClusterNodes()
+	if err != nil {
+		return fmt.Errorf("failed to list cluster nodes: %w", err)
+	}
+
+	// Populate the map with existing nodes
+	populatedCount := 0
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		nodeName := node.GetName()
+		r.ClusterNodesMap.Store(nodeName, node)
+		populatedCount++
+	}
+
+	r.Info("ClusterNodesMap populated successfully", "nodeCount", populatedCount)
+	return nil
 }
