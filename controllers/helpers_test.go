@@ -312,10 +312,6 @@ func createASGClient() *MockAutoscalingGroup {
 	}
 }
 
-func createEc2Client() *MockEC2 {
-	return &MockEC2{}
-}
-
 func createAmazonClient(t *testing.T) *awsprovider.AmazonClientSet {
 	// Create mock clients that implement our interfaces
 	return &awsprovider.AmazonClientSet{
