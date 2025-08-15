@@ -23,97 +23,131 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
-	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+var (
+	TerminatingInstanceStates = []string{
+		string(types.LifecycleStateTerminating),
+		string(types.LifecycleStateTerminatingWait),
+		string(types.LifecycleStateTerminatingProceed),
+		string(types.LifecycleStateTerminated),
+		string(types.LifecycleStateWarmedTerminating),
+		string(types.LifecycleStateWarmedTerminatingWait),
+		string(types.LifecycleStateWarmedTerminatingProceed),
+		string(types.LifecycleStateWarmedTerminated),
+	}
+	// Instance standBy limit is enforced by AWS EnterStandBy API
+	InstanceStandByLimit = 19
 )
 
 type AmazonClientSet struct {
-	AsgClient autoscalingiface.AutoScalingAPI
-	Ec2Client ec2iface.EC2API
+	AsgClient AutoScalingAPI
+	Ec2Client EC2API
 }
 
 func DeriveRegion() (string, error) {
-
 	if region := os.Getenv("AWS_REGION"); region != "" {
 		return region, nil
 	}
 
-	var config aws.Config
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-		Config:            config,
-	}))
-	c := ec2metadata.New(sess)
-	region, err := c.Region()
+	ctx := context.TODO()
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	client := imds.NewFromConfig(cfg)
+	result, err := client.GetRegion(ctx, &imds.GetRegionInput{})
 	if err != nil {
 		return "", fmt.Errorf("cannot reach ec2metadata, if running locally export AWS_REGION: %w", err)
 	}
-	return region, nil
+	return result.Region, nil
 }
 
-func SelectScalingGroup(name string, groups []*autoscaling.Group) *autoscaling.Group {
+func SelectScalingGroup(name string, groups []types.AutoScalingGroup) *types.AutoScalingGroup {
 	for _, group := range groups {
-		groupName := aws.StringValue(group.AutoScalingGroupName)
+		groupName := aws.ToString(group.AutoScalingGroupName)
 		if strings.EqualFold(groupName, name) {
-			return group
+			return &group
 		}
 	}
-	return &autoscaling.Group{}
+	return &types.AutoScalingGroup{}
 }
 
-func SelectScalingGroupInstance(instanceID string, group *autoscaling.Group) *autoscaling.Instance {
+func SelectScalingGroupInstance(instanceID string, group *types.AutoScalingGroup) *types.Instance {
 	for _, instance := range group.Instances {
-		selectedID := aws.StringValue(instance.InstanceId)
+		selectedID := aws.ToString(instance.InstanceId)
 		if strings.EqualFold(instanceID, selectedID) {
-			return instance
+			return &instance
 		}
 	}
-	return &autoscaling.Instance{}
+	return &types.Instance{}
 }
 
-func GetScalingAZs(instances []*autoscaling.Instance) []string {
+func GetScalingAZs(instances []types.Instance) []string {
 	AZs := make([]string, 0)
 	for _, instance := range instances {
-		AZ := aws.StringValue(instance.AvailabilityZone)
+		AZ := aws.ToString(instance.AvailabilityZone)
 		AZs = append(AZs, AZ)
 	}
 	sort.Strings(AZs)
 	return AZs
 }
 
-func GetInstanceIDs(instances []*autoscaling.Instance) []string {
+func GetInstanceIDs(instances []*types.Instance) []string {
 	IDs := make([]string, 0)
 	for _, instance := range instances {
-		ID := aws.StringValue(instance.InstanceId)
+		ID := aws.ToString(instance.InstanceId)
 		IDs = append(IDs, ID)
 	}
 	sort.Strings(IDs)
 	return IDs
 }
 
-func GetTemplateLatestVersion(templates []*ec2.LaunchTemplate, templateName string) string {
+func GetInstanceIDsFromPointers(instances []*types.Instance) []string {
+	IDs := make([]string, 0)
+	for _, instance := range instances {
+		ID := aws.ToString(instance.InstanceId)
+		IDs = append(IDs, ID)
+	}
+	sort.Strings(IDs)
+	return IDs
+}
+
+func GetInServiceInstanceIDsFromPointers(instances []*types.Instance) []string {
+	var inServiceInstanceIDs []string
+	for _, instance := range instances {
+		if instance.LifecycleState == types.LifecycleStateInService {
+			inServiceInstanceIDs = append(inServiceInstanceIDs, aws.ToString(instance.InstanceId))
+		}
+	}
+	return inServiceInstanceIDs
+}
+
+func GetTemplateLatestVersion(templates []ec2types.LaunchTemplate, templateName string) string {
 	for _, template := range templates {
-		name := aws.StringValue(template.LaunchTemplateName)
+		name := aws.ToString(template.LaunchTemplateName)
 		if strings.EqualFold(name, templateName) {
-			versionInt := aws.Int64Value(template.LatestVersionNumber)
+			versionInt := aws.ToInt64(template.LatestVersionNumber)
 			return strconv.FormatInt(versionInt, 10)
 		}
 	}
 	return "0"
 }
 
-func GetInServiceInstanceIDs(instances []*autoscaling.Instance) []string {
+func GetInServiceInstanceIDs(instances []types.Instance) []string {
 	var inServiceInstanceIDs []string
 	for _, instance := range instances {
-		if aws.StringValue(instance.LifecycleState) == autoscaling.LifecycleStateInService {
-			inServiceInstanceIDs = append(inServiceInstanceIDs, aws.StringValue(instance.InstanceId))
+		if instance.LifecycleState == types.LifecycleStateInService {
+			inServiceInstanceIDs = append(inServiceInstanceIDs, aws.ToString(instance.InstanceId))
 		}
 	}
 	return inServiceInstanceIDs
-
 }

@@ -1,16 +1,13 @@
 package controllers
 
 import (
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubectl/pkg/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
@@ -20,12 +17,14 @@ import (
 	controllerRuntimeClientFake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	//AWS
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
-	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
 // K8s
@@ -68,8 +67,8 @@ func createRollingUpgradeReconciler(t *testing.T, objects ...runtime.Object) *Ro
 		ReplacementNodesMap: &sync.Map{},
 		ReconcileMap:        &sync.Map{},
 		AdmissionMap:        sync.Map{},
-		CacheConfig:         cache.NewConfig(0, 0, 0, 0),
-		ClusterNodesMap:     &sync.Map{},
+
+		ClusterNodesMap: &sync.Map{},
 	}
 
 	// Pre-populate ClusterNodesMap to avoid kubeconfig dependency in tests
@@ -181,136 +180,129 @@ func createNode(name string) *corev1.Node {
 	}
 }
 
-// AWS
+// AWS SDK Go v2 Mock implementations following the official testing guide
+// https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/unit-testing.html
+
 type MockAutoscalingGroup struct {
-	autoscalingiface.AutoScalingAPI
-	errorFlag            bool
-	awsErr               awserr.Error
-	errorInstanceId      string
-	autoScalingGroups    []*autoscaling.Group
-	Groups               map[string]*autoscaling.Group
-	LaunchConfigurations map[string]*autoscaling.LaunchConfiguration
+	autoScalingGroups []types.AutoScalingGroup
+	errorFlag         bool
+	errorInstanceId   string
 }
 
-type launchTemplateInfo struct {
-	name *string
-}
 type MockEC2 struct {
-	ec2iface.EC2API
-	LaunchTemplates map[string]*launchTemplateInfo
+	LaunchTemplates []ec2types.LaunchTemplate
+	Instances       []ec2types.Instance
 }
 
-var _ ec2iface.EC2API = &MockEC2{}
-
-func createASGInstance(instanceID string, launchConfigName string, az string) *autoscaling.Instance {
-	return &autoscaling.Instance{
-		InstanceId:              &instanceID,
-		LaunchConfigurationName: &launchConfigName,
+func createASGInstance(instanceID string, launchConfigName string, az string) *types.Instance {
+	return &types.Instance{
+		InstanceId:              aws.String(instanceID),
+		LaunchConfigurationName: aws.String(launchConfigName),
 		AvailabilityZone:        aws.String(az),
-		LifecycleState:          aws.String("InService"),
+		LifecycleState:          types.LifecycleStateInService,
 	}
 }
 
-func createDriftedASGInstance(instanceID string, az string) *autoscaling.Instance {
-	return &autoscaling.Instance{
-		InstanceId:       &instanceID,
+func createDriftedASGInstance(instanceID string, az string) *types.Instance {
+	return &types.Instance{
+		InstanceId:       aws.String(instanceID),
 		AvailabilityZone: aws.String(az),
-		LifecycleState:   aws.String("InService"),
+		LifecycleState:   types.LifecycleStateInService,
 	}
 }
 
-func createASGInstanceWithLaunchTemplate(instanceID string, launchTemplateName string) *autoscaling.Instance {
-	return &autoscaling.Instance{
-		InstanceId: &instanceID,
-		LaunchTemplate: &autoscaling.LaunchTemplateSpecification{
-			LaunchTemplateName: &launchTemplateName,
+func createASGInstanceWithLaunchTemplate(instanceID string, launchTemplateName string) *types.Instance {
+	return &types.Instance{
+		InstanceId: aws.String(instanceID),
+		LaunchTemplate: &types.LaunchTemplateSpecification{
+			LaunchTemplateName: aws.String(launchTemplateName),
 		},
 		AvailabilityZone: aws.String("az-1"),
-		LifecycleState:   aws.String("InService"),
+		LifecycleState:   types.LifecycleStateInService,
 	}
 }
 
-func createEc2Instances() []*ec2.Instance {
-	return []*ec2.Instance{
-		&ec2.Instance{
+func createEc2Instances() []ec2types.Instance {
+	return []ec2types.Instance{
+		{
 			InstanceId: aws.String("mock-instance-1"),
 		},
-		&ec2.Instance{
+		{
 			InstanceId: aws.String("mock-instance-2"),
 		},
-		&ec2.Instance{
+		{
 			InstanceId: aws.String("mock-instance-3"),
 		},
 	}
 }
 
-func createASG(asgName string, launchConfigName string) *autoscaling.Group {
-	return &autoscaling.Group{
-		AutoScalingGroupName:    &asgName,
-		LaunchConfigurationName: &launchConfigName,
-		Instances: []*autoscaling.Instance{
-			createASGInstance("mock-instance-1", launchConfigName, "az-1"),
-			createASGInstance("mock-instance-2", launchConfigName, "az-2"),
-			createASGInstance("mock-instance-3", launchConfigName, "az-3"),
+func createASG(asgName string, launchConfigName string) *types.AutoScalingGroup {
+	return &types.AutoScalingGroup{
+		AutoScalingGroupName:    aws.String(asgName),
+		LaunchConfigurationName: aws.String(launchConfigName),
+		Instances: []types.Instance{
+			*createASGInstance("mock-instance-1", launchConfigName, "az-1"),
+			*createASGInstance("mock-instance-2", launchConfigName, "az-2"),
+			*createASGInstance("mock-instance-3", launchConfigName, "az-3"),
 		},
-		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
+		DesiredCapacity: func(x int) *int32 { i := int32(x); return &i }(3),
 	}
 }
 
-func createASGWithLaunchTemplate(asgName string, launchTemplate string) *autoscaling.Group {
-	return &autoscaling.Group{
-		AutoScalingGroupName: &asgName,
-		LaunchTemplate: &autoscaling.LaunchTemplateSpecification{
-			LaunchTemplateName: &asgName,
+func createASGWithLaunchTemplate(asgName string, launchTemplate string) *types.AutoScalingGroup {
+	return &types.AutoScalingGroup{
+		AutoScalingGroupName: aws.String(asgName),
+		LaunchTemplate: &types.LaunchTemplateSpecification{
+			LaunchTemplateName: aws.String(asgName),
 		},
-		Instances: []*autoscaling.Instance{
-			createASGInstance("mock-instance-1", launchTemplate, "az-1"),
-			createASGInstance("mock-instance-2", launchTemplate, "az-2"),
-			createASGInstance("mock-instance-3", launchTemplate, "az-3"),
+		Instances: []types.Instance{
+			*createASGInstance("mock-instance-1", launchTemplate, "az-1"),
+			*createASGInstance("mock-instance-2", launchTemplate, "az-2"),
+			*createASGInstance("mock-instance-3", launchTemplate, "az-3"),
 		},
-		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
+		DesiredCapacity: func(x int) *int32 { i := int32(x); return &i }(3),
 	}
 }
 
-func createASGWithMixedInstanceLaunchTemplate(asgName string, launchTemplate string) *autoscaling.Group {
-	return &autoscaling.Group{
-		AutoScalingGroupName: &asgName,
-		MixedInstancesPolicy: &autoscaling.MixedInstancesPolicy{
-			LaunchTemplate: &autoscaling.LaunchTemplate{
-				LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{
-					LaunchTemplateName: &asgName,
+func createASGWithMixedInstanceLaunchTemplate(asgName string, launchTemplate string) *types.AutoScalingGroup {
+	return &types.AutoScalingGroup{
+		AutoScalingGroupName: aws.String(asgName),
+		MixedInstancesPolicy: &types.MixedInstancesPolicy{
+			LaunchTemplate: &types.LaunchTemplate{
+				LaunchTemplateSpecification: &types.LaunchTemplateSpecification{
+					LaunchTemplateName: aws.String(asgName),
 				},
 			},
 		},
-		Instances: []*autoscaling.Instance{
-			createASGInstance("mock-instance-1", launchTemplate, "az-1"),
-			createASGInstance("mock-instance-2", launchTemplate, "az-2"),
-			createASGInstance("mock-instance-3", launchTemplate, "az-3"),
+		Instances: []types.Instance{
+			*createASGInstance("mock-instance-1", launchTemplate, "az-1"),
+			*createASGInstance("mock-instance-2", launchTemplate, "az-2"),
+			*createASGInstance("mock-instance-3", launchTemplate, "az-3"),
 		},
-		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
+		DesiredCapacity: func(x int) *int32 { i := int32(x); return &i }(3),
 	}
 }
 
-func createDriftedASG(asgName string, launchConfigName string) *autoscaling.Group {
-	return &autoscaling.Group{
-		AutoScalingGroupName:    &asgName,
-		LaunchConfigurationName: &launchConfigName,
-		Instances: []*autoscaling.Instance{
-			createDriftedASGInstance("mock-instance-1", "az-1"),
-			createDriftedASGInstance("mock-instance-2", "az-2"),
-			createDriftedASGInstance("mock-instance-3", "az-3"),
+func createDriftedASG(asgName string, launchConfigName string) *types.AutoScalingGroup {
+	return &types.AutoScalingGroup{
+		AutoScalingGroupName:    aws.String(asgName),
+		LaunchConfigurationName: aws.String(launchConfigName),
+		Instances: []types.Instance{
+			*createDriftedASGInstance("mock-instance-1", "az-1"),
+			*createDriftedASGInstance("mock-instance-2", "az-2"),
+			*createDriftedASGInstance("mock-instance-3", "az-3"),
 		},
-		DesiredCapacity: func(x int) *int64 { i := int64(x); return &i }(3),
+		DesiredCapacity: func(x int) *int32 { i := int32(x); return &i }(3),
 	}
 }
 
-func createASGs() []*autoscaling.Group {
-	return []*autoscaling.Group{
-		createASG("mock-asg-1", "mock-launch-config-1"),
-		createDriftedASG("mock-asg-2", "mock-launch-config-2"),
-		createASG("mock-asg-3", "mock-launch-config-3"),
-		createASGWithLaunchTemplate("mock-asg-4", "mock-launch-template-4"),
-		createASGWithMixedInstanceLaunchTemplate("mock-asg-5", "mock-launch-template-5"),
+func createASGs() []types.AutoScalingGroup {
+	return []types.AutoScalingGroup{
+		*createASG("mock-asg-1", "mock-launch-config-1"),
+		*createDriftedASG("mock-asg-2", "mock-launch-config-2"),
+		*createASG("mock-asg-3", "mock-launch-config-3"),
+		*createASGWithLaunchTemplate("mock-asg-4", "mock-launch-template-4"),
+		*createASGWithMixedInstanceLaunchTemplate("mock-asg-5", "mock-launch-template-5"),
 	}
 }
 
@@ -320,131 +312,69 @@ func createASGClient() *MockAutoscalingGroup {
 	}
 }
 
-func createEc2Client() *MockEC2 {
-	return &MockEC2{}
-}
-
 func createAmazonClient(t *testing.T) *awsprovider.AmazonClientSet {
+	// Create mock clients that implement our interfaces
 	return &awsprovider.AmazonClientSet{
-		AsgClient: createASGClient(),
-		Ec2Client: createEc2Client(),
+		AsgClient: &MockAutoscalingGroup{
+			autoScalingGroups: createASGs(),
+		},
+		Ec2Client: &MockEC2{
+			LaunchTemplates: []ec2types.LaunchTemplate{},
+			Instances:       createEc2Instances(),
+		},
 	}
 }
 
 /******************************* AWS MOCKS *******************************/
+// AWS SDK Go v2 Mock implementations following the official testing guide
 
-func (mockAutoscalingGroup MockAutoscalingGroup) TerminateInstanceInAutoScalingGroup(input *autoscaling.TerminateInstanceInAutoScalingGroupInput) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
-	output := &autoscaling.TerminateInstanceInAutoScalingGroupOutput{}
-	if mockAutoscalingGroup.errorFlag {
-		if mockAutoscalingGroup.awsErr != nil {
-			if len(mockAutoscalingGroup.errorInstanceId) <= 0 ||
-				mockAutoscalingGroup.errorInstanceId == *input.InstanceId {
-				return output, mockAutoscalingGroup.awsErr
-			}
-		}
-	}
-	asgChange := autoscaling.Activity{ActivityId: aws.String("xxx"), AutoScalingGroupName: aws.String("sss"), Cause: aws.String("xxx"), StartTime: aws.Time(time.Now()), StatusCode: aws.String("200"), StatusMessage: aws.String("success")}
-	output.Activity = &asgChange
-	return output, nil
-}
-
-// DescribeLaunchTemplatesPages mocks the describing the launch templates
-func (m *MockEC2) DescribeLaunchTemplatesPages(request *ec2.DescribeLaunchTemplatesInput, callback func(*ec2.DescribeLaunchTemplatesOutput, bool) bool) error {
-	page, err := m.DescribeLaunchTemplates(request)
-	if err != nil {
-		return err
-	}
-
-	callback(page, false)
-
-	return nil
-}
-
-// DescribeLaunchTemplates mocks the describing the launch templates
-func (m *MockEC2) DescribeLaunchTemplates(request *ec2.DescribeLaunchTemplatesInput) (*ec2.DescribeLaunchTemplatesOutput, error) {
-
-	o := &ec2.DescribeLaunchTemplatesOutput{}
-
-	if m.LaunchTemplates == nil {
-		return o, nil
-	}
-
-	for id, ltInfo := range m.LaunchTemplates {
-		launchTemplatetName := aws.StringValue(ltInfo.name)
-
-		allFiltersMatch := true
-		for _, filter := range request.Filters {
-			filterName := aws.StringValue(filter.Name)
-			filterValue := aws.StringValue(filter.Values[0])
-
-			filterMatches := false
-			if filterName == "tag:Name" && filterValue == launchTemplatetName {
-				filterMatches = true
-			}
-			if strings.HasPrefix(filterName, "tag:kubernetes.io/cluster/") {
-				filterMatches = true
-			}
-
-			if !filterMatches {
-				allFiltersMatch = false
-				break
-			}
-		}
-
-		if allFiltersMatch {
-			o.LaunchTemplates = append(o.LaunchTemplates, &ec2.LaunchTemplate{
-				LaunchTemplateName: aws.String(launchTemplatetName),
-				LaunchTemplateId:   aws.String(id),
-			})
-		}
-	}
-
-	return o, nil
-}
-
-func (m *MockAutoscalingGroup) DescribeAutoScalingGroupsPages(request *autoscaling.DescribeAutoScalingGroupsInput, callback func(*autoscaling.DescribeAutoScalingGroupsOutput, bool) bool) error {
-	// For the mock, we just send everything in one page
-	page, err := m.DescribeAutoScalingGroups(request)
-	if err != nil {
-		return err
-	}
-
-	callback(page, false)
-
-	return nil
-}
-
-func (m *MockAutoscalingGroup) DescribeAutoScalingGroups(input *autoscaling.DescribeAutoScalingGroupsInput) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
+// MockAutoscalingGroup implements awsprovider.AutoScalingAPI interface
+func (m *MockAutoscalingGroup) DescribeAutoScalingGroups(ctx context.Context, params *autoscaling.DescribeAutoScalingGroupsInput, optFns ...func(*autoscaling.Options)) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
 	return &autoscaling.DescribeAutoScalingGroupsOutput{
-		AutoScalingGroups: createASGs(),
+		AutoScalingGroups: m.autoScalingGroups,
 	}, nil
 }
 
-func (m *MockEC2) DescribeInstancesPages(request *ec2.DescribeInstancesInput, callback func(*ec2.DescribeInstancesOutput, bool) bool) error {
-	// For the mock, we just send everything in one page
-	page, err := m.DescribeInstances(request)
-	if err != nil {
-		return err
+func (m *MockAutoscalingGroup) TerminateInstanceInAutoScalingGroup(ctx context.Context, params *autoscaling.TerminateInstanceInAutoScalingGroupInput, optFns ...func(*autoscaling.Options)) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
+	if m.errorFlag && (len(m.errorInstanceId) == 0 || m.errorInstanceId == aws.ToString(params.InstanceId)) {
+		return nil, fmt.Errorf("mock error for instance %s", aws.ToString(params.InstanceId))
 	}
 
-	callback(page, false)
-
-	return nil
-}
-
-func (m *MockEC2) DescribeInstances(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
-	return &ec2.DescribeInstancesOutput{
-		Reservations: []*ec2.Reservation{
-			&ec2.Reservation{Instances: createEc2Instances()},
+	return &autoscaling.TerminateInstanceInAutoScalingGroupOutput{
+		Activity: &types.Activity{
+			ActivityId:           aws.String("mock-activity-id"),
+			AutoScalingGroupName: aws.String("mock-asg"),
+			StatusCode:           types.ScalingActivityStatusCodeSuccessful,
 		},
 	}, nil
 }
 
-func (mockAutoscalingGroup MockAutoscalingGroup) EnterStandby(_ *autoscaling.EnterStandbyInput) (*autoscaling.EnterStandbyOutput, error) {
-	output := &autoscaling.EnterStandbyOutput{}
-	return output, nil
+func (m *MockAutoscalingGroup) EnterStandby(ctx context.Context, params *autoscaling.EnterStandbyInput, optFns ...func(*autoscaling.Options)) (*autoscaling.EnterStandbyOutput, error) {
+	return &autoscaling.EnterStandbyOutput{}, nil
 }
 
-func (m *MockEC2) DeleteTags(input *ec2.DeleteTagsInput) (*ec2.DeleteTagsOutput, error) {
+// MockEC2 implements awsprovider.EC2API interface
+func (m *MockEC2) DescribeLaunchTemplates(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
+	return &ec2.DescribeLaunchTemplatesOutput{
+		LaunchTemplates: m.LaunchTemplates,
+	}, nil
+}
+
+func (m *MockEC2) DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	reservations := []ec2types.Reservation{
+		{
+			Instances: m.Instances,
+		},
+	}
+	return &ec2.DescribeInstancesOutput{
+		Reservations: reservations,
+	}, nil
+}
+
+func (m *MockEC2) CreateTags(ctx context.Context, params *ec2.CreateTagsInput, optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+	return &ec2.CreateTagsOutput{}, nil
+}
+
+func (m *MockEC2) DeleteTags(ctx context.Context, params *ec2.DeleteTagsInput, optFns ...func(*ec2.Options)) (*ec2.DeleteTagsOutput, error) {
 	return &ec2.DeleteTagsOutput{}, nil
 }
