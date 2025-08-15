@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/go-logr/logr"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
@@ -96,14 +96,14 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	var (
 		scalingGroup = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
 	)
-	if reflect.DeepEqual(scalingGroup, &autoscaling.Group{}) {
+	if reflect.DeepEqual(scalingGroup, &types.AutoScalingGroup{}) {
 		return errors.Errorf("scaling group not found, scalingGroupName: %v", r.RollingUpgrade.ScalingGroupName())
 	}
 	r.Info(
 		"scaling group details",
 		"scalingGroup", r.RollingUpgrade.ScalingGroupName(),
-		"desiredInstances", aws.Int64Value(scalingGroup.DesiredCapacity),
-		"launchConfig", aws.StringValue(scalingGroup.LaunchConfigurationName),
+		"desiredInstances", aws.ToInt32(scalingGroup.DesiredCapacity),
+		"launchConfig", aws.ToString(scalingGroup.LaunchConfigurationName),
 		"name", r.RollingUpgrade.NamespacedName(),
 	)
 
@@ -133,12 +133,12 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	return nil
 }
 
-func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) (bool, error) {
+func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*types.Instance) (bool, error) {
 	var (
 		mode = r.RollingUpgrade.StrategyMode()
 	)
 
-	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDs(batch), "name", r.RollingUpgrade.NamespacedName())
+	r.Info("rotating batch", "instances", awsprovider.GetInstanceIDsFromPointers(batch), "name", r.RollingUpgrade.NamespacedName())
 
 	//A map to retain the steps for multiple nodes
 	nodeSteps := make(map[string][]v1alpha1.NodeStepDuration)
@@ -159,7 +159,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	switch mode {
 	case v1alpha1.UpdateStrategyModeEager:
 		for _, target := range batch {
-			instanceID := aws.StringValue(target.InstanceId)
+			instanceID := aws.ToString(target.InstanceId)
 			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 			if node == nil {
 				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
@@ -173,7 +173,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 		}
 
-		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
+		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDsFromPointers(batch), awsprovider.GetInServiceInstanceIDsFromPointers(batch)
 		// Tag and set to StandBy only the InService instances.
 		if len(inServiceInstanceIDs) > 0 {
 
@@ -210,7 +210,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 		// turns onto desired nodes
 		for _, target := range batch {
-			instanceID := aws.StringValue(target.InstanceId)
+			instanceID := aws.ToString(target.InstanceId)
 			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 			if node == nil {
 				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
@@ -232,7 +232,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	case v1alpha1.UpdateStrategyModeLazy:
 		for _, target := range batch {
-			instanceID := aws.StringValue(target.InstanceId)
+			instanceID := aws.ToString(target.InstanceId)
 			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 			if node == nil {
 				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
@@ -245,7 +245,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 			r.NodeStep(inProcessingNodes, nodeSteps, r.RollingUpgrade.Spec.AsgName, nodeName, v1alpha1.NodeRotationKickoff)
 		}
 		// add in-progress tag
-		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDs(batch), awsprovider.GetInServiceInstanceIDs(batch)
+		batchInstanceIDs, inServiceInstanceIDs := awsprovider.GetInstanceIDsFromPointers(batch), awsprovider.GetInServiceInstanceIDsFromPointers(batch)
 		r.Info("setting batch to in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
 		if err := r.Auth.TagEC2instances(inServiceInstanceIDs, instanceStateTagKey, inProgressTagValue); err != nil {
 			r.Error(err, "failed to set batch in-progress", "batch", batchInstanceIDs, "instances(InService)", inServiceInstanceIDs, "name", r.RollingUpgrade.NamespacedName())
@@ -274,7 +274,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 
 	if reflect.DeepEqual(r.DrainManager.DrainGroup, &sync.WaitGroup{}) {
 		for _, target := range batch {
-			instanceID := aws.StringValue(target.InstanceId)
+			instanceID := aws.ToString(target.InstanceId)
 			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 			if node == nil {
 				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
@@ -375,7 +375,7 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 		r.RollingUpgrade.SetLastNodeDrainTime(&metav1.Time{Time: time.Now()})
 		r.Info("instances drained successfully, terminating", "name", r.RollingUpgrade.NamespacedName())
 		for _, target := range batch {
-			instanceID := aws.StringValue(target.InstanceId)
+			instanceID := aws.ToString(target.InstanceId)
 			node := kubeprovider.SelectNodeByInstanceID(instanceID, r.Cloud.ClusterNodes)
 			if node == nil {
 				r.Info("node object not found in clusterNodes, skipping this node for now", "instanceID", instanceID, "name", r.RollingUpgrade.NamespacedName())
@@ -442,13 +442,13 @@ func (r *RollingUpgradeContext) ReplaceNodeBatch(batch []*autoscaling.Instance) 
 	return true, nil
 }
 
-func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, excludedInstances []string) []*autoscaling.Instance {
+func (r *RollingUpgradeContext) SelectTargets(scalingGroup *types.AutoScalingGroup, excludedInstances []string) []*types.Instance {
 	var (
 		batchSize          = r.RollingUpgrade.MaxUnavailable()
-		totalNodes         = int(aws.Int64Value(scalingGroup.DesiredCapacity))
-		inprogressTargets  = make([]*autoscaling.Instance, 0)
-		unrpocessedTargets = make([]*autoscaling.Instance, 0)
-		finalTargets       = make([]*autoscaling.Instance, 0)
+		totalNodes         = int(aws.ToInt32(scalingGroup.DesiredCapacity))
+		inprogressTargets  = make([]*types.Instance, 0)
+		unrpocessedTargets = make([]*types.Instance, 0)
+		finalTargets       = make([]*types.Instance, 0)
 	)
 	unavailableInt := CalculateMaxUnavailable(batchSize, totalNodes)
 
@@ -458,9 +458,9 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 		r.Info("ignoring failed drain instances", "instances", excludedInstances, "name", r.RollingUpgrade.NamespacedName())
 	}
 	for _, instance := range r.Cloud.InProgressInstances {
-		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
+		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &types.Instance{}) {
 			//In-progress instances shouldn't be considered if they are in terminating state.
-			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
+			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, string(selectedInstance.LifecycleState)) {
 				inprogressTargets = append(inprogressTargets, selectedInstance)
 			}
 		}
@@ -479,9 +479,9 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 
 	for _, instance := range instances {
 		//don't consider instances when - terminating, empty, duplicates, excluded (errored our previously), not drifted.
-		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &autoscaling.Instance{}) {
-			if r.IsInstanceDrifted(selectedInstance) && !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(selectedInstance.LifecycleState)) {
-				if !common.ContainsEqualFold(awsprovider.GetInstanceIDs(unrpocessedTargets), aws.StringValue(selectedInstance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.StringValue(selectedInstance.InstanceId)) {
+		if selectedInstance := awsprovider.SelectScalingGroupInstance(instance, scalingGroup); !reflect.DeepEqual(selectedInstance, &types.Instance{}) {
+			if r.IsInstanceDrifted(selectedInstance) && !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, string(selectedInstance.LifecycleState)) {
+				if !common.ContainsEqualFold(awsprovider.GetInstanceIDs(unrpocessedTargets), aws.ToString(selectedInstance.InstanceId)) && !common.ContainsEqualFold(excludedInstances, aws.ToString(selectedInstance.InstanceId)) {
 					unrpocessedTargets = append(unrpocessedTargets, selectedInstance)
 				}
 			}
@@ -496,12 +496,12 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 
 	} else if r.RollingUpgrade.UpdateStrategyType() == v1alpha1.UniformAcrossAzUpdateStrategy {
 
-		var uniformAZTargets = make([]*autoscaling.Instance, 0)
+		var uniformAZTargets = make([]*types.Instance, 0)
 
 		// split targets into groups based on their AZ
-		targetsByAZMap := map[string][]*autoscaling.Instance{}
+		targetsByAZMap := map[string][]*types.Instance{}
 		for _, target := range unrpocessedTargets {
-			az := aws.StringValue(target.AvailabilityZone)
+			az := aws.ToString(target.AvailabilityZone)
 			targetsByAZMap[az] = append(targetsByAZMap[az], target)
 		}
 
@@ -530,16 +530,16 @@ func (r *RollingUpgradeContext) SelectTargets(scalingGroup *autoscaling.Group, e
 	return finalTargets[:unavailableInt]
 }
 
-func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance) bool {
+func (r *RollingUpgradeContext) IsInstanceDrifted(instance *types.Instance) bool {
 
 	var (
 		scalingGroupName = r.RollingUpgrade.ScalingGroupName()
 		scalingGroup     = awsprovider.SelectScalingGroup(scalingGroupName, r.Cloud.ScalingGroups)
-		instanceID       = aws.StringValue(instance.InstanceId)
+		instanceID       = aws.ToString(instance.InstanceId)
 	)
 
 	// if an instance is in terminating state, ignore.
-	if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+	if common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, string(instance.LifecycleState)) {
 		return false
 	}
 
@@ -564,8 +564,8 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		if instance.LaunchConfigurationName == nil {
 			return true
 		}
-		launchConfigName := aws.StringValue(scalingGroup.LaunchConfigurationName)
-		instanceConfigName := aws.StringValue(instance.LaunchConfigurationName)
+		launchConfigName := aws.ToString(scalingGroup.LaunchConfigurationName)
+		instanceConfigName := aws.ToString(instance.LaunchConfigurationName)
 		if !strings.EqualFold(launchConfigName, instanceConfigName) {
 			return true
 		}
@@ -576,10 +576,10 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 
 		var (
-			launchTemplateName      = aws.StringValue(scalingGroup.LaunchTemplate.LaunchTemplateName)
-			instanceTemplateName    = aws.StringValue(instance.LaunchTemplate.LaunchTemplateName)
-			instanceTemplateVersion = aws.StringValue(instance.LaunchTemplate.Version)
-			templateVersion         = aws.StringValue(scalingGroup.LaunchTemplate.Version)
+			launchTemplateName      = aws.ToString(scalingGroup.LaunchTemplate.LaunchTemplateName)
+			instanceTemplateName    = aws.ToString(instance.LaunchTemplate.LaunchTemplateName)
+			instanceTemplateVersion = aws.ToString(instance.LaunchTemplate.Version)
+			templateVersion         = aws.ToString(scalingGroup.LaunchTemplate.Version)
 		)
 
 		// replace latest string with latest version number
@@ -602,10 +602,10 @@ func (r *RollingUpgradeContext) IsInstanceDrifted(instance *autoscaling.Instance
 		}
 
 		var (
-			launchTemplateName      = aws.StringValue(scalingGroup.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName)
-			instanceTemplateName    = aws.StringValue(instance.LaunchTemplate.LaunchTemplateName)
-			instanceTemplateVersion = aws.StringValue(instance.LaunchTemplate.Version)
-			templateVersion         = aws.StringValue(scalingGroup.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.Version)
+			launchTemplateName      = aws.ToString(scalingGroup.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName)
+			instanceTemplateName    = aws.ToString(instance.LaunchTemplate.LaunchTemplateName)
+			instanceTemplateVersion = aws.ToString(instance.LaunchTemplate.Version)
+			templateVersion         = aws.ToString(scalingGroup.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.Version)
 		)
 
 		// replace latest string with latest version number
@@ -629,12 +629,12 @@ func (r *RollingUpgradeContext) IsScalingGroupDrifted() bool {
 	var (
 		driftCount      = 0
 		scalingGroup    = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
-		desiredCapacity = int(aws.Int64Value(scalingGroup.DesiredCapacity))
+		desiredCapacity = int(aws.ToInt32(scalingGroup.DesiredCapacity))
 	)
 	r.Info("checking if rolling upgrade is completed", "name", r.RollingUpgrade.NamespacedName())
 
 	for _, instance := range scalingGroup.Instances {
-		if r.IsInstanceDrifted(instance) {
+		if r.IsInstanceDrifted(&instance) {
 			driftCount++
 		}
 	}
@@ -651,7 +651,7 @@ func (r *RollingUpgradeContext) IsScalingGroupDrifted() bool {
 func (r *RollingUpgradeContext) DesiredNodesReady() bool {
 	var (
 		scalingGroup     = awsprovider.SelectScalingGroup(r.RollingUpgrade.ScalingGroupName(), r.Cloud.ScalingGroups)
-		desiredInstances = aws.Int64Value(scalingGroup.DesiredCapacity)
+		desiredInstances = aws.ToInt32(scalingGroup.DesiredCapacity)
 		readyNodes       = 0
 	)
 
@@ -803,9 +803,9 @@ func (r *RollingUpgradeContext) CordonUncordonAllNodes(cordonNode bool) (bool, e
 	}
 
 	for _, instanceID := range instanceIDs {
-		if instance := awsprovider.SelectScalingGroupInstance(instanceID, scalingGroup); !reflect.DeepEqual(instance, &autoscaling.Instance{}) {
+		if instance := awsprovider.SelectScalingGroupInstance(instanceID, scalingGroup); !reflect.DeepEqual(instance, &types.Instance{}) {
 			//Don't consider if the instance is in terminating state.
-			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, aws.StringValue(instance.LifecycleState)) {
+			if !common.ContainsEqualFold(awsprovider.TerminatingInstanceStates, string(instance.LifecycleState)) {
 				node := kubeprovider.SelectNodeByInstanceID(*instance.InstanceId, r.Cloud.ClusterNodes)
 				if node == nil {
 					r.Info("node object not found in clusterNodes, unable to early-cordon node", "instanceID", instance.InstanceId, "name", r.RollingUpgrade.NamespacedName())

@@ -17,8 +17,8 @@ limitations under the License.
 package controllers
 
 import (
-	"github.com/aws/aws-sdk-go/service/autoscaling"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/go-logr/logr"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,8 +37,8 @@ type DiscoveredState struct {
 	*RollingUpgradeAuthenticator
 	logr.Logger
 	ClusterNodes        []*corev1.Node
-	LaunchTemplates     []*ec2.LaunchTemplate
-	ScalingGroups       []*autoscaling.Group
+	LaunchTemplates     []ec2types.LaunchTemplate
+	ScalingGroups       []types.AutoScalingGroup
 	InProgressInstances []string
 }
 

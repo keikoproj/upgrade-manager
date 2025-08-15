@@ -70,19 +70,19 @@ func TestMaxParallel(t *testing.T) {
 func TestControllerSetupWithManager(t *testing.T) {
 	// Create a reconciler
 	reconciler := createRollingUpgradeReconciler(t)
-	
+
 	// Create a fake REST config instead of using GetConfigOrDie() which fails in CI
 	fakeRestConfig := &rest.Config{
 		Host: "https://example.com",
 	}
-	
+
 	// Create a scheme for the fake client
 	scheme := runtime.NewScheme()
 	// Add the needed types to the scheme
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatalf("Failed to add core types to scheme: %v", err)
 	}
-	
+
 	// Create a mock manager with the fake config
 	mgr, err := ctrl.NewManager(fakeRestConfig, ctrl.Options{
 		Scheme: reconciler.Scheme,
@@ -96,13 +96,13 @@ func TestControllerSetupWithManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create manager: %v", err)
 	}
-	
+
 	// Test the SetupWithManager function with the new controller-runtime v0.20.4 API
 	err = reconciler.SetupWithManager(mgr)
 	if err != nil {
 		t.Errorf("SetupWithManager failed with new controller-runtime API: %v", err)
 	}
-	
+
 	// We can't directly test the internal structure of the controller after setup,
 	// but we've verified it doesn't error out with the new API
 }

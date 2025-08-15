@@ -7,8 +7,8 @@ import (
 	"time"
 
 	//AWS
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	corev1 "k8s.io/api/core/v1"
@@ -176,7 +176,7 @@ func TestIsInstanceDrifted(t *testing.T) {
 	var tests = []struct {
 		TestDescription string
 		Reconciler      *RollingUpgradeReconciler
-		Instance        *autoscaling.Instance
+		Instance        *types.Instance
 		AsgName         *string
 		ExpectedValue   bool
 	}{
@@ -331,7 +331,7 @@ func TestDesiredNodesReady(t *testing.T) {
 			createRollingUpgradeReconciler(t),
 			func() *MockAutoscalingGroup {
 				newAsgClient := createASGClient()
-				newAsgClient.autoScalingGroups[0].DesiredCapacity = func(x int) *int64 { i := int64(x); return &i }(4)
+				newAsgClient.autoScalingGroups[0].DesiredCapacity = func(x int) *int32 { i := int32(x); return &i }(4)
 				return newAsgClient
 			}(),
 			createNodeSlice(),
@@ -359,10 +359,10 @@ func TestDesiredNodesReady(t *testing.T) {
 			createRollingUpgradeReconciler(t),
 			func() *MockAutoscalingGroup {
 				newAsgClient := createASGClient()
-				newAsgClient.autoScalingGroups[0].Instances = []*autoscaling.Instance{
-					&autoscaling.Instance{InstanceId: aws.String("mock-instance-1"), LifecycleState: aws.String("Pending")},
-					&autoscaling.Instance{InstanceId: aws.String("mock-instance-2"), LifecycleState: aws.String("Terminating")},
-					&autoscaling.Instance{InstanceId: aws.String("mock-instance-3"), LifecycleState: aws.String("Terminating")},
+				newAsgClient.autoScalingGroups[0].Instances = []types.Instance{
+					{InstanceId: aws.String("mock-instance-1"), LifecycleState: types.LifecycleStatePending},
+					{InstanceId: aws.String("mock-instance-2"), LifecycleState: types.LifecycleStateTerminating},
+					{InstanceId: aws.String("mock-instance-3"), LifecycleState: types.LifecycleStateTerminating},
 				}
 				return newAsgClient
 			}(),
@@ -443,7 +443,12 @@ func TestSetBatchStandBy(t *testing.T) {
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
 		batch := test.AsgClient.autoScalingGroups[0].Instances
-		actualValue := rollupCtx.SetBatchStandBy(awsprovider.GetInstanceIDs(batch))
+		// Convert []types.Instance to []*types.Instance for GetInstanceIDsFromPointers
+		var batchPointers []*types.Instance
+		for i := range batch {
+			batchPointers = append(batchPointers, &batch[i])
+		}
+		actualValue := rollupCtx.SetBatchStandBy(awsprovider.GetInstanceIDsFromPointers(batchPointers))
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
 		}
@@ -719,7 +724,7 @@ func TestSelectTargetsDifferentStrategy(t *testing.T) {
 
 		for _, scalingGroup := range rollupCtx.Cloud.ScalingGroups {
 			rollupCtx.RollingUpgrade.Spec.AsgName = *scalingGroup.AutoScalingGroupName
-			selectedInstances := rollupCtx.SelectTargets(scalingGroup, make([]string, 0))
+			selectedInstances := rollupCtx.SelectTargets(&scalingGroup, make([]string, 0))
 			t.Log("selectedInstances -", selectedInstances)
 			if selectedInstances == nil {
 				t.Errorf("Test Description: %s \n error: selectedInstances is nil", test.TestDescription)
@@ -744,10 +749,10 @@ func TestSelectTargetsWithExcluededInstances(t *testing.T) {
 	rollingUpgradeContext.RollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 
 	// Call the SelectTargets function
-	selectedInstances := rollingUpgradeContext.SelectTargets(scalingGroup, excludedInstances)
+	selectedInstances := rollingUpgradeContext.SelectTargets(&scalingGroup, excludedInstances)
 
 	// Verify the result
-	expectedSelectedInstances := []*autoscaling.Instance{
+	expectedSelectedInstances := []*types.Instance{
 		{
 			InstanceId: aws.String("mock-instance-2"),
 		},
