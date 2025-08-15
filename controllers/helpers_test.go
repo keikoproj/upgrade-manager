@@ -71,6 +71,13 @@ func createRollingUpgradeReconciler(t *testing.T, objects ...runtime.Object) *Ro
 		ClusterNodesMap: &sync.Map{},
 	}
 
+	// Pre-populate ClusterNodesMap to avoid kubeconfig dependency in tests
+	nodeList := createNodeList()
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		reconciler.ClusterNodesMap.Store(node.GetName(), node)
+	}
+
 	// set up fake admission map
 	reconciler.AdmissionMap.Store("default/2", "mock-asg-2")
 	reconciler.AdmissionMap.Store("default/3", "mock-asg-3")
