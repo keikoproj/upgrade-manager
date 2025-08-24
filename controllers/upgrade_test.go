@@ -8,8 +8,9 @@ import (
 	"time"
 
 	//AWS
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	corev1 "k8s.io/api/core/v1"
@@ -179,7 +180,7 @@ func TestIsInstanceDrifted(t *testing.T) {
 	var tests = []struct {
 		TestDescription string
 		Reconciler      *RollingUpgradeReconciler
-		Instance        *autoscaling.Instance
+		Instance        *types.Instance
 		AsgName         *string
 		ExpectedValue   bool
 	}{
@@ -334,7 +335,7 @@ func TestDesiredNodesReady(t *testing.T) {
 			createRollingUpgradeReconciler(t),
 			func() *MockAutoscalingGroup {
 				newAsgClient := createASGClient()
-				newAsgClient.autoScalingGroups[0].DesiredCapacity = func(x int) *int64 { i := int64(x); return &i }(4)
+				newAsgClient.autoScalingGroups[0].DesiredCapacity = func(x int) *int32 { i := int32(x); return &i }(4)
 				return newAsgClient
 			}(),
 			createNodeSlice(),
@@ -362,10 +363,10 @@ func TestDesiredNodesReady(t *testing.T) {
 			createRollingUpgradeReconciler(t),
 			func() *MockAutoscalingGroup {
 				newAsgClient := createASGClient()
-				newAsgClient.autoScalingGroups[0].Instances = []*autoscaling.Instance{
-					&autoscaling.Instance{InstanceId: aws.String("mock-instance-1"), LifecycleState: aws.String("Pending")},
-					&autoscaling.Instance{InstanceId: aws.String("mock-instance-2"), LifecycleState: aws.String("Terminating")},
-					&autoscaling.Instance{InstanceId: aws.String("mock-instance-3"), LifecycleState: aws.String("Terminating")},
+				newAsgClient.autoScalingGroups[0].Instances = []types.Instance{
+					{InstanceId: aws.String("mock-instance-1"), LifecycleState: types.LifecycleStatePending},
+					{InstanceId: aws.String("mock-instance-2"), LifecycleState: types.LifecycleStateTerminating},
+					{InstanceId: aws.String("mock-instance-3"), LifecycleState: types.LifecycleStateTerminating},
 				}
 				return newAsgClient
 			}(),
@@ -454,7 +455,12 @@ func TestSetBatchStandBy(t *testing.T) {
 		rollupCtx.Auth.AmazonClientSet.AsgClient = test.AsgClient
 
 		batch := test.AsgClient.autoScalingGroups[0].Instances
-		actualValue := rollupCtx.SetBatchStandBy(awsprovider.GetInstanceIDs(batch))
+		// Convert []types.Instance to []*types.Instance for GetInstanceIDsFromPointers
+		var batchPointers []*types.Instance
+		for i := range batch {
+			batchPointers = append(batchPointers, &batch[i])
+		}
+		actualValue := rollupCtx.SetBatchStandBy(awsprovider.GetInstanceIDsFromPointers(batchPointers))
 		if actualValue != test.ExpectedValue {
 			t.Errorf("Test Description: %s \n expected value: %v, actual value: %v", test.TestDescription, test.ExpectedValue, actualValue)
 		}
@@ -730,7 +736,7 @@ func TestSelectTargetsDifferentStrategy(t *testing.T) {
 
 		for _, scalingGroup := range rollupCtx.Cloud.ScalingGroups {
 			rollupCtx.RollingUpgrade.Spec.AsgName = *scalingGroup.AutoScalingGroupName
-			selectedInstances := rollupCtx.SelectTargets(scalingGroup, make([]string, 0))
+			selectedInstances := rollupCtx.SelectTargets(&scalingGroup, make([]string, 0))
 			t.Log("selectedInstances -", selectedInstances)
 			if selectedInstances == nil {
 				t.Errorf("Test Description: %s \n error: selectedInstances is nil", test.TestDescription)
@@ -755,10 +761,10 @@ func TestSelectTargetsWithExcluededInstances(t *testing.T) {
 	rollingUpgradeContext.RollingUpgrade.Spec.Strategy.Type = v1alpha1.RandomUpdateStrategy
 
 	// Call the SelectTargets function
-	selectedInstances := rollingUpgradeContext.SelectTargets(scalingGroup, excludedInstances)
+	selectedInstances := rollingUpgradeContext.SelectTargets(&scalingGroup, excludedInstances)
 
 	// Verify the result
-	expectedSelectedInstances := []*autoscaling.Instance{
+	expectedSelectedInstances := []*types.Instance{
 		{
 			InstanceId: aws.String("mock-instance-2"),
 		},
@@ -774,6 +780,289 @@ func TestSelectTargetsWithExcluededInstances(t *testing.T) {
 	for i, instance := range selectedInstances {
 		if *instance.InstanceId != *expectedSelectedInstances[i].InstanceId {
 			t.Errorf("Expected instance ID %s, but got %s", *expectedSelectedInstances[i].InstanceId, *instance.InstanceId)
+		}
+	}
+}
+
+// Test edge cases in instance lifecycle state filtering
+func TestSelectTargetsWithTerminatingInstances(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	// Test that terminating instances are excluded from selection
+	// Use existing mock infrastructure that works
+	rollupCtx.Cloud.ScalingGroups = createASGs()
+	rollupCtx.RollingUpgrade.Spec.AsgName = "mock-asg-2" // This ASG has drifted instances
+	rollupCtx.RollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{IntVal: 3}
+
+	// Get the ASG and modify it to have terminating instances
+	asg := awsprovider.SelectScalingGroup("mock-asg-2", rollupCtx.Cloud.ScalingGroups)
+
+	// Modify instances to have mixed lifecycle states
+	asg.Instances[0].LifecycleState = types.LifecycleStateInService
+	asg.Instances[1].LifecycleState = types.LifecycleStateTerminating
+	asg.Instances[2].LifecycleState = types.LifecycleStateTerminated
+
+	targets := rollupCtx.SelectTargets(asg, []string{})
+
+	// Should only select in-service instances, not terminating ones
+	// The exact count depends on how many are drifted and in-service
+	for _, target := range targets {
+		if target.LifecycleState == types.LifecycleStateTerminating ||
+			target.LifecycleState == types.LifecycleStateTerminated {
+			t.Errorf("selected terminating/terminated instance: %s with state %s",
+				*target.InstanceId, target.LifecycleState)
+		}
+	}
+}
+
+func TestSelectTargetsWithEmptyScalingGroup(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	asg := &types.AutoScalingGroup{
+		AutoScalingGroupName: aws.String("empty-asg"),
+		DesiredCapacity:      aws.Int32(0),
+		Instances:            []types.Instance{},
+	}
+
+	targets := rollupCtx.SelectTargets(asg, []string{})
+
+	if len(targets) != 0 {
+		t.Errorf("expected 0 targets for empty ASG, got %d", len(targets))
+	}
+}
+
+func TestIsInstanceDriftedWithMissingLaunchConfig(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	// Create ASG with launch config
+	rollupCtx.Cloud.ScalingGroups = []types.AutoScalingGroup{
+		{
+			AutoScalingGroupName:    aws.String("test-asg"),
+			LaunchConfigurationName: aws.String("test-config"),
+		},
+	}
+	rollupCtx.RollingUpgrade.Spec.AsgName = "test-asg"
+
+	// Instance without launch config should be drifted
+	instance := &types.Instance{
+		InstanceId:              aws.String("i-123"),
+		LaunchConfigurationName: nil,
+		LifecycleState:          types.LifecycleStateInService,
+	}
+
+	isDrifted := rollupCtx.IsInstanceDrifted(instance)
+
+	if !isDrifted {
+		t.Error("expected instance without launch config to be drifted")
+	}
+}
+
+func TestIsInstanceDriftedWithVersionMismatch(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	// Create ASG with launch template
+	rollupCtx.Cloud.ScalingGroups = []types.AutoScalingGroup{
+		{
+			AutoScalingGroupName: aws.String("test-asg"),
+			LaunchTemplate: &types.LaunchTemplateSpecification{
+				LaunchTemplateName: aws.String("test-template"),
+				Version:            aws.String("2"),
+			},
+		},
+	}
+	rollupCtx.RollingUpgrade.Spec.AsgName = "test-asg"
+
+	// Instance with different version should be drifted
+	instance := &types.Instance{
+		InstanceId: aws.String("i-123"),
+		LaunchTemplate: &types.LaunchTemplateSpecification{
+			LaunchTemplateName: aws.String("test-template"),
+			Version:            aws.String("1"),
+		},
+		LifecycleState: types.LifecycleStateInService,
+	}
+
+	isDrifted := rollupCtx.IsInstanceDrifted(instance)
+
+	if !isDrifted {
+		t.Error("expected instance with version mismatch to be drifted")
+	}
+}
+
+func TestIsInstanceDriftedWithMixedInstancePolicy(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	// Create ASG with mixed instances policy
+	rollupCtx.Cloud.ScalingGroups = []types.AutoScalingGroup{
+		{
+			AutoScalingGroupName: aws.String("test-asg"),
+			MixedInstancesPolicy: &types.MixedInstancesPolicy{
+				LaunchTemplate: &types.LaunchTemplate{
+					LaunchTemplateSpecification: &types.LaunchTemplateSpecification{
+						LaunchTemplateName: aws.String("test-template"),
+						Version:            aws.String("3"),
+					},
+				},
+			},
+		},
+	}
+	rollupCtx.RollingUpgrade.Spec.AsgName = "test-asg"
+
+	// Instance with different template should be drifted
+	instance := &types.Instance{
+		InstanceId: aws.String("i-123"),
+		LaunchTemplate: &types.LaunchTemplateSpecification{
+			LaunchTemplateName: aws.String("different-template"),
+			Version:            aws.String("3"),
+		},
+		LifecycleState: types.LifecycleStateInService,
+	}
+
+	isDrifted := rollupCtx.IsInstanceDrifted(instance)
+
+	if !isDrifted {
+		t.Error("expected instance with different template name to be drifted")
+	}
+}
+
+func TestSetBatchStandByWithLargeInstanceCount(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	// Create a large list of instance IDs (more than AWS standby limit)
+	var instanceIDs []string
+	for i := 0; i < 25; i++ {
+		instanceIDs = append(instanceIDs, fmt.Sprintf("i-%d", i))
+	}
+
+	// Mock ASG client
+	mockClient := &MockAutoscalingGroup{}
+	rollupCtx.Auth.AmazonClientSet.AsgClient = mockClient
+	rollupCtx.RollingUpgrade.Spec.AsgName = "test-asg"
+
+	err := rollupCtx.SetBatchStandBy(instanceIDs)
+
+	// Should handle large batches without error (chunking logic)
+	if err != nil {
+		t.Errorf("unexpected error with large instance count: %v", err)
+	}
+}
+
+// Test drift detection with no launch configuration or template
+func TestIsInstanceDriftedWithNoLaunchSpec(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+
+	// Create ASG with no launch config or template (edge case)
+	rollupCtx.Cloud.ScalingGroups = []types.AutoScalingGroup{
+		{
+			AutoScalingGroupName: aws.String("test-asg"),
+			// No LaunchConfigurationName or LaunchTemplate
+		},
+	}
+	rollupCtx.RollingUpgrade.Spec.AsgName = "test-asg"
+
+	// Instance with launch config - based on the actual logic, this is NOT drifted
+	// because the ASG has no launch spec to compare against
+	instance := &types.Instance{
+		InstanceId:              aws.String("i-123"),
+		LaunchConfigurationName: aws.String("some-config"),
+		LifecycleState:          types.LifecycleStateInService,
+	}
+
+	isDrifted := rollupCtx.IsInstanceDrifted(instance)
+
+	// The actual business logic returns false when ASG has no launch spec
+	// This is the current behavior - instances are only drifted when there's a mismatch
+	if isDrifted {
+		t.Error("expected instance to not be drifted when ASG has no launch spec to compare against")
+	}
+}
+
+// New: ensure UniformAcrossAzUpdateStrategy performs round-robin across AZs
+func TestSelectTargetsUniformAcrossAzOrdering(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+	rollupCtx.Cloud.ScalingGroups = []types.AutoScalingGroup{
+		{
+			AutoScalingGroupName:    aws.String("asg-uni"),
+			LaunchConfigurationName: aws.String("lc"),
+			DesiredCapacity:         aws.Int32(6),
+			Instances: []types.Instance{
+				{InstanceId: aws.String("i-a1"), AvailabilityZone: aws.String("az-a"), LifecycleState: types.LifecycleStateInService},
+				{InstanceId: aws.String("i-b1"), AvailabilityZone: aws.String("az-b"), LifecycleState: types.LifecycleStateInService},
+				{InstanceId: aws.String("i-c1"), AvailabilityZone: aws.String("az-c"), LifecycleState: types.LifecycleStateInService},
+				{InstanceId: aws.String("i-a2"), AvailabilityZone: aws.String("az-a"), LifecycleState: types.LifecycleStateInService},
+				{InstanceId: aws.String("i-b2"), AvailabilityZone: aws.String("az-b"), LifecycleState: types.LifecycleStateInService},
+				{InstanceId: aws.String("i-c2"), AvailabilityZone: aws.String("az-c"), LifecycleState: types.LifecycleStateInService},
+			},
+		},
+	}
+	rollupCtx.RollingUpgrade.Spec.AsgName = "asg-uni"
+	rollupCtx.RollingUpgrade.Spec.Strategy.Type = v1alpha1.UniformAcrossAzUpdateStrategy
+	rollupCtx.RollingUpgrade.Spec.Strategy.MaxUnavailable = intstr.IntOrString{StrVal: "100%", Type: 1}
+	// Provide EC2 instances without the in-progress tag so DescribeInstancesWithoutTagValue returns them
+	mockEC2 := &MockEC2{
+		Instances: []ec2types.Instance{
+			{InstanceId: aws.String("i-a1")},
+			{InstanceId: aws.String("i-a2")},
+			{InstanceId: aws.String("i-b1")},
+			{InstanceId: aws.String("i-b2")},
+			{InstanceId: aws.String("i-c1")},
+			{InstanceId: aws.String("i-c2")},
+		},
+	}
+	rollupCtx.Auth.AmazonClientSet.Ec2Client = mockEC2
+	rollupCtx.Cloud.AmazonClientSet.Ec2Client = mockEC2
+
+	targets := rollupCtx.SelectTargets(&rollupCtx.Cloud.ScalingGroups[0], []string{})
+	got := awsprovider.GetInstanceIDsFromPointers(targets)
+	if len(got) != 6 {
+		t.Fatalf("expected 6 targets, got %d: %v", len(got), got)
+	}
+	azById := map[string]string{
+		"i-a1": "az-a", "i-a2": "az-a",
+		"i-b1": "az-b", "i-b2": "az-b",
+		"i-c1": "az-c", "i-c2": "az-c",
+	}
+	// membership check
+	expectedSet := map[string]bool{"i-a1": true, "i-a2": true, "i-b1": true, "i-b2": true, "i-c1": true, "i-c2": true}
+	for _, id := range got {
+		if !expectedSet[id] {
+			t.Fatalf("unexpected id in selection: %s", id)
+		}
+	}
+	// per-AZ counts are balanced
+	counts := map[string]int{}
+	for _, id := range got {
+		counts[azById[id]]++
+	}
+	if counts["az-a"] != 2 || counts["az-b"] != 2 || counts["az-c"] != 2 {
+		t.Fatalf("expected two selections per AZ, got: %v", counts)
+	}
+}
+
+// New: CalculateMaxUnavailable edge cases
+func TestCalculateMaxUnavailableEdges(t *testing.T) {
+	cases := []struct {
+		batch intstr.IntOrString
+		total int
+		want  int
+	}{
+		{intstr.FromString("50%"), 7, 4},
+		{intstr.FromString("10"), 5, 5},
+		{intstr.FromInt(0), 3, 1},
+		{intstr.FromInt(2), 10, 2},
+	}
+	for _, c := range cases {
+		got := CalculateMaxUnavailable(c.batch, c.total)
+		if got != c.want {
+			t.Errorf("CalculateMaxUnavailable(%v,%d)=%d, want %d", c.batch, c.total, got, c.want)
 		}
 	}
 }
@@ -851,6 +1140,18 @@ func TestCordonAndAnnotateNode(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// New: IsInstanceDrifted short-circuits for terminating states
+func TestIsInstanceDriftedTerminatingShortCircuit(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	rollupCtx := createRollingUpgradeContext(reconciler)
+	rollupCtx.Cloud.ScalingGroups = createASGs()
+	rollupCtx.RollingUpgrade.Spec.AsgName = "mock-asg-1"
+	inst := &types.Instance{InstanceId: aws.String("i-x"), LifecycleState: types.LifecycleStateTerminating}
+	if rollupCtx.IsInstanceDrifted(inst) {
+		t.Errorf("terminating instance should not be considered drifted")
 	}
 }
 

@@ -17,100 +17,134 @@ limitations under the License.
 package aws
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
-func (a *AmazonClientSet) DescribeLaunchTemplates() ([]*ec2.LaunchTemplate, error) {
-	launchTemplates := []*ec2.LaunchTemplate{}
-	err := a.Ec2Client.DescribeLaunchTemplatesPages(&ec2.DescribeLaunchTemplatesInput{}, func(page *ec2.DescribeLaunchTemplatesOutput, lastPage bool) bool {
-		launchTemplates = append(launchTemplates, page.LaunchTemplates...)
-		return page.NextToken != nil
-	})
-	if err != nil {
-		return launchTemplates, err
+func (a *AmazonClientSet) DescribeLaunchTemplates() ([]types.LaunchTemplate, error) {
+	ctx := context.TODO()
+	var launchTemplates []types.LaunchTemplate
+
+	input := &ec2.DescribeLaunchTemplatesInput{}
+
+	for {
+		output, err := a.Ec2Client.DescribeLaunchTemplates(ctx, input)
+		if err != nil {
+			return launchTemplates, err
+		}
+
+		launchTemplates = append(launchTemplates, output.LaunchTemplates...)
+
+		if output.NextToken == nil {
+			break
+		}
+		input.NextToken = output.NextToken
 	}
+
 	return launchTemplates, nil
 }
 
 func (a *AmazonClientSet) DescribeTaggedInstanceIDs(tagKey, tagValue string) ([]string, error) {
-	instances := []string{}
+	ctx := context.TODO()
+	var instances []string
 	key := fmt.Sprintf("tag:%v", tagKey)
 	input := &ec2.DescribeInstancesInput{
-		Filters: []*ec2.Filter{
+		Filters: []types.Filter{
 			{
 				Name:   aws.String(key),
-				Values: aws.StringSlice([]string{tagValue}),
+				Values: []string{tagValue},
 			},
 			{
 				Name:   aws.String("instance-state-name"),
-				Values: aws.StringSlice([]string{"pending", "running"}),
+				Values: []string{"pending", "running"},
 			},
 		},
 	}
 
-	err := a.Ec2Client.DescribeInstancesPages(input, func(page *ec2.DescribeInstancesOutput, lastPage bool) bool {
-		for _, res := range page.Reservations {
+	for {
+		output, err := a.Ec2Client.DescribeInstances(ctx, input)
+		if err != nil {
+			return instances, err
+		}
+
+		for _, res := range output.Reservations {
 			for _, instance := range res.Instances {
-				instances = append(instances, aws.StringValue(instance.InstanceId))
+				instances = append(instances, aws.ToString(instance.InstanceId))
 			}
 		}
-		return page.NextToken != nil
-	})
-	return instances, err
+
+		if output.NextToken == nil {
+			break
+		}
+		input.NextToken = output.NextToken
+	}
+	return instances, nil
 }
 
 func (a *AmazonClientSet) DescribeInstancesWithoutTagValue(tagKey string, tagValue string) ([]string, error) {
-	instances := []string{}
+	ctx := context.TODO()
+	var instances []string
 	input := &ec2.DescribeInstancesInput{}
-	tagAndValueIsPresent := false
 
-	err := a.Ec2Client.DescribeInstancesPages(input, func(page *ec2.DescribeInstancesOutput, lastPage bool) bool {
-		for _, res := range page.Reservations {
+	for {
+		output, err := a.Ec2Client.DescribeInstances(ctx, input)
+		if err != nil {
+			return instances, err
+		}
+
+		for _, res := range output.Reservations {
 			for _, instance := range res.Instances {
+				tagAndValueIsPresent := false
 				for _, t := range instance.Tags {
-					if *t.Key == tagKey && *t.Value == tagValue {
+					if aws.ToString(t.Key) == tagKey && aws.ToString(t.Value) == tagValue {
 						tagAndValueIsPresent = true
 						break
 					}
 				}
 				if !tagAndValueIsPresent {
-					instances = append(instances, aws.StringValue(instance.InstanceId))
+					instances = append(instances, aws.ToString(instance.InstanceId))
 				}
-				tagAndValueIsPresent = false
 			}
 		}
-		return page.NextToken != nil
-	})
-	return instances, err
+
+		if output.NextToken == nil {
+			break
+		}
+		input.NextToken = output.NextToken
+	}
+	return instances, nil
 }
 
 func (a *AmazonClientSet) TagEC2instances(instanceIDs []string, tagKey, tagValue string) error {
+	ctx := context.TODO()
 	input := &ec2.CreateTagsInput{
-		Resources: aws.StringSlice(instanceIDs),
-		Tags: []*ec2.Tag{
+		Resources: instanceIDs,
+		Tags: []types.Tag{
 			{
 				Key:   aws.String(tagKey),
 				Value: aws.String(tagValue),
 			},
 		},
 	}
-	_, err := a.Ec2Client.CreateTags(input)
+	_, err := a.Ec2Client.CreateTags(ctx, input)
 	return err
 }
 
 func (a *AmazonClientSet) UntagEC2instances(instanceIDs []string, tagKey, tagValue string) error {
+	ctx := context.TODO()
 	input := &ec2.DeleteTagsInput{
-		Resources: aws.StringSlice(instanceIDs),
-		Tags: []*ec2.Tag{
+		Resources: instanceIDs,
+		Tags: []types.Tag{
 			{
 				Key:   aws.String(tagKey),
 				Value: aws.String(tagValue),
 			},
 		},
 	}
-	_, err := a.Ec2Client.DeleteTags(input)
+	_, err := a.Ec2Client.DeleteTags(ctx, input)
 	return err
 }
