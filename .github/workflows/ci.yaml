@@ -55,7 +55,7 @@ jobs:
     - name: Set up QEMU
       if: (github.event_name == 'push' || github.event_name == 'release') && github.repository == 'keikoproj/upgrade-manager'
       id: qemu
-      uses: docker/setup-qemu-action@v3
+      uses: docker/setup-qemu-action@v4
       with:
         platforms: all
 
