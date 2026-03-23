@@ -1,0 +1,28 @@
+version: "2"
+linters:
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      # Pre-existing issues — tracked separately for future cleanup
+      - linters: [staticcheck]
+        text: "QF1008:"
+      - linters: [staticcheck]
+        text: "ST1011:"
+      - linters: [staticcheck]
+        text: "QF1006:"
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

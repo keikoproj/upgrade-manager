@@ -8,14 +8,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.3
 	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.50.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.244.0
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/onsi/gomega v1.37.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/sirupsen/logrus v1.9.3
 	go.uber.org/zap v1.27.0
-	k8s.io/api v0.32.8
-	k8s.io/apimachinery v0.32.8
+	k8s.io/api v0.32.13
+	k8s.io/apimachinery v0.32.13
 	k8s.io/client-go v0.32.8
 	k8s.io/kubectl v0.32.8
 	sigs.k8s.io/controller-runtime v0.20.4
@@ -85,7 +85,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/oauth2 v0.25.0 // indirect
+	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect
