@@ -17,56 +17,59 @@ limitations under the License.
 package aws
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 )
 
-var (
-	TerminatingInstanceStates = []string{
-		autoscaling.LifecycleStateTerminating,
-		autoscaling.LifecycleStateTerminatingWait,
-		autoscaling.LifecycleStateTerminatingProceed,
-		autoscaling.LifecycleStateTerminated,
-		autoscaling.LifecycleStateWarmedTerminating,
-		autoscaling.LifecycleStateWarmedTerminatingWait,
-		autoscaling.LifecycleStateWarmedTerminatingProceed,
-		autoscaling.LifecycleStateWarmedTerminated,
-	}
-	// Instance standBy limit is enforced by AWS EnterStandBy API
-	InstanceStandByLimit = 19
-)
+func (a *AmazonClientSet) DescribeScalingGroups() ([]types.AutoScalingGroup, error) {
+	ctx := context.TODO()
+	var scalingGroups []types.AutoScalingGroup
 
-func (a *AmazonClientSet) DescribeScalingGroups() ([]*autoscaling.Group, error) {
-	scalingGroups := []*autoscaling.Group{}
-	err := a.AsgClient.DescribeAutoScalingGroupsPages(&autoscaling.DescribeAutoScalingGroupsInput{}, func(page *autoscaling.DescribeAutoScalingGroupsOutput, lastPage bool) bool {
-		scalingGroups = append(scalingGroups, page.AutoScalingGroups...)
-		return page.NextToken != nil
-	})
-	if err != nil {
-		return scalingGroups, err
+	// For concrete clients, we need to handle pagination differently
+	// This method will work with both real clients and mocks
+	input := &autoscaling.DescribeAutoScalingGroupsInput{}
+
+	for {
+		output, err := a.AsgClient.DescribeAutoScalingGroups(ctx, input)
+		if err != nil {
+			return scalingGroups, err
+		}
+
+		scalingGroups = append(scalingGroups, output.AutoScalingGroups...)
+
+		if output.NextToken == nil {
+			break
+		}
+		input.NextToken = output.NextToken
 	}
+
 	return scalingGroups, nil
 }
 
-func (a *AmazonClientSet) TerminateInstance(instance *autoscaling.Instance) error {
-	instanceID := aws.StringValue(instance.InstanceId)
+func (a *AmazonClientSet) TerminateInstance(instance *types.Instance) error {
+	ctx := context.TODO()
+	instanceID := aws.ToString(instance.InstanceId)
 	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 		InstanceId:                     aws.String(instanceID),
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
 
-	if _, err := a.AsgClient.TerminateInstanceInAutoScalingGroup(input); err != nil {
+	if _, err := a.AsgClient.TerminateInstanceInAutoScalingGroup(ctx, input); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (a *AmazonClientSet) SetInstancesStandBy(instanceIDs []string, scalingGroupName string) error {
+	ctx := context.TODO()
 	input := &autoscaling.EnterStandbyInput{
 		AutoScalingGroupName:           aws.String(scalingGroupName),
-		InstanceIds:                    aws.StringSlice(instanceIDs),
+		InstanceIds:                    instanceIDs,
 		ShouldDecrementDesiredCapacity: aws.Bool(false),
 	}
-	_, err := a.AsgClient.EnterStandby(input)
+	_, err := a.AsgClient.EnterStandby(ctx, input)
 	return err
 }
