@@ -10,7 +10,6 @@ import (
 	"k8s.io/kubectl/pkg/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	awsprovider "github.com/keikoproj/upgrade-manager/controllers/providers/aws"
 	kubeprovider "github.com/keikoproj/upgrade-manager/controllers/providers/kubernetes"
@@ -67,9 +66,8 @@ func createRollingUpgradeReconciler(t *testing.T, objects ...runtime.Object) *Ro
 		DrainErrorMapper:    &sync.Map{},
 		ReplacementNodesMap: &sync.Map{},
 		ReconcileMap:        &sync.Map{},
-		AdmissionMap:        sync.Map{},
-		CacheConfig:         cache.NewConfig(0, 0, 0, 0),
-		ClusterNodesMap:     &sync.Map{},
+		AdmissionMap:    sync.Map{},
+		ClusterNodesMap: &sync.Map{},
 	}
 
 	// Pre-populate ClusterNodesMap to avoid kubeconfig dependency in tests

@@ -35,7 +35,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-logr/logr"
-	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	upgrademgrv1alpha1 "github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers"
 	"github.com/keikoproj/upgrade-manager/controllers/common/log"
@@ -58,14 +57,6 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("main")
-)
-
-var (
-	CacheDefaultTTL                     = time.Second * 0
-	DescribeAutoScalingGroupsTTL        = 60 * time.Second
-	DescribeLaunchTemplatesTTL          = 60 * time.Second
-	CacheMaxItems                int64  = 5000
-	CacheItemsToPrune            uint32 = 500
 )
 
 func init() {
@@ -167,19 +158,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	cacheCfg := cache.NewConfig(CacheDefaultTTL, 1*time.Hour, CacheMaxItems, CacheItemsToPrune)
-	cache.AddCaching(sess, cacheCfg)
-	cacheCfg.SetCacheTTL("autoscaling", "DescribeAutoScalingGroups", DescribeAutoScalingGroupsTTL)
-	cacheCfg.SetCacheTTL("ec2", "DescribeLaunchTemplates", DescribeLaunchTemplatesTTL)
-	sess.Handlers.Complete.PushFront(func(r *request.Request) {
-		ctx := r.HTTPRequest.Context()
-		log.Debugf("cache hit => %v, service => %s.%s",
-			cache.IsCacheHit(ctx),
-			r.ClientInfo.ServiceName,
-			r.Operation.Name,
-		)
-	})
-
 	kube, err := kubeprovider.GetKubernetesClient()
 	if err != nil {
 		setupLog.Error(err, "unable to create kubernetes client")
@@ -198,10 +176,9 @@ func main() {
 	logger := ctrl.Log.WithName("controllers").WithName("RollingUpgrade")
 
 	reconciler := &controllers.RollingUpgradeReconciler{
-		Client:      mgr.GetClient(),
-		Logger:      logger,
-		Scheme:      mgr.GetScheme(),
-		CacheConfig: cacheCfg,
+		Client: mgr.GetClient(),
+		Logger: logger,
+		Scheme: mgr.GetScheme(),
 		Auth: &controllers.RollingUpgradeAuthenticator{
 			AmazonClientSet:     awsClient,
 			KubernetesClientSet: kubeClient,
