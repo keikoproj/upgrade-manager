@@ -20,7 +20,6 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/keikoproj/aws-sdk-go-cache/cache"
 	"github.com/keikoproj/upgrade-manager/api/v1alpha1"
 	"github.com/keikoproj/upgrade-manager/controllers/common"
 	"github.com/keikoproj/upgrade-manager/controllers/common/log"
@@ -45,7 +44,6 @@ type RollingUpgradeReconciler struct {
 	logr.Logger
 	Scheme              *runtime.Scheme
 	AdmissionMap        sync.Map
-	CacheConfig         *cache.Config
 	EventWriter         *kubeprovider.EventWriter
 	maxParallel         int
 	ScriptRunner        ScriptRunner
@@ -181,8 +179,6 @@ func (r *RollingUpgradeReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// store the rolling upgrade in admission map
 	if _, present := r.AdmissionMap.LoadOrStore(rollingUpgrade.NamespacedName(), scalingGroupName); !present {
 		r.Info("admitted new rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
-		r.CacheConfig.FlushCache("autoscaling")
-		r.CacheConfig.FlushCache("ec2")
 	} else {
 		r.Info("operating on existing rolling upgrade", "scalingGroup", scalingGroupName, "update strategy", rollingUpgrade.Spec.Strategy, "name", rollingUpgrade.NamespacedName())
 	}
