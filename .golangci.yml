@@ -19,6 +19,9 @@ linters:
         text: "ST1011:"
       - linters: [staticcheck]
         text: "QF1006:"
+      # aws-sdk-go v1 is deprecated but migration to v2 is tracked separately
+      - linters: [staticcheck]
+        text: 'SA1019: "github.com/aws/aws-sdk-go/'
 formatters:
   exclusions:
     generated: lax
