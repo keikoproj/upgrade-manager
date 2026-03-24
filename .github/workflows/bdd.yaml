@@ -8,7 +8,9 @@ on:
 jobs:
   build:
     name: Setup & Run
-    if: github.repository == 'keikoproj/upgrade-manager'
+    # Disabled: AWS credentials (secrets.AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
+    # are invalid/expired. Re-enable once the secrets have been rotated.
+    if: false
     runs-on: ubuntu-latest
     steps:
     
