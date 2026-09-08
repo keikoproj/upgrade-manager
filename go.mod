@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go v1.55.8
-	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/logr v1.4.4
 	github.com/keikoproj/aws-sdk-go-cache v0.1.1
 	github.com/onsi/gomega v1.42.1
 	github.com/pkg/errors v0.9.1
