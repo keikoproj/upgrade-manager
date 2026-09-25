@@ -90,6 +90,10 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 		r.Info("failed to discover the cloud", "scalingGroup", r.RollingUpgrade.ScalingGroupName(), "name", r.RollingUpgrade.NamespacedName())
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusError)
 		r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusError)
+		r.RollingUpgrade.Status.SetCondition(v1alpha1.RollingUpgradeCondition{
+			Type:   v1alpha1.UpgradeComplete,
+			Status: corev1.ConditionFalse,
+		})
 		common.SetMetricRollupFailed(r.RollingUpgrade.Name)
 
 		// uncordoning any nodes that were cordoned by early cordon feature
@@ -120,6 +124,14 @@ func (r *RollingUpgradeContext) RotateNodes() error {
 	if !r.IsScalingGroupDrifted() {
 		r.RollingUpgrade.SetCurrentStatus(v1alpha1.StatusComplete)
 		r.RollingUpgrade.SetLabel(v1alpha1.LabelKeyRollingUpgradeCurrentStatus, v1alpha1.StatusComplete)
+		// Surface the terminal state through conditions too so callers
+		// can `kubectl wait --for condition=Complete` on the resource
+		// (#321). Before this, only .status.currentStatus was set, so
+		// kubectl wait never saw a transition.
+		r.RollingUpgrade.Status.SetCondition(v1alpha1.RollingUpgradeCondition{
+			Type:   v1alpha1.UpgradeComplete,
+			Status: corev1.ConditionTrue,
+		})
 		common.SetMetricRollupCompleted(r.RollingUpgrade.Name)
 		r.endTimeUpdate()
 
