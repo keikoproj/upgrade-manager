@@ -69,6 +69,7 @@ If you already have an existing cluster created using kops, follow the instructi
     "Action": [
         "ec2:CreateTags",
         "ec2:DescribeInstances",
+        "ec2:DescribeLaunchTemplates",
         "autoscaling:EnterStandby",
         "autoscaling:DescribeAutoScalingGroups",
         "autoscaling:TerminateInstanceInAutoScalingGroup"
