@@ -30,6 +30,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -245,22 +246,26 @@ func (r *RollingUpgradeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.RollingUpgrade{}).
 		Watches(
 			&corev1.Node{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-				// Use the event filtering logic from NodeEventsHandler
-				p := r.NodeEventsHandler()
-				// If the predicate doesn't allow this event, return empty requests
-				if !p.Create(event.CreateEvent{Object: obj}) &&
-					!p.Update(event.UpdateEvent{ObjectNew: obj}) &&
-					!p.Delete(event.DeleteEvent{Object: obj}) &&
-					!p.Generic(event.GenericEvent{Object: obj}) {
-					return []reconcile.Request{}
-				}
-				// Return a default request - the exact implementation would depend on your needs
-				return []reconcile.Request{{}}
-			}),
+			r.nodeCacheHandler(),
 		).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.maxParallel}).
 		Complete(r)
+}
+
+// nodeCacheHandler updates ClusterNodesMap from the matching node event.
+// A create stores the node, an update stores the new object, and only a delete removes it.
+func (r *RollingUpgradeReconciler) nodeCacheHandler() handler.EventHandler {
+	return handler.Funcs{
+		CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			r.NodeEventsHandler().Create(e)
+		},
+		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			r.NodeEventsHandler().Update(e)
+		},
+		DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			r.NodeEventsHandler().Delete(e)
+		},
+	}
 }
 
 // NodesEventHandler will fetch us the nodes on corresponding events, an alternative to doing explicit API calls.

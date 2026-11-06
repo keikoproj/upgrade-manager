@@ -192,6 +192,23 @@ func TestNodeEventsHandler(t *testing.T) {
 	}
 }
 
+func TestNodeUpdateKeepsTheCachedNode(t *testing.T) {
+	reconciler := createRollingUpgradeReconciler(t)
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "ip-10-9-51-43"}}
+	handler := reconciler.nodeCacheHandler()
+
+	handler.Create(context.Background(), event.CreateEvent{Object: node}, nil)
+	handler.Update(context.Background(), event.UpdateEvent{ObjectOld: node, ObjectNew: node}, nil)
+	if _, ok := reconciler.ClusterNodesMap.Load(node.Name); !ok {
+		t.Fatal("node update dropped the node from ClusterNodesMap")
+	}
+
+	handler.Delete(context.Background(), event.DeleteEvent{Object: node}, nil)
+	if _, ok := reconciler.ClusterNodesMap.Load(node.Name); ok {
+		t.Fatal("node delete left the node in ClusterNodesMap")
+	}
+}
+
 // Helper function to count items in a sync.Map
 func countMapItems(m *sync.Map) int {
 	count := 0
